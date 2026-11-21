@@ -283,9 +283,7 @@ impl NativeOutputs {
                     )
                 };
                 button.setFrame(NSRect::new(NSPoint::new(0., 0.), rect.size));
-                unsafe {
-                    view.addSubview(&button);
-                }
+                view.addSubview(&button);
             }
             let window = Window::new(backend.clone());
             let timer = bounds.is_none().then(|| {

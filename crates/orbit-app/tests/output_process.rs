@@ -61,11 +61,14 @@ fn process_alive(pid: u32) -> bool {
     }
     #[cfg(not(windows))]
     {
-        Command::new("kill")
-            .args(["-0", &pid.to_string()])
+        let process = Command::new("ps")
+            .args(["-o", "stat=", "-p", &pid.to_string()])
             .stderr(Stdio::null())
-            .status()
-            .is_ok_and(|status| status.success())
+            .output()
+            .expect("ps runs");
+        let state = String::from_utf8_lossy(&process.stdout);
+        let state = state.trim();
+        process.status.success() && !state.is_empty() && !state.starts_with('Z')
     }
 }
 
@@ -186,7 +189,6 @@ impl Drop for Cleanup {
 }
 
 struct Started {
-    controller: u32,
     output: u32,
     directory: PathBuf,
     cleanup: Cleanup,
@@ -216,7 +218,7 @@ fn start_controller(name: &str) -> Started {
     let controller_id = controller.id();
     let mut cleanup = Cleanup {
         controller,
-        pids: vec![controller_id],
+        pids: Vec::new(),
         directory: directory.clone(),
     };
     wait_until("the stand-in controller to put a scene on air", 60, || {
@@ -236,7 +238,6 @@ fn start_controller(name: &str) -> Started {
         std::fs::read_to_string(directory.parent().unwrap().join("spawn-events.txt")).ok()
     );
     Started {
-        controller: controller_pid,
         output,
         directory,
         cleanup,
@@ -336,11 +337,18 @@ fn adopt_and_release(started: &Started) {
 
 #[test]
 fn a_hard_killed_controller_leaves_an_adoptable_output_process() {
-    let started = start_controller("hard");
-    kill_process(started.controller, false);
-    wait_until("the controller to die", 15, || {
-        !process_alive(started.controller)
-    });
+    let mut started = start_controller("hard");
+    started
+        .cleanup
+        .controller
+        .kill()
+        .expect("kill the controller");
+    let status = started
+        .cleanup
+        .controller
+        .wait()
+        .expect("reap the controller");
+    assert!(!status.success(), "the controller was terminated");
     assert!(
         process_alive(started.output),
         "the output process outlives a hard-killed controller"
