@@ -302,6 +302,15 @@ impl Drop for Scenario {
     }
 }
 
+pub fn primary_shortcut(visual: &mut VisualTestContext, keys: &str) {
+    let modifier = if cfg!(target_os = "macos") {
+        "cmd"
+    } else {
+        "ctrl"
+    };
+    visual.simulate_keystrokes(&format!("{modifier}-{keys}"));
+}
+
 pub fn click(visual: &mut VisualTestContext, selector: &str) {
     let selector = Box::leak(selector.to_string().into_boxed_str());
     let point = visual

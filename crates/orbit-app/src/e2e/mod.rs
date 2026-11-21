@@ -933,10 +933,10 @@ fn audience_messages_appear_autosave_and_survive_reopening(cx: &mut TestAppConte
     let runtime = app.runtime(cx);
     assert!(cx.update(|cx| runtime.output.read(cx).live["activeMessageId"].is_null()));
     click(&mut visual, "message-field-title");
-    visual.simulate_keystrokes("ctrl-a");
+    support::primary_shortcut(&mut visual, "a");
     visual.simulate_input("Renamed welcome");
     visual.simulate_keystrokes("tab");
-    visual.simulate_keystrokes("ctrl-a");
+    support::primary_shortcut(&mut visual, "a");
     visual.simulate_input("The service begins shortly");
     visual.update(|window, cx| {
         assert!(commands.run("view-audio", false, window, cx));
@@ -1407,7 +1407,7 @@ fn new_presentation_saves_the_chosen_theme_and_size(cx: &mut TestAppContext) {
     let mut app = Scenario::new(cx, false, seed);
     let runtime = app.runtime(cx);
     let mut visual = app.visual(cx);
-    visual.simulate_keystrokes("ctrl-n");
+    support::primary_shortcut(&mut visual, "n");
     visual.run_until_parked();
     assert!(visual.debug_bounds("theme-picker-preview").is_some());
     let (thumbnail, theme_id) = cx.update(|cx| {
@@ -1528,12 +1528,12 @@ fn clipboard_import_edits_slide_breaks_and_saves_to_the_chosen_playlist(cx: &mut
     assert!(visual.debug_bounds("clipboard-slide-text-2").is_some());
 
     click(&mut visual, "form-input-clipboard-title");
-    visual.simulate_keystrokes("ctrl-a");
+    support::primary_shortcut(&mut visual, "a");
     visual.simulate_input("From clipboard");
     click(&mut visual, "form-input-clipboard-artist");
     visual.simulate_input("Test artist");
     click(&mut visual, "clipboard-slide-text-0");
-    visual.simulate_keystrokes("ctrl-a");
+    support::primary_shortcut(&mut visual, "a");
     visual.simulate_input("Café suite");
     visual.simulate_keystrokes("left left left left left");
     click(&mut visual, "button-clipboard-split");
@@ -1601,7 +1601,7 @@ fn clipboard_import_edits_slide_breaks_and_saves_to_the_chosen_playlist(cx: &mut
     });
     visual.run_until_parked();
     click(&mut visual, "form-input-clipboard-splitUnits");
-    visual.simulate_keystrokes("ctrl-a");
+    support::primary_shortcut(&mut visual, "a");
     visual.simulate_input("2");
     visual.run_until_parked();
     click(&mut visual, "button-clipboard-import");
@@ -2803,7 +2803,7 @@ fn media_panel_and_filters_survive_operator_navigation(cx: &mut TestAppContext) 
         visual.run_until_parked();
         visual.simulate_input("No matching media");
         assert!(visual.debug_bounds("media-view-controls").is_some());
-        visual.simulate_keystrokes("ctrl-a");
+        support::primary_shortcut(&mut visual, "a");
         visual.simulate_keystrokes("backspace");
         assert!(visual.debug_bounds("region-media").is_some());
         visual.update(|window, cx| assert!(commands.run("view-macros", false, window, cx)));
@@ -2990,7 +2990,7 @@ fn dropping_media_copies_assets_filters_the_bin_and_survives_restart(cx: &mut Te
     visual.simulate_input("unmatched");
     visual.run_until_parked();
     assert!(visual.debug_bounds(selector).is_none());
-    visual.simulate_keystrokes("ctrl-a");
+    support::primary_shortcut(&mut visual, "a");
     visual.simulate_keystrokes("backspace");
     visual.run_until_parked();
     assert!(visual.debug_bounds(selector).is_some());

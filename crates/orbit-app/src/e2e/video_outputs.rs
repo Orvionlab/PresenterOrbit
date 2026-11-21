@@ -32,7 +32,7 @@ fn tab(visual: &mut VisualTestContext, index: usize) {
 
 fn number(visual: &mut VisualTestContext, selector: &str, value: &str) {
     click(visual, selector);
-    visual.simulate_keystrokes("ctrl-a");
+    support::primary_shortcut(visual, "a");
     visual.simulate_input(value);
     visual.simulate_keystrokes("enter");
     visual.run_until_parked();
@@ -244,7 +244,7 @@ fn video_output_layouts_calibrate_deliver_and_round_trip(cx: &mut TestAppContext
         ("output-format-rate", "50"),
     ] {
         click(&mut visual, selector);
-        visual.simulate_keystrokes("ctrl-a");
+        support::primary_shortcut(&mut visual, "a");
         visual.simulate_input(value);
         visual.run_until_parked();
     }

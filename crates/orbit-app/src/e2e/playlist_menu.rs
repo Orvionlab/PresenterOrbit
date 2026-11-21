@@ -596,7 +596,7 @@ fn continuous_playlist_follows_settings_toolbar_menu_and_restart(cx: &mut TestAp
         &format!("arrangement-manager-row-{arrangement_id}"),
     );
     click(&mut visual, "button-arrangement-manager-rename");
-    visual.simulate_keystrokes("ctrl-a");
+    support::primary_shortcut(&mut visual, "a");
     visual.simulate_input("Renamed arrangement");
     click(&mut visual, "button-cue-form-save");
     assert_eq!(id_for_name(cx, "Renamed arrangement"), arrangement_id);
@@ -1063,7 +1063,7 @@ fn playlist_header_settings_trigger_and_round_trip(cx: &mut TestAppContext) {
         .is_none());
     click(&mut visual, settings);
     click(&mut visual, "playlist-header-name");
-    visual.simulate_keystrokes("ctrl-a");
+    support::primary_shortcut(&mut visual, "a");
     visual.simulate_input("Service start");
     click(&mut visual, "playlist-header-timer");
     click(&mut visual, "select-option-1");
@@ -1073,7 +1073,7 @@ fn playlist_header_settings_trigger_and_round_trip(cx: &mut TestAppContext) {
     click(&mut visual, "select-option-0");
     click(&mut visual, "playlist-header-set-configuration");
     click(&mut visual, "playlist-header-config-durationSeconds");
-    visual.simulate_keystrokes("ctrl-a");
+    support::primary_shortcut(&mut visual, "a");
     visual.simulate_input("00:02:30");
     click(&mut visual, "playlist-header-color");
     let settings_color = orbit_ui::controls::STANDARD_COLORS[5];
@@ -1141,7 +1141,7 @@ fn playlist_header_settings_trigger_and_round_trip(cx: &mut TestAppContext) {
     app.wait(cx, |app, _| {
         configuration(app)["elapsedEndSeconds"].as_f64() == Some(60.)
     });
-    visual.simulate_keystrokes("ctrl-a backspace");
+    support::primary_shortcut(&mut visual, "a backspace");
     app.wait(cx, |app, _| {
         configuration(app)["elapsedEndSeconds"].is_null()
     });
@@ -1157,7 +1157,7 @@ fn playlist_header_settings_trigger_and_round_trip(cx: &mut TestAppContext) {
         &mut visual,
         "form-input-playlist-header-config-targetTimeSeconds",
     );
-    visual.simulate_keystrokes("ctrl-a");
+    support::primary_shortcut(&mut visual, "a");
     visual.simulate_input("12:05:00");
     app.wait(cx, |app, _| {
         let value = configuration(app);
