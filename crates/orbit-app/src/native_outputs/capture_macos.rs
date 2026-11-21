@@ -116,10 +116,11 @@ impl Page {
         }
         let (pending, key, done) = (pending.clone(), wanted.key.clone(), self.capturing.clone());
         let mtm = MainThreadMarker::new().expect("the browser helper owns AppKit");
-        let configuration = WKSnapshotConfiguration::new(mtm);
-        unsafe {
+        let configuration = unsafe {
+            let configuration = WKSnapshotConfiguration::new(mtm);
             configuration.setAfterScreenUpdates(false);
-        }
+            configuration
+        };
         let handler = block2::RcBlock::new(move |image: *mut NSImage, error: *mut NSError| {
             if let Some(tiff) = unsafe { image.as_ref() }.and_then(NSImage::TIFFRepresentation) {
                 deliver(&pending, &key, Captured::Encoded(tiff.to_vec(), true));
