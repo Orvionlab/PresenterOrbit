@@ -29,7 +29,7 @@ Presenter Orbit is an independent project. ProPresenter is a product of Renewed 
 
 ## Development
 
-Install Rust (the MSVC toolchain on Windows) and Node.js 26.5.1 with npm 12.0.2 (`.node-version` and `.nvmrc`; npm enforces the engine range). Then:
+Install Rust through rustup (use MSVC on Windows) and Node.js 26.5.1 with npm 12.0.2. Rustup reads the pinned version from `rust-toolchain.toml`. Then:
 
 ```bash
 npm install

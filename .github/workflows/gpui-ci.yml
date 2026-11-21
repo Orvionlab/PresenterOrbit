@@ -1,6 +1,6 @@
 name: GPUI CI
 
-# Windows runs `npm run verify`. macOS and Linux build and run the end-to-end suite as informational checks.
+# Windows runs `npm run verify`. macOS and Linux build and run the end-to-end suite.
 on:
   push:
     branches: [main, "gpui/**"]
@@ -52,16 +52,15 @@ jobs:
         run: cargo build --release -p orbit-app
 
   other-systems:
-    name: GPUI ${{ matrix.name }} (not yet required)
+    name: GPUI ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
-    continue-on-error: true
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
         include:
           - name: macOS arm64
-            os: macos-14
+            os: macos-15
           - name: Linux x64
             os: ubuntu-24.04
     steps:

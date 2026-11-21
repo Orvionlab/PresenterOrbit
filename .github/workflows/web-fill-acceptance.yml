@@ -18,7 +18,7 @@ jobs:
           - name: Windows
             os: windows-2022
           - name: macOS
-            os: macos-14
+            os: macos-15
           - name: Linux
             os: ubuntu-24.04
     steps:
