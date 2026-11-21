@@ -1,0 +1,15 @@
+node_modules/
+dist/
+compiled/
+target/
+out/
+artifacts/
+coverage/
+/.tmp/
+/vendor/ProPresenter7-Proto/
+*.log
+*.pdb
+.env
+.env.*
+.codex-remote-attachments/
+.vscode/

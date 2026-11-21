@@ -1,0 +1,9 @@
+pub mod foreground_audio;
+pub(crate) mod model;
+pub mod video_inputs;
+mod video_inputs_settings;
+mod video_inputs_view;
+mod view;
+pub use video_inputs::VideoInputs;
+pub(crate) use view::{transparency_background, AssetDrag};
+pub use view::{AudioBin, MediaBin, SidebarChanged};

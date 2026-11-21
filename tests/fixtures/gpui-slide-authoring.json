@@ -1,0 +1,555 @@
+[
+  {
+    "name": "an inherited text edit stores only its changed style and local content",
+    "kind": "store",
+    "source": {
+      "id": "slide",
+      "content": "Old",
+      "primaryTextLayerId": "text"
+    },
+    "theme": {
+      "id": "layout",
+      "width": 1000,
+      "height": 600,
+      "background": "#000000",
+      "layers": [
+        {
+          "id": "text",
+          "type": "Text",
+          "role": "primary",
+          "bounds": {
+            "x": 10,
+            "y": 10,
+            "width": 980,
+            "height": 580
+          },
+          "textStyle": {
+            "fontFamily": "Arial",
+            "fontSize": 40
+          }
+        }
+      ]
+    },
+    "changes": {
+      "content": "New",
+      "contentRuns": [
+        {
+          "text": "N",
+          "style": {
+            "bold": true
+          }
+        },
+        {
+          "text": "ew"
+        }
+      ]
+    },
+    "layerChanges": {
+      "text": {
+        "text": "New",
+        "textStyle": {
+          "fontFamily": "Arial",
+          "fontSize": 50
+        }
+      }
+    },
+    "expected": {
+      "id": "slide",
+      "content": "New",
+      "primaryTextLayerId": "text",
+      "contentRuns": [
+        {
+          "text": "N",
+          "style": {
+            "bold": true
+          }
+        },
+        {
+          "text": "ew"
+        }
+      ],
+      "themeLayerOverrides": {
+        "text": {
+          "textStyle": {
+            "fontSize": 50
+          }
+        }
+      },
+      "themeLayerOrder": [
+        "text"
+      ],
+      "layers": []
+    }
+  },
+  {
+    "name": "deleting an inherited decoration stores a hidden override",
+    "kind": "store",
+    "source": {
+      "id": "slide",
+      "content": "Old",
+      "primaryTextLayerId": "text"
+    },
+    "theme": {
+      "id": "layout",
+      "width": 1000,
+      "height": 600,
+      "background": "#000000",
+      "layers": [
+        {
+          "id": "text",
+          "type": "Text",
+          "role": "primary",
+          "bounds": {
+            "x": 10,
+            "y": 10,
+            "width": 980,
+            "height": 580
+          },
+          "textStyle": {
+            "fontFamily": "Arial",
+            "fontSize": 40
+          }
+        },
+        {
+          "id": "box",
+          "type": "Shape",
+          "shape": "rectangle",
+          "fill": "#ff0000"
+        }
+      ]
+    },
+    "removeLayer": "box",
+    "expected": {
+      "id": "slide",
+      "content": "Old",
+      "primaryTextLayerId": "text",
+      "themeLayerOverrides": {
+        "box": {
+          "hidden": true
+        }
+      },
+      "themeLayerOrder": [
+        "text"
+      ],
+      "layers": []
+    }
+  },
+  {
+    "name": "mixed fonts and emoji commit as explicit primary text runs",
+    "kind": "text",
+    "source": {
+      "id": "slide",
+      "width": 1920,
+      "height": 1080,
+      "content": "Hello",
+      "primaryTextLayerId": "local",
+      "layers": [
+        {
+          "id": "local",
+          "type": "Text",
+          "role": "primary",
+          "text": "Hello",
+          "textStyle": {
+            "fontFamily": "Roboto"
+          }
+        }
+      ]
+    },
+    "runs": [
+      {
+        "text": "Hé",
+        "style": {
+          "fontFamily": "Arial",
+          "fontSize": 48,
+          "bold": true
+        }
+      },
+      {
+        "text": " 🎵",
+        "style": {
+          "italic": true,
+          "underline": true,
+          "textColor": "#112233"
+        }
+      }
+    ],
+    "expected": {
+      "id": "slide",
+      "width": 1920,
+      "height": 1080,
+      "content": "Hé 🎵",
+      "primaryTextLayerId": "local",
+      "layers": [
+        {
+          "id": "local",
+          "type": "Text",
+          "role": "primary",
+          "text": "Hé 🎵",
+          "textStyle": {
+            "fontFamily": "Roboto"
+          },
+          "textRuns": [
+            {
+              "text": "Hé",
+              "style": {
+                "fontFamily": "Arial",
+                "fontSize": 48,
+                "bold": true
+              }
+            },
+            {
+              "text": " 🎵",
+              "style": {
+                "italic": true,
+                "underline": true,
+                "textColor": "#112233"
+              }
+            }
+          ]
+        }
+      ],
+      "contentRuns": [
+        {
+          "text": "Hé",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 48,
+            "bold": true
+          }
+        },
+        {
+          "text": " 🎵",
+          "style": {
+            "italic": true,
+            "underline": true,
+            "textColor": "#112233"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "plain text commits remove obsolete rich runs",
+    "kind": "text",
+    "source": {
+      "id": "slide",
+      "width": 1920,
+      "height": 1080,
+      "content": "Hello",
+      "primaryTextLayerId": "local",
+      "layers": [
+        {
+          "id": "local",
+          "type": "Text",
+          "role": "primary",
+          "text": "Hello",
+          "textStyle": {
+            "fontFamily": "Roboto"
+          }
+        }
+      ],
+      "contentRuns": [
+        {
+          "text": "Hello",
+          "style": {
+            "bold": true
+          }
+        }
+      ]
+    },
+    "runs": [
+      {
+        "text": "Plain"
+      }
+    ],
+    "expected": {
+      "id": "slide",
+      "width": 1920,
+      "height": 1080,
+      "content": "Plain",
+      "primaryTextLayerId": "local",
+      "layers": [
+        {
+          "id": "local",
+          "type": "Text",
+          "role": "primary",
+          "text": "Plain",
+          "textStyle": {
+            "fontFamily": "Roboto"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "styled notes leave the slide content and its layers intact",
+    "kind": "notes",
+    "source": {
+      "id": "slide",
+      "width": 1920,
+      "height": 1080,
+      "content": "Hello",
+      "primaryTextLayerId": "local",
+      "layers": [
+        {
+          "id": "local",
+          "type": "Text",
+          "role": "primary",
+          "text": "Hello",
+          "textStyle": {
+            "fontFamily": "Roboto"
+          }
+        }
+      ]
+    },
+    "runs": [
+      {
+        "text": "Watch",
+        "style": {
+          "bold": true
+        }
+      },
+      {
+        "text": " next",
+        "style": {
+          "italic": true,
+          "underline": true
+        }
+      }
+    ],
+    "expected": {
+      "id": "slide",
+      "width": 1920,
+      "height": 1080,
+      "content": "Hello",
+      "primaryTextLayerId": "local",
+      "layers": [
+        {
+          "id": "local",
+          "type": "Text",
+          "role": "primary",
+          "text": "Hello",
+          "textStyle": {
+            "fontFamily": "Roboto"
+          }
+        }
+      ],
+      "notes": "Watch next",
+      "notesRuns": [
+        {
+          "text": "Watch",
+          "style": {
+            "bold": true
+          }
+        },
+        {
+          "text": " next",
+          "style": {
+            "italic": true,
+            "underline": true
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "notes keep their decorations and paragraph styles through an inserted paragraph",
+    "kind": "notes",
+    "source": {
+      "id": "slide",
+      "width": 1920,
+      "height": 1080,
+      "content": "Hello",
+      "primaryTextLayerId": "local",
+      "layers": [
+        {
+          "id": "local",
+          "type": "Text",
+          "role": "primary",
+          "text": "Hello",
+          "textStyle": {
+            "fontFamily": "Roboto"
+          }
+        }
+      ],
+      "notes": "A\nB\nC",
+      "notesRuns": [
+        {
+          "text": "A\nB\nC"
+        }
+      ],
+      "notesTextStyle": {
+        "textParagraphStyles": [
+          {
+            "textHorizontalAlign": "left"
+          },
+          {
+            "textHorizontalAlign": "center"
+          },
+          {
+            "textHorizontalAlign": "right"
+          }
+        ]
+      }
+    },
+    "runs": [
+      {
+        "text": "A\nNew\n",
+        "style": {
+          "letterSpacing": 2,
+          "superscript": -1,
+          "underline": true,
+          "underlineStyle": "double",
+          "underlinePattern": "dash-dot",
+          "underlineByWord": true,
+          "underlineColor": "#ff0000",
+          "strikethrough": true,
+          "strikethroughStyle": "thick",
+          "strikethroughPattern": "dot",
+          "strikethroughByWord": false,
+          "strikethroughColor": "#00ff00"
+        }
+      },
+      {
+        "text": "B\nC"
+      }
+    ],
+    "expected": {
+      "id": "slide",
+      "width": 1920,
+      "height": 1080,
+      "content": "Hello",
+      "primaryTextLayerId": "local",
+      "layers": [
+        {
+          "id": "local",
+          "type": "Text",
+          "role": "primary",
+          "text": "Hello",
+          "textStyle": {
+            "fontFamily": "Roboto"
+          }
+        }
+      ],
+      "notes": "A\nNew\nB\nC",
+      "notesRuns": [
+        {
+          "text": "A\nNew\n",
+          "style": {
+            "letterSpacing": 2,
+            "superscript": -1,
+            "underline": true,
+            "underlineStyle": "double",
+            "underlinePattern": "dash-dot",
+            "underlineByWord": true,
+            "underlineColor": "#ff0000",
+            "strikethrough": true,
+            "strikethroughStyle": "thick",
+            "strikethroughPattern": "dot",
+            "strikethroughByWord": false,
+            "strikethroughColor": "#00ff00"
+          }
+        },
+        {
+          "text": "B\nC"
+        }
+      ],
+      "notesTextStyle": {
+        "textParagraphStyles": [
+          {
+            "textHorizontalAlign": "left"
+          },
+          {
+            "textHorizontalAlign": "left"
+          },
+          {
+            "textHorizontalAlign": "center"
+          },
+          {
+            "textHorizontalAlign": "right"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "a removed note paragraph drops its override and a changed one keeps it",
+    "kind": "notes",
+    "source": {
+      "id": "slide",
+      "width": 1920,
+      "height": 1080,
+      "content": "Hello",
+      "primaryTextLayerId": "local",
+      "layers": [
+        {
+          "id": "local",
+          "type": "Text",
+          "role": "primary",
+          "text": "Hello",
+          "textStyle": {
+            "fontFamily": "Roboto"
+          }
+        }
+      ],
+      "notes": "A\nB\nC",
+      "notesRuns": [
+        {
+          "text": "A\nB\nC"
+        }
+      ],
+      "notesTextStyle": {
+        "textParagraphStyles": [
+          {
+            "textHorizontalAlign": "left"
+          },
+          {
+            "textHorizontalAlign": "center"
+          },
+          {
+            "textHorizontalAlign": "right"
+          }
+        ]
+      }
+    },
+    "runs": [
+      {
+        "text": "A\nChanged"
+      }
+    ],
+    "expected": {
+      "id": "slide",
+      "width": 1920,
+      "height": 1080,
+      "content": "Hello",
+      "primaryTextLayerId": "local",
+      "layers": [
+        {
+          "id": "local",
+          "type": "Text",
+          "role": "primary",
+          "text": "Hello",
+          "textStyle": {
+            "fontFamily": "Roboto"
+          }
+        }
+      ],
+      "notes": "A\nChanged",
+      "notesRuns": [
+        {
+          "text": "A\nChanged"
+        }
+      ],
+      "notesTextStyle": {
+        "textParagraphStyles": [
+          {
+            "textHorizontalAlign": "left"
+          },
+          {
+            "textHorizontalAlign": "center"
+          }
+        ]
+      }
+    }
+  }
+]

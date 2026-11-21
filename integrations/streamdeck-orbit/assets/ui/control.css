@@ -1,0 +1,55 @@
+:root {
+  color-scheme: dark;
+  font: 12px system-ui;
+  color: #eee;
+  background: #2d2d2d;
+}
+body {
+  margin: 12px;
+}
+fieldset {
+  border: 1px solid #555;
+  border-radius: 5px;
+  margin: 12px 0;
+  padding: 10px;
+}
+legend {
+  font-weight: 600;
+}
+label {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  margin: 9px 0;
+}
+input,
+select,
+button {
+  font: inherit;
+  min-width: 0;
+  padding: 6px;
+  border: 1px solid #666;
+  border-radius: 3px;
+  background: #383838;
+  color: inherit;
+}
+button {
+  cursor: pointer;
+}
+input:focus,
+select:focus,
+button:focus {
+  outline: 2px solid #8fc9ff;
+}
+p {
+  line-height: 1.5;
+  color: #ccc;
+  overflow-wrap: anywhere;
+}
+[hidden] {
+  display: none;
+}
+#result {
+  color: #ffcf8f;
+}

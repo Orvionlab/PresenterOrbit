@@ -1,0 +1,19 @@
+{
+  "name": "presenter-orbit-streamdeck",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "GPL-3.0-only",
+  "scripts": {
+    "build": "node build.mjs",
+    "check": "npm run build && streamdeck validate com.presenterorbit.control.sdPlugin",
+    "package": "npm run build && streamdeck pack com.presenterorbit.control.sdPlugin --output dist --force"
+  },
+  "dependencies": {
+    "@elgato/streamdeck": "2.1.2"
+  },
+  "devDependencies": {
+    "@elgato/cli": "1.10.3",
+    "esbuild": "0.28.2"
+  }
+}

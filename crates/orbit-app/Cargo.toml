@@ -1,0 +1,62 @@
+[package]
+name = "orbit-app"
+version.workspace = true
+description = "Presenter Orbit desktop application on GPUI"
+authors = ["Orvion Lab"]
+license = "GPL-3.0-only"
+edition = "2021"
+publish = false
+
+[dependencies]
+gpui = { package = "gpui-pre", version = "=0.3.11" }
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.11", features = ["font-kit", "x11", "wayland", "runtime_shaders"] }
+orbit-host = { path = "../orbit-host" }
+orbit-ui = { path = "../orbit-ui" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+futures = "0.3"
+dirs = "6"
+raw-window-handle = "0.6"
+auto-launch = "0.5"
+wry = "=0.55.1"
+url = "2"
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+base64 = "0.22"
+minisign-verify = "0.2"
+semver = "1"
+ureq = { version = "3.4", default-features = false, features = ["rustls", "gzip"] }
+image = { version = "0.25.10", default-features = false, features = ["png", "tiff"] }
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_System_Com", "Win32_System_LibraryLoader", "Win32_UI_HiDpi", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+webview2-com = "0.38"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+winit = { version = "=0.30.13", default-features = false, features = ["x11", "rwh_06"] }
+x11-dl = "2.21"
+gtk = "0.18"
+webkit2gtk = { version = "=2.0.2", features = ["v2_38"] }
+cairo-rs = "0.18"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+block2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSWindow", "NSScreen", "NSEvent", "NSButton", "NSControl", "NSCell", "NSGraphics", "NSResponder", "NSImage", "NSView"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "block2", "NSTimer", "NSThread", "NSString", "NSArray", "NSDictionary", "NSValue", "NSDate", "NSRunLoop", "NSNotification", "NSOperation", "NSData", "NSError"] }
+
+objc2-web-kit = { version = "0.3", default-features = false, features = ["std", "block2", "objc2-app-kit", "WKWebView", "WKSnapshotConfiguration"] }
+
+[target.'cfg(any(windows, target_os = "macos"))'.dependencies]
+tray-icon = { version = "0.24.2", default-features = false }
+
+[dev-dependencies]
+ring = "0.17"
+gpui = { package = "gpui-pre", version = "=0.3.11", features = ["test-support"] }
+
+[build-dependencies]
+embed-resource = "=3.0.11"
+
+[features]
+dev-hot-reload = ["gpui/hot-reload"]
+web-fill-acceptance = []

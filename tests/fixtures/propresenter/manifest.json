@@ -1,0 +1,122 @@
+{
+  "provenance": "synthetic",
+  "schema": "vendored Proto7.16.2",
+  "cases": [
+    {
+      "file": "layered.pro",
+      "kind": "presentation",
+      "slideCount": 1,
+      "expected": {
+        "/title": "Layered song",
+        "/sourceId": "00000000-0000-4000-8000-000000000001",
+        "/operatorNotes": "Operator notes",
+        "/slides/0/content": "Sing\nPeace é",
+        "/slides/0/label": "Verse 1",
+        "/slides/0/sourceCueId": "00000000-0000-4000-8000-000000000011",
+        "/slides/0/primaryTextLayerId": "00000000-0000-4000-8000-000000000201",
+        "/slides/0/layers/0/text": "Sing\nPeace é",
+        "/slides/0/layers/1/text": "Copyright 2026",
+        "/slides/0/layers/0/bounds": {
+          "x": 100,
+          "y": 120,
+          "width": 1600,
+          "height": 600
+        },
+        "/slides/0/layers/1/bounds": {
+          "x": 120,
+          "y": 900,
+          "width": 1500,
+          "height": 100
+        },
+        "/slides/0/layers/0/textStyle/fontFamily": "Arial",
+        "/slides/0/layers/0/textStyle/fontSize": 42
+      }
+    },
+    {
+      "file": "empty-groups-arrangements.pro",
+      "kind": "presentation",
+      "slideCount": 3,
+      "expected": {
+        "/slides/0/groupId": "verse-1",
+        "/slides/1/groupId": "pause",
+        "/slides/1/groupName": "Pause",
+        "/slides/1/content": "",
+        "/slides/1/disabled": true,
+        "/slides/1/sourceCueId": "00000000-0000-4000-8000-000000000012",
+        "/slides/2/content": "",
+        "/slides/2/layers/0/text": "",
+        "/slides/2/layers/1/text": "Copyright 2026",
+        "/groups/0/sourceId": "00000000-0000-4000-8000-000000000021",
+        "/groups/1/name": "Pause",
+        "/selectedArrangementId": "00000000-0000-4000-8000-000000000031",
+        "/arrangements/0/name": "Repeat verse",
+        "/arrangements/0/sectionIds": [
+          "00000000-0000-4000-8000-000000000021",
+          "00000000-0000-4000-8000-000000000022",
+          "00000000-0000-4000-8000-000000000021"
+        ]
+      }
+    },
+    {
+      "file": "media.pro",
+      "kind": "presentation",
+      "slideCount": 1,
+      "expected": {
+        "/slides/0/layers/1/type": "Media",
+        "/slides/0/layers/1/mediaUrl": "file:///C:/Corpus/logo.png",
+        "/slides/0/layers/2/type": "Video",
+        "/slides/0/layers/2/mediaUrl": "file:///C:/Corpus/background.mp4",
+        "/slides/0/layers/2/mediaPlayback": "Loop",
+        "/slides/0/actions/1/type": "media",
+        "/slides/0/actions/1/targetId": "file:///C:/Corpus/background.mp4",
+        "/slides/0/actions/1/details/mediaType": "video",
+        "/slides/0/actions/1/details/playback": "PLAYBACK_BEHAVIOR_LOOP"
+      }
+    },
+    {
+      "file": "Theme",
+      "kind": "template",
+      "slideCount": 2,
+      "expected": {
+        "/slides/0/name": "Two text regions",
+        "/slides/0/width": 1280,
+        "/slides/0/height": 720,
+        "/slides/0/layers/0/text": "Sing\nPeace é",
+        "/slides/0/layers/1/text": "Copyright 2026",
+        "/slides/1/name": "Blank",
+        "/slides/1/content": "",
+        "/slides/1/backgroundEnabled": false
+      }
+    },
+    {
+      "file": "unknown-version.pro",
+      "kind": "presentation",
+      "slideCount": 1,
+      "expected": {
+        "/title": "Layered song",
+        "/sourceId": "00000000-0000-4000-8000-000000000001",
+        "/operatorNotes": "Operator notes",
+        "/slides/0/content": "Sing\nPeace é",
+        "/slides/0/label": "Verse 1",
+        "/slides/0/sourceCueId": "00000000-0000-4000-8000-000000000011",
+        "/slides/0/primaryTextLayerId": "00000000-0000-4000-8000-000000000201",
+        "/slides/0/layers/0/text": "Sing\nPeace é",
+        "/slides/0/layers/1/text": "Copyright 2026",
+        "/slides/0/layers/0/bounds": {
+          "x": 100,
+          "y": 120,
+          "width": 1600,
+          "height": 600
+        },
+        "/slides/0/layers/1/bounds": {
+          "x": 120,
+          "y": 900,
+          "width": 1500,
+          "height": 100
+        },
+        "/slides/0/layers/0/textStyle/fontFamily": "Arial",
+        "/slides/0/layers/0/textStyle/fontSize": 42
+      }
+    }
+  ]
+}

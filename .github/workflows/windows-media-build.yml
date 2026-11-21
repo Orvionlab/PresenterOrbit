@@ -1,0 +1,69 @@
+name: Windows bundled media tools
+
+on:
+  workflow_call:
+    inputs:
+      architectures:
+        type: string
+        default: '["x64", "arm64"]'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  media:
+    name: FFmpeg and ffprobe Windows ${{ matrix.architecture }}
+    if: github.event.repository.private == true
+    runs-on: [self-hosted, Linux, X64, orbit-linux-x64]
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        architecture: ${{ fromJSON(inputs.architectures || '["x64", "arm64"]') }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Configure local caches
+        run: node scripts/configure-local-runner-caches.mts
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26.5.1
+          package-manager-cache: false
+      - name: Install pinned npm
+        run: npm install --global npm@12.0.2
+      - name: Prepare verified LLVM-MinGW source-build toolchain
+        shell: bash
+        run: |
+          toolchain_root=$(mktemp -d "$RUNNER_TEMP/orbit-llvm-mingw.XXXXXXXX")
+          archive="$toolchain_root/llvm-mingw.tar.xz"
+          curl --fail --show-error --location --output "$archive" https://github.com/mstorsjo/llvm-mingw/releases/download/20261006/llvm-mingw-20261006-ucrt-ubuntu-22.04-x86_64.tar.xz
+          printf '%s  %s\n' '5f9c6ed95b2d4bdb2869a488c5fd5857fbdabcf288a0aa3eb1da43f6a08d8ab4' "$archive" | sha256sum --check -
+          tar -xf "$archive" -C "$toolchain_root"
+          sdk="$toolchain_root/llvm-mingw-20261006-ucrt-ubuntu-22.04-x86_64"
+          echo "$sdk/bin" >> "$GITHUB_PATH"
+          mkdir "$toolchain_root/licenses"
+          cp "$sdk/LICENSE.TXT" "$toolchain_root/licenses/LLVM-LICENSE.TXT"
+          cp -R "$sdk/x86_64-w64-mingw32/share/mingw32" "$toolchain_root/licenses/mingw-x64"
+          cp -R "$sdk/aarch64-w64-mingw32/share/mingw32" "$toolchain_root/licenses/mingw-arm64"
+          echo "PRESENTER_ORBIT_FFMPEG_TOOLCHAIN_LICENSES=$toolchain_root/licenses" >> "$GITHUB_ENV"
+          command -v make
+          command -v nasm
+          command -v pkg-config
+      - name: Build from pinned corresponding sources
+        env:
+          TARGET_ARCHITECTURE: ${{ matrix.architecture }}
+        run: |
+          case "$TARGET_ARCHITECTURE" in
+            x64) export PRESENTER_ORBIT_FFMPEG_MINGW_PREFIX=x86_64-w64-mingw32- ;;
+            arm64) export PRESENTER_ORBIT_FFMPEG_MINGW_PREFIX=aarch64-w64-mingw32- ;;
+            *) echo 'Unsupported Windows media architecture.' >&2; exit 1 ;;
+          esac
+          node scripts/package-ffmpeg.mts --platform windows "--$TARGET_ARCHITECTURE"
+      - name: Retain binaries and complete corresponding sources
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: windows-media-${{ matrix.architecture }}
+          path: artifacts/package-ffmpeg/windows-${{ matrix.architecture }}/
+          if-no-files-found: error

@@ -1,0 +1,61 @@
+name: GPUI burn-in
+
+# The GPUI counterpart of critical-burn-in.yml: repeats the test suites and the packaged-application smoke test.
+# The service-length burn-in on real hardware (hours of live output, leak check) is a manual release step and is
+# not something CI can replace (docs/gpui-migration/phase-16.md).
+on:
+  schedule:
+    - cron: "30 3 * * 3"
+  workflow_dispatch:
+    inputs:
+      repetitions:
+        description: Smoke test repetitions
+        type: string
+        default: "5"
+
+permissions:
+  contents: read
+
+jobs:
+  burn-in:
+    name: Repeat GPUI tests and smoke runs
+    if: github.event.repository.private == true
+    runs-on: [self-hosted, Windows, X64, orbit-package-tests]
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Configure persistent local build caches
+        if: runner.environment == 'self-hosted'
+        run: node scripts/configure-local-runner-caches.mts
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26.5.1
+          package-manager-cache: false
+
+      - name: Install pinned npm
+        run: npm install --global npm@12.0.2
+
+      - name: Run the end-to-end operator workflows
+        run: npm run test:e2e
+        env:
+          NDI_RUNTIME_PATH: ${{ runner.temp }}/presenter-orbit-no-ndi-runtime
+
+      - name: Package
+        run: node scripts/package-gpui.mts --platform windows --x64 --out "${{ runner.temp }}/gpui-package"
+
+      - name: Repeat the packaged smoke test
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem "${{ runner.temp }}/gpui-package" -Filter *-portable.zip | Select-Object -First 1
+          $folder = Join-Path "${{ runner.temp }}" "gpui-portable"
+          Remove-Item $folder -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory $folder | Out-Null
+          tar.exe -xf $zip.FullName -C $folder
+          1..[int]"${{ inputs.repetitions || '5' }}" | ForEach-Object {
+            node scripts/gpui-smoke.mts --dir $folder --seconds 20
+            if ($LASTEXITCODE -ne 0) { throw "Smoke run $_ failed." }
+          }

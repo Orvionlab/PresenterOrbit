@@ -1,0 +1,110 @@
+name: GPUI CI
+
+# The repository gate. Windows runs `npm run verify` (see AGENTS.md); macOS and Linux build and test but may fail
+# until they have been run on real machines (Phase 16 of docs/gpui-migration).
+on:
+  push:
+    branches: [main, "gpui/**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: GPUI Windows x64
+    runs-on: ${{ github.event.repository.private == true && github.event_name != 'pull_request' && fromJSON('["self-hosted","Windows","X64","orbit-windows-x64"]') || 'windows-2025' }}
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Configure persistent local build caches
+        if: runner.environment == 'self-hosted'
+        run: node scripts/configure-local-runner-caches.mts
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26.5.1
+          package-manager-cache: false
+
+      - name: Install pinned npm
+        run: npm install --global npm@12.0.2
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Prepare hosted Windows media tools
+        if: runner.environment == 'github-hosted'
+        run: |
+          if (!(Get-Command ffmpeg -ErrorAction SilentlyContinue) -or !(Get-Command ffprobe -ErrorAction SilentlyContinue)) {
+            choco install ffmpeg --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+
+      - name: Run the gate (script rules, fmt, clippy ratchet, tests)
+        run: npm run verify
+        env:
+          NDI_RUNTIME_PATH: ${{ runner.temp }}/presenter-orbit-no-ndi-runtime
+
+      - name: Build the release application
+        run: cargo build --release -p orbit-app
+
+  other-systems:
+    name: GPUI ${{ matrix.name }} (not yet required)
+    runs-on: ${{ matrix.os }}
+    continue-on-error: true
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS arm64
+            os: macos-14
+          - name: Linux x64
+            os: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26.5.1
+          package-manager-cache: false
+
+      - name: Install pinned npm and the reference schemas
+        run: |
+          npm install --global npm@12.0.2
+          npm ci
+
+      - name: Install Linux build prerequisites
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes build-essential libfontconfig-dev libgtk-3-dev libssl-dev libvulkan1 \
+            libwayland-dev libwebkit2gtk-4.1-dev libasound2-dev libx11-xcb-dev libxdo-dev libxkbcommon-x11-dev \
+            librsvg2-dev ffmpeg
+
+      - name: Prepare macOS test prerequisites
+        if: runner.os == 'macOS'
+        run: |
+          brew install ffmpeg
+          sudo ifconfig lo0 alias 127.0.0.2 up
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+        with:
+          workspaces: . -> target
+          shared-key: ${{ runner.os }}-gpui
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Build the application
+        run: cargo build -p orbit-app
+
+      - name: Run the end-to-end operator workflows
+        run: npm run test:e2e
+        env:
+          NDI_RUNTIME_PATH: ${{ runner.temp }}/presenter-orbit-no-ndi-runtime

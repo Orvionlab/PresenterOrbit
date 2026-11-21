@@ -1,0 +1,68 @@
+name: GPUI native web fill acceptance
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  platform-browser:
+    name: ${{ matrix.name }} browser pixels and lifecycle
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows
+            os: windows-2022
+          - name: macOS
+            os: macos-14
+          - name: Linux
+            os: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26.5.1
+          cache: npm
+
+      - name: Install pinned npm
+        run: npm install --global npm@12.0.2
+
+      - name: Install Linux browser prerequisites
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes build-essential libgtk-3-dev libssl-dev libwebkit2gtk-4.1-dev libasound2-dev libxdo-dev librsvg2-dev libfontconfig1-dev libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libxcb-shape0-dev libxcb-xfixes0-dev libx11-xcb-dev libvulkan-dev libegl1-mesa-dev mesa-vulkan-drivers glslc fonts-dejavu-core xvfb dbus-x11
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+        with:
+          workspaces: . -> target
+          shared-key: ${{ matrix.os }}-web-fill-acceptance
+
+      - name: Build native browser acceptance
+        run: cargo build --locked -p orbit-app --features web-fill-acceptance
+
+      - name: Run browser acceptance on the main thread
+        shell: bash
+        run: |
+          if [[ "${{ runner.os }}" == "Linux" ]]; then
+            dbus-run-session -- xvfb-run -a -s "-screen 0 1920x1080x24" bash -c 'exec target/debug/orbit-app --web-fill-acceptance > web-fill-acceptance.json'
+          elif [[ "${{ runner.os }}" == "Windows" ]]; then
+            target/debug/orbit-app.exe --web-fill-acceptance > web-fill-acceptance.json
+          else
+            target/debug/orbit-app --web-fill-acceptance > web-fill-acceptance.json
+          fi
+
+      - name: Upload runtime evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ runner.os }}-web-fill-acceptance
+          path: web-fill-acceptance.json

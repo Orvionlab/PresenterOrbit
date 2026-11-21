@@ -1,0 +1,2030 @@
+{
+  "stageLayouts": [
+    {
+      "id": "basic-stage-current-next-text",
+      "title": "Current + Next Text",
+      "slide": {
+        "id": "basic-stage-current-next-text-slide",
+        "name": "Current + Next Text",
+        "width": 1920,
+        "height": 1080,
+        "background": "#0d1421",
+        "backgroundEnabled": true,
+        "content": "",
+        "layers": [
+          {
+            "id": "current-label",
+            "name": "Current",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 92,
+              "y": 82,
+              "width": 800,
+              "height": 50
+            },
+            "text": "Current",
+            "textStyle": {
+              "fontSize": 34,
+              "textColor": "#a9bad1",
+              "textHorizontalAlign": "left",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "bold": true
+            }
+          },
+          {
+            "id": "current",
+            "name": "Current slide",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 92,
+              "y": 142,
+              "width": 1736,
+              "height": 362
+            },
+            "text": "Welcome to the open studio.",
+            "textStyle": {
+              "fontSize": 104,
+              "textColor": "#f2f6fb",
+              "textHorizontalAlign": "left",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "linkedTextEnabled": true,
+              "linkedTextSource": "Current Slide",
+              "bold": true
+            }
+          },
+          {
+            "id": "divider",
+            "name": "Divider",
+            "type": "Shape",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 92,
+              "y": 526,
+              "width": 1736,
+              "height": 4
+            },
+            "fill": "#1a2a3f",
+            "fillEnabled": true,
+            "fillType": "color"
+          },
+          {
+            "id": "next-label",
+            "name": "Up next",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 92,
+              "y": 559,
+              "width": 800,
+              "height": 50
+            },
+            "text": "Up next",
+            "textStyle": {
+              "fontSize": 34,
+              "textColor": "#a9bad1",
+              "textHorizontalAlign": "left",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "bold": true
+            }
+          },
+          {
+            "id": "next",
+            "name": "Next slide",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 92,
+              "y": 612,
+              "width": 1736,
+              "height": 200
+            },
+            "text": "Pick a table to get started.",
+            "textStyle": {
+              "fontSize": 76,
+              "textColor": "#68e0c0",
+              "textHorizontalAlign": "left",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "linkedTextEnabled": true,
+              "linkedTextSource": "Next Slide"
+            }
+          },
+          {
+            "id": "footer",
+            "name": "Timing strip",
+            "type": "Shape",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 64,
+              "y": 838,
+              "width": 1792,
+              "height": 176
+            },
+            "fill": "#1a2a3f",
+            "fillEnabled": true,
+            "fillType": "color"
+          },
+          {
+            "id": "clock-label",
+            "name": "Clock",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 128,
+              "y": 855,
+              "width": 348,
+              "height": 46
+            },
+            "text": "Clock",
+            "textStyle": {
+              "fontSize": 34,
+              "textColor": "#a9bad1",
+              "textHorizontalAlign": "left",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "bold": true
+            }
+          },
+          {
+            "id": "timer-label",
+            "name": "Segment",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 695,
+              "y": 855,
+              "width": 380,
+              "height": 46
+            },
+            "text": "Segment",
+            "textStyle": {
+              "fontSize": 34,
+              "textColor": "#a9bad1",
+              "textHorizontalAlign": "left",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "bold": true
+            }
+          },
+          {
+            "id": "video-label",
+            "name": "Video remaining",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 1262,
+              "y": 855,
+              "width": 520,
+              "height": 46
+            },
+            "text": "Video remaining",
+            "textStyle": {
+              "fontSize": 34,
+              "textColor": "#a9bad1",
+              "textHorizontalAlign": "left",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "bold": true
+            }
+          },
+          {
+            "id": "clock",
+            "name": "Clock",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 103,
+              "y": 902,
+              "width": 398,
+              "height": 91
+            },
+            "text": "14:25",
+            "textStyle": {
+              "fontSize": 74,
+              "textColor": "#f2f6fb",
+              "textHorizontalAlign": "center",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "linkedTextEnabled": true,
+              "linkedTextSource": "System Clock",
+              "systemClockTimeFormat": "hours-minutes",
+              "systemClockDateFormat": "none",
+              "systemClockUse24Hour": true,
+              "systemClockFormatString": "${clock}"
+            }
+          },
+          {
+            "id": "timer",
+            "name": "Segment countdown",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 672,
+              "y": 902,
+              "width": 418,
+              "height": 91
+            },
+            "text": "05:00",
+            "textStyle": {
+              "fontSize": 74,
+              "textColor": "#68e0c0",
+              "textHorizontalAlign": "center",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "linkedTextEnabled": true,
+              "linkedTextSource": "Countdown Timer",
+              "linkedTextTimerId": "7bdebe74-0aa6-4665-8e31-98831ae5adc8",
+              "linkedTextTimerName": "Segment Countdown"
+            }
+          },
+          {
+            "id": "video",
+            "name": "Video remaining",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 1242,
+              "y": 902,
+              "width": 480,
+              "height": 91
+            },
+            "text": "01:12",
+            "textStyle": {
+              "fontSize": 74,
+              "textColor": "#f2f6fb",
+              "textHorizontalAlign": "center",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "linkedTextEnabled": true,
+              "linkedTextSource": "Video Countdown",
+              "videoCountdownSource": "presentation"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "basic-stage-current-text-notes",
+      "title": "Current Text + Notes",
+      "slide": {
+        "id": "basic-stage-current-text-notes-slide",
+        "name": "Current Text + Notes",
+        "width": 1920,
+        "height": 1080,
+        "background": "#0d1421",
+        "backgroundEnabled": true,
+        "content": "",
+        "layers": [
+          {
+            "id": "current-label",
+            "name": "Current",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 92,
+              "y": 76,
+              "width": 800,
+              "height": 48
+            },
+            "text": "Current",
+            "textStyle": {
+              "fontSize": 34,
+              "textColor": "#a9bad1",
+              "textHorizontalAlign": "left",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "bold": true
+            }
+          },
+          {
+            "id": "current",
+            "name": "Current slide",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 92,
+              "y": 134,
+              "width": 1110,
+              "height": 660
+            },
+            "text": "Welcome to the open studio.",
+            "textStyle": {
+              "fontSize": 96,
+              "textColor": "#f2f6fb",
+              "textHorizontalAlign": "left",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "linkedTextEnabled": true,
+              "linkedTextSource": "Current Slide",
+              "bold": true
+            }
+          },
+          {
+            "id": "notes-panel",
+            "name": "Notes panel",
+            "type": "Shape",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 1260,
+              "y": 76,
+              "width": 568,
+              "height": 718
+            },
+            "fill": "#1a2a3f",
+            "fillEnabled": true,
+            "fillType": "color"
+          },
+          {
+            "id": "notes-label",
+            "name": "Notes",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 1296,
+              "y": 111,
+              "width": 470,
+              "height": 48
+            },
+            "text": "Notes",
+            "textStyle": {
+              "fontSize": 34,
+              "textColor": "#a9bad1",
+              "textHorizontalAlign": "left",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "bold": true
+            }
+          },
+          {
+            "id": "notes",
+            "name": "Speaker notes",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 1296,
+              "y": 173,
+              "width": 492,
+              "height": 581
+            },
+            "text": "Allow time for a short introduction.",
+            "textStyle": {
+              "fontSize": 64,
+              "textColor": "#f2f6fb",
+              "textHorizontalAlign": "left",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "linkedTextEnabled": true,
+              "linkedTextSource": "Slide Notes"
+            }
+          },
+          {
+            "id": "footer",
+            "name": "Timing strip",
+            "type": "Shape",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 64,
+              "y": 838,
+              "width": 1792,
+              "height": 176
+            },
+            "fill": "#1a2a3f",
+            "fillEnabled": true,
+            "fillType": "color"
+          },
+          {
+            "id": "clock-label",
+            "name": "Clock",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 128,
+              "y": 855,
+              "width": 348,
+              "height": 46
+            },
+            "text": "Clock",
+            "textStyle": {
+              "fontSize": 34,
+              "textColor": "#a9bad1",
+              "textHorizontalAlign": "left",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "bold": true
+            }
+          },
+          {
+            "id": "timer-label",
+            "name": "Segment",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 695,
+              "y": 855,
+              "width": 380,
+              "height": 46
+            },
+            "text": "Segment",
+            "textStyle": {
+              "fontSize": 34,
+              "textColor": "#a9bad1",
+              "textHorizontalAlign": "left",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "bold": true
+            }
+          },
+          {
+            "id": "video-label",
+            "name": "Video remaining",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 1262,
+              "y": 855,
+              "width": 520,
+              "height": 46
+            },
+            "text": "Video remaining",
+            "textStyle": {
+              "fontSize": 34,
+              "textColor": "#a9bad1",
+              "textHorizontalAlign": "left",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "bold": true
+            }
+          },
+          {
+            "id": "clock",
+            "name": "Clock",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 103,
+              "y": 902,
+              "width": 398,
+              "height": 91
+            },
+            "text": "14:25",
+            "textStyle": {
+              "fontSize": 74,
+              "textColor": "#f2f6fb",
+              "textHorizontalAlign": "center",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "linkedTextEnabled": true,
+              "linkedTextSource": "System Clock",
+              "systemClockTimeFormat": "hours-minutes",
+              "systemClockDateFormat": "none",
+              "systemClockUse24Hour": true,
+              "systemClockFormatString": "${clock}"
+            }
+          },
+          {
+            "id": "timer",
+            "name": "Segment countdown",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 672,
+              "y": 902,
+              "width": 418,
+              "height": 91
+            },
+            "text": "05:00",
+            "textStyle": {
+              "fontSize": 74,
+              "textColor": "#68e0c0",
+              "textHorizontalAlign": "center",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "linkedTextEnabled": true,
+              "linkedTextSource": "Countdown Timer",
+              "linkedTextTimerId": "7bdebe74-0aa6-4665-8e31-98831ae5adc8",
+              "linkedTextTimerName": "Segment Countdown"
+            }
+          },
+          {
+            "id": "video",
+            "name": "Video remaining",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 1242,
+              "y": 902,
+              "width": 480,
+              "height": 91
+            },
+            "text": "01:12",
+            "textStyle": {
+              "fontSize": 74,
+              "textColor": "#f2f6fb",
+              "textHorizontalAlign": "center",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "linkedTextEnabled": true,
+              "linkedTextSource": "Video Countdown",
+              "videoCountdownSource": "presentation"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "basic-stage-current-next-previews",
+      "title": "Current + Next Previews",
+      "slide": {
+        "id": "basic-stage-current-next-previews-slide",
+        "name": "Current + Next Previews",
+        "width": 1920,
+        "height": 1080,
+        "background": "#0d1421",
+        "backgroundEnabled": true,
+        "content": "",
+        "layers": [
+          {
+            "id": "current-label",
+            "name": "Current",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 92,
+              "y": 50,
+              "width": 820,
+              "height": 48
+            },
+            "text": "Current",
+            "textStyle": {
+              "fontSize": 34,
+              "textColor": "#a9bad1",
+              "textHorizontalAlign": "left",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "bold": true
+            }
+          },
+          {
+            "id": "next-label",
+            "name": "Up next",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 992,
+              "y": 50,
+              "width": 820,
+              "height": 48
+            },
+            "text": "Up next",
+            "textStyle": {
+              "fontSize": 34,
+              "textColor": "#a9bad1",
+              "textHorizontalAlign": "left",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "bold": true
+            }
+          },
+          {
+            "id": "current-image",
+            "name": "Current preview",
+            "type": "Shape",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 92,
+              "y": 115,
+              "width": 820,
+              "height": 461
+            },
+            "fill": "#1a2a3f",
+            "fillEnabled": true,
+            "fillType": "current-slide-image"
+          },
+          {
+            "id": "next-image",
+            "name": "Next preview",
+            "type": "Shape",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 992,
+              "y": 115,
+              "width": 820,
+              "height": 461
+            },
+            "fill": "#1a2a3f",
+            "fillEnabled": true,
+            "fillType": "next-slide-image"
+          },
+          {
+            "id": "message-label",
+            "name": "Stage message",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 92,
+              "y": 625,
+              "width": 800,
+              "height": 48
+            },
+            "text": "Stage message",
+            "textStyle": {
+              "fontSize": 34,
+              "textColor": "#a9bad1",
+              "textHorizontalAlign": "left",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "bold": true
+            }
+          },
+          {
+            "id": "message",
+            "name": "Stage message",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 92,
+              "y": 680,
+              "width": 1736,
+              "height": 120
+            },
+            "text": "Ready when you are.",
+            "textStyle": {
+              "fontSize": 54,
+              "textColor": "#68e0c0",
+              "textHorizontalAlign": "left",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "linkedTextEnabled": true,
+              "linkedTextSource": "Stage Message"
+            }
+          },
+          {
+            "id": "footer",
+            "name": "Timing strip",
+            "type": "Shape",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 64,
+              "y": 838,
+              "width": 1792,
+              "height": 176
+            },
+            "fill": "#1a2a3f",
+            "fillEnabled": true,
+            "fillType": "color"
+          },
+          {
+            "id": "clock-label",
+            "name": "Clock",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 128,
+              "y": 855,
+              "width": 348,
+              "height": 46
+            },
+            "text": "Clock",
+            "textStyle": {
+              "fontSize": 34,
+              "textColor": "#a9bad1",
+              "textHorizontalAlign": "left",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "bold": true
+            }
+          },
+          {
+            "id": "timer-label",
+            "name": "Segment",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 695,
+              "y": 855,
+              "width": 380,
+              "height": 46
+            },
+            "text": "Segment",
+            "textStyle": {
+              "fontSize": 34,
+              "textColor": "#a9bad1",
+              "textHorizontalAlign": "left",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "bold": true
+            }
+          },
+          {
+            "id": "video-label",
+            "name": "Video remaining",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 1262,
+              "y": 855,
+              "width": 520,
+              "height": 46
+            },
+            "text": "Video remaining",
+            "textStyle": {
+              "fontSize": 34,
+              "textColor": "#a9bad1",
+              "textHorizontalAlign": "left",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "bold": true
+            }
+          },
+          {
+            "id": "clock",
+            "name": "Clock",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 103,
+              "y": 902,
+              "width": 398,
+              "height": 91
+            },
+            "text": "14:25",
+            "textStyle": {
+              "fontSize": 74,
+              "textColor": "#f2f6fb",
+              "textHorizontalAlign": "center",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "linkedTextEnabled": true,
+              "linkedTextSource": "System Clock",
+              "systemClockTimeFormat": "hours-minutes",
+              "systemClockDateFormat": "none",
+              "systemClockUse24Hour": true,
+              "systemClockFormatString": "${clock}"
+            }
+          },
+          {
+            "id": "timer",
+            "name": "Segment countdown",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 672,
+              "y": 902,
+              "width": 418,
+              "height": 91
+            },
+            "text": "05:00",
+            "textStyle": {
+              "fontSize": 74,
+              "textColor": "#68e0c0",
+              "textHorizontalAlign": "center",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "linkedTextEnabled": true,
+              "linkedTextSource": "Countdown Timer",
+              "linkedTextTimerId": "7bdebe74-0aa6-4665-8e31-98831ae5adc8",
+              "linkedTextTimerName": "Segment Countdown"
+            }
+          },
+          {
+            "id": "video",
+            "name": "Video remaining",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 1242,
+              "y": 902,
+              "width": 480,
+              "height": 91
+            },
+            "text": "01:12",
+            "textStyle": {
+              "fontSize": 74,
+              "textColor": "#f2f6fb",
+              "textHorizontalAlign": "center",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "linkedTextEnabled": true,
+              "linkedTextSource": "Video Countdown",
+              "videoCountdownSource": "presentation"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "basic-stage-current-notes",
+      "title": "Current Preview + Notes",
+      "slide": {
+        "id": "basic-stage-current-notes-slide",
+        "name": "Current Preview + Notes",
+        "width": 1920,
+        "height": 1080,
+        "background": "#0d1421",
+        "backgroundEnabled": true,
+        "content": "",
+        "layers": [
+          {
+            "id": "current-label",
+            "name": "Current",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 92,
+              "y": 50,
+              "width": 800,
+              "height": 48
+            },
+            "text": "Current",
+            "textStyle": {
+              "fontSize": 34,
+              "textColor": "#a9bad1",
+              "textHorizontalAlign": "left",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "bold": true
+            }
+          },
+          {
+            "id": "current-image",
+            "name": "Current preview",
+            "type": "Shape",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 92,
+              "y": 112,
+              "width": 980,
+              "height": 551
+            },
+            "fill": "#1a2a3f",
+            "fillEnabled": true,
+            "fillType": "current-slide-image"
+          },
+          {
+            "id": "notes-label",
+            "name": "Notes",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 1124,
+              "y": 50,
+              "width": 650,
+              "height": 48
+            },
+            "text": "Notes",
+            "textStyle": {
+              "fontSize": 34,
+              "textColor": "#a9bad1",
+              "textHorizontalAlign": "left",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "bold": true
+            }
+          },
+          {
+            "id": "notes",
+            "name": "Speaker notes",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 1124,
+              "y": 112,
+              "width": 704,
+              "height": 551
+            },
+            "text": "Allow time for a short introduction.",
+            "textStyle": {
+              "fontSize": 64,
+              "textColor": "#f2f6fb",
+              "textHorizontalAlign": "left",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "linkedTextEnabled": true,
+              "linkedTextSource": "Slide Notes"
+            }
+          },
+          {
+            "id": "message",
+            "name": "Stage message",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 92,
+              "y": 695,
+              "width": 1736,
+              "height": 115
+            },
+            "text": "Ready when you are.",
+            "textStyle": {
+              "fontSize": 54,
+              "textColor": "#68e0c0",
+              "textHorizontalAlign": "left",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "linkedTextEnabled": true,
+              "linkedTextSource": "Stage Message"
+            }
+          },
+          {
+            "id": "footer",
+            "name": "Timing strip",
+            "type": "Shape",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 64,
+              "y": 838,
+              "width": 1792,
+              "height": 176
+            },
+            "fill": "#1a2a3f",
+            "fillEnabled": true,
+            "fillType": "color"
+          },
+          {
+            "id": "clock-label",
+            "name": "Clock",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 128,
+              "y": 855,
+              "width": 348,
+              "height": 46
+            },
+            "text": "Clock",
+            "textStyle": {
+              "fontSize": 34,
+              "textColor": "#a9bad1",
+              "textHorizontalAlign": "left",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "bold": true
+            }
+          },
+          {
+            "id": "timer-label",
+            "name": "Segment",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 695,
+              "y": 855,
+              "width": 380,
+              "height": 46
+            },
+            "text": "Segment",
+            "textStyle": {
+              "fontSize": 34,
+              "textColor": "#a9bad1",
+              "textHorizontalAlign": "left",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "bold": true
+            }
+          },
+          {
+            "id": "video-label",
+            "name": "Video remaining",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 1262,
+              "y": 855,
+              "width": 520,
+              "height": 46
+            },
+            "text": "Video remaining",
+            "textStyle": {
+              "fontSize": 34,
+              "textColor": "#a9bad1",
+              "textHorizontalAlign": "left",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "bold": true
+            }
+          },
+          {
+            "id": "clock",
+            "name": "Clock",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 103,
+              "y": 902,
+              "width": 398,
+              "height": 91
+            },
+            "text": "14:25",
+            "textStyle": {
+              "fontSize": 74,
+              "textColor": "#f2f6fb",
+              "textHorizontalAlign": "center",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "linkedTextEnabled": true,
+              "linkedTextSource": "System Clock",
+              "systemClockTimeFormat": "hours-minutes",
+              "systemClockDateFormat": "none",
+              "systemClockUse24Hour": true,
+              "systemClockFormatString": "${clock}"
+            }
+          },
+          {
+            "id": "timer",
+            "name": "Segment countdown",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 672,
+              "y": 902,
+              "width": 418,
+              "height": 91
+            },
+            "text": "05:00",
+            "textStyle": {
+              "fontSize": 74,
+              "textColor": "#68e0c0",
+              "textHorizontalAlign": "center",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "linkedTextEnabled": true,
+              "linkedTextSource": "Countdown Timer",
+              "linkedTextTimerId": "7bdebe74-0aa6-4665-8e31-98831ae5adc8",
+              "linkedTextTimerName": "Segment Countdown"
+            }
+          },
+          {
+            "id": "video",
+            "name": "Video remaining",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 1242,
+              "y": 902,
+              "width": 480,
+              "height": 91
+            },
+            "text": "01:12",
+            "textStyle": {
+              "fontSize": 74,
+              "textColor": "#f2f6fb",
+              "textHorizontalAlign": "center",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "linkedTextEnabled": true,
+              "linkedTextSource": "Video Countdown",
+              "videoCountdownSource": "presentation"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "basic-stage-current-timers",
+      "title": "Current Preview + Timers",
+      "slide": {
+        "id": "basic-stage-current-timers-slide",
+        "name": "Current Preview + Timers",
+        "width": 1920,
+        "height": 1080,
+        "background": "#0d1421",
+        "backgroundEnabled": true,
+        "content": "",
+        "layers": [
+          {
+            "id": "current-label",
+            "name": "Current",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 84,
+              "y": 58,
+              "width": 800,
+              "height": 45
+            },
+            "text": "Current",
+            "textStyle": {
+              "fontSize": 34,
+              "textColor": "#a9bad1",
+              "textHorizontalAlign": "left",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "bold": true
+            }
+          },
+          {
+            "id": "current-image",
+            "name": "Current preview",
+            "type": "Shape",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 84,
+              "y": 120,
+              "width": 1096,
+              "height": 616
+            },
+            "fill": "#1a2a3f",
+            "fillEnabled": true,
+            "fillType": "current-slide-image"
+          },
+          {
+            "id": "message",
+            "name": "Stage message",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 84,
+              "y": 780,
+              "width": 1096,
+              "height": 216
+            },
+            "text": "Ready when you are.",
+            "textStyle": {
+              "fontSize": 54,
+              "textColor": "#68e0c0",
+              "textHorizontalAlign": "left",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "linkedTextEnabled": true,
+              "linkedTextSource": "Stage Message"
+            }
+          },
+          {
+            "id": "timing",
+            "name": "Timing panel",
+            "type": "Shape",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 1260,
+              "y": 58,
+              "width": 570,
+              "height": 938
+            },
+            "fill": "#1a2a3f",
+            "fillEnabled": true,
+            "fillType": "color"
+          },
+          {
+            "id": "clock-label",
+            "name": "Clock",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 1310,
+              "y": 110,
+              "width": 470,
+              "height": 54
+            },
+            "text": "Clock",
+            "textStyle": {
+              "fontSize": 34,
+              "textColor": "#a9bad1",
+              "textHorizontalAlign": "left",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "bold": true
+            }
+          },
+          {
+            "id": "clock",
+            "name": "Clock",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 1300,
+              "y": 169,
+              "width": 490,
+              "height": 180
+            },
+            "text": "14:25",
+            "textStyle": {
+              "fontSize": 112,
+              "textColor": "#f2f6fb",
+              "textHorizontalAlign": "center",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "linkedTextEnabled": true,
+              "linkedTextSource": "System Clock",
+              "systemClockTimeFormat": "hours-minutes",
+              "systemClockDateFormat": "none",
+              "systemClockUse24Hour": true,
+              "systemClockFormatString": "${clock}"
+            }
+          },
+          {
+            "id": "timer-label",
+            "name": "Segment",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 1310,
+              "y": 400,
+              "width": 470,
+              "height": 54
+            },
+            "text": "Segment",
+            "textStyle": {
+              "fontSize": 34,
+              "textColor": "#a9bad1",
+              "textHorizontalAlign": "left",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "bold": true
+            }
+          },
+          {
+            "id": "timer",
+            "name": "Segment countdown",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 1300,
+              "y": 459,
+              "width": 490,
+              "height": 180
+            },
+            "text": "05:00",
+            "textStyle": {
+              "fontSize": 112,
+              "textColor": "#68e0c0",
+              "textHorizontalAlign": "center",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "linkedTextEnabled": true,
+              "linkedTextSource": "Countdown Timer",
+              "linkedTextTimerId": "7bdebe74-0aa6-4665-8e31-98831ae5adc8",
+              "linkedTextTimerName": "Segment Countdown"
+            }
+          },
+          {
+            "id": "video-label",
+            "name": "Video remaining",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 1310,
+              "y": 690,
+              "width": 470,
+              "height": 54
+            },
+            "text": "Video remaining",
+            "textStyle": {
+              "fontSize": 34,
+              "textColor": "#a9bad1",
+              "textHorizontalAlign": "left",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "bold": true
+            }
+          },
+          {
+            "id": "video",
+            "name": "Video remaining",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 1300,
+              "y": 749,
+              "width": 490,
+              "height": 180
+            },
+            "text": "01:12",
+            "textStyle": {
+              "fontSize": 112,
+              "textColor": "#f2f6fb",
+              "textHorizontalAlign": "center",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "linkedTextEnabled": true,
+              "linkedTextSource": "Video Countdown",
+              "videoCountdownSource": "presentation"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "basic-stage-system-clock",
+      "title": "System Clock",
+      "slide": {
+        "id": "basic-stage-system-clock-slide",
+        "name": "System Clock",
+        "width": 1920,
+        "height": 1080,
+        "background": "#0d1421",
+        "backgroundEnabled": true,
+        "content": "",
+        "layers": [
+          {
+            "id": "clock-label",
+            "name": "Local time",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 170,
+              "y": 240,
+              "width": 720,
+              "height": 60
+            },
+            "text": "Local time",
+            "textStyle": {
+              "fontSize": 34,
+              "textColor": "#a9bad1",
+              "textHorizontalAlign": "left",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "bold": true
+            }
+          },
+          {
+            "id": "clock",
+            "name": "Clock",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 170,
+              "y": 315,
+              "width": 1580,
+              "height": 430
+            },
+            "text": "14:25",
+            "textStyle": {
+              "fontSize": 320,
+              "textColor": "#f2f6fb",
+              "textHorizontalAlign": "center",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "linkedTextEnabled": true,
+              "linkedTextSource": "System Clock",
+              "systemClockTimeFormat": "hours-minutes",
+              "systemClockDateFormat": "none",
+              "systemClockUse24Hour": true,
+              "systemClockFormatString": "${clock}"
+            }
+          },
+          {
+            "id": "rule",
+            "name": "Accent",
+            "type": "Shape",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 170,
+              "y": 812,
+              "width": 252,
+              "height": 12
+            },
+            "fill": "#68e0c0",
+            "fillEnabled": true,
+            "fillType": "color"
+          }
+        ]
+      }
+    },
+    {
+      "id": "basic-stage-presentation-info-progress",
+      "title": "Show Status",
+      "slide": {
+        "id": "basic-stage-presentation-info-progress-slide",
+        "name": "Show Status",
+        "width": 1920,
+        "height": 1080,
+        "background": "#0d1421",
+        "backgroundEnabled": true,
+        "content": "",
+        "layers": [
+          {
+            "id": "presentation",
+            "name": "Presentation",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 92,
+              "y": 66,
+              "width": 1736,
+              "height": 102
+            },
+            "text": "Open studio",
+            "textStyle": {
+              "fontSize": 82,
+              "textColor": "#f2f6fb",
+              "textHorizontalAlign": "left",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "linkedTextEnabled": true,
+              "linkedTextSource": "Presentation Name",
+              "bold": true
+            }
+          },
+          {
+            "id": "current",
+            "name": "Current slide",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 92,
+              "y": 228,
+              "width": 1736,
+              "height": 340
+            },
+            "text": "Welcome to the open studio.",
+            "textStyle": {
+              "fontSize": 98,
+              "textColor": "#f2f6fb",
+              "textHorizontalAlign": "left",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "linkedTextEnabled": true,
+              "linkedTextSource": "Current Slide",
+              "bold": true
+            }
+          },
+          {
+            "id": "remaining",
+            "name": "Slides remaining",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 92,
+              "y": 590,
+              "width": 790,
+              "height": 170
+            },
+            "text": "7 slides remaining",
+            "textStyle": {
+              "fontSize": 70,
+              "textColor": "#f2f6fb",
+              "textHorizontalAlign": "left",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "linkedTextEnabled": true,
+              "linkedTextSource": "Slide Count",
+              "linkedTextSlideCountSource": "Remaining"
+            }
+          },
+          {
+            "id": "next",
+            "name": "Next slide",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 886,
+              "y": 590,
+              "width": 942,
+              "height": 170
+            },
+            "text": "Pick a table to get started.",
+            "textStyle": {
+              "fontSize": 58,
+              "textColor": "#68e0c0",
+              "textHorizontalAlign": "left",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "linkedTextEnabled": true,
+              "linkedTextSource": "Next Slide"
+            }
+          },
+          {
+            "id": "footer",
+            "name": "Timing strip",
+            "type": "Shape",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 64,
+              "y": 838,
+              "width": 1792,
+              "height": 176
+            },
+            "fill": "#1a2a3f",
+            "fillEnabled": true,
+            "fillType": "color"
+          },
+          {
+            "id": "clock-label",
+            "name": "Clock",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 128,
+              "y": 855,
+              "width": 348,
+              "height": 46
+            },
+            "text": "Clock",
+            "textStyle": {
+              "fontSize": 34,
+              "textColor": "#a9bad1",
+              "textHorizontalAlign": "left",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "bold": true
+            }
+          },
+          {
+            "id": "timer-label",
+            "name": "Segment",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 695,
+              "y": 855,
+              "width": 380,
+              "height": 46
+            },
+            "text": "Segment",
+            "textStyle": {
+              "fontSize": 34,
+              "textColor": "#a9bad1",
+              "textHorizontalAlign": "left",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "bold": true
+            }
+          },
+          {
+            "id": "video-label",
+            "name": "Video remaining",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 1262,
+              "y": 855,
+              "width": 520,
+              "height": 46
+            },
+            "text": "Video remaining",
+            "textStyle": {
+              "fontSize": 34,
+              "textColor": "#a9bad1",
+              "textHorizontalAlign": "left",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "bold": true
+            }
+          },
+          {
+            "id": "clock",
+            "name": "Clock",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 103,
+              "y": 902,
+              "width": 398,
+              "height": 91
+            },
+            "text": "14:25",
+            "textStyle": {
+              "fontSize": 74,
+              "textColor": "#f2f6fb",
+              "textHorizontalAlign": "center",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "linkedTextEnabled": true,
+              "linkedTextSource": "System Clock",
+              "systemClockTimeFormat": "hours-minutes",
+              "systemClockDateFormat": "none",
+              "systemClockUse24Hour": true,
+              "systemClockFormatString": "${clock}"
+            }
+          },
+          {
+            "id": "timer",
+            "name": "Segment countdown",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 672,
+              "y": 902,
+              "width": 418,
+              "height": 91
+            },
+            "text": "05:00",
+            "textStyle": {
+              "fontSize": 74,
+              "textColor": "#68e0c0",
+              "textHorizontalAlign": "center",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "linkedTextEnabled": true,
+              "linkedTextSource": "Countdown Timer",
+              "linkedTextTimerId": "7bdebe74-0aa6-4665-8e31-98831ae5adc8",
+              "linkedTextTimerName": "Segment Countdown"
+            }
+          },
+          {
+            "id": "video",
+            "name": "Video remaining",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 1242,
+              "y": 902,
+              "width": 480,
+              "height": 91
+            },
+            "text": "01:12",
+            "textStyle": {
+              "fontSize": 74,
+              "textColor": "#f2f6fb",
+              "textHorizontalAlign": "center",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "linkedTextEnabled": true,
+              "linkedTextSource": "Video Countdown",
+              "videoCountdownSource": "presentation"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "basic-stage-chords-lyrics",
+      "title": "Text + Groups",
+      "slide": {
+        "id": "basic-stage-chords-lyrics-slide",
+        "name": "Text + Groups",
+        "width": 1920,
+        "height": 1080,
+        "background": "#0d1421",
+        "backgroundEnabled": true,
+        "content": "",
+        "layers": [
+          {
+            "id": "current-label",
+            "name": "Current",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 92,
+              "y": 70,
+              "width": 650,
+              "height": 50
+            },
+            "text": "Current",
+            "textStyle": {
+              "fontSize": 34,
+              "textColor": "#a9bad1",
+              "textHorizontalAlign": "left",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "bold": true
+            }
+          },
+          {
+            "id": "current-group",
+            "name": "Current group",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 1140,
+              "y": 70,
+              "width": 680,
+              "height": 50
+            },
+            "text": "Opening",
+            "textStyle": {
+              "fontSize": 46,
+              "textColor": "#68e0c0",
+              "textHorizontalAlign": "right",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "linkedTextEnabled": true,
+              "linkedTextSource": "Group"
+            }
+          },
+          {
+            "id": "current",
+            "name": "Current slide",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 92,
+              "y": 130,
+              "width": 1736,
+              "height": 396
+            },
+            "text": "Welcome to the open studio.",
+            "textStyle": {
+              "fontSize": 104,
+              "textColor": "#f2f6fb",
+              "textHorizontalAlign": "left",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "linkedTextEnabled": true,
+              "linkedTextSource": "Current Slide",
+              "bold": true
+            }
+          },
+          {
+            "id": "next-label",
+            "name": "Up next",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 92,
+              "y": 551,
+              "width": 650,
+              "height": 50
+            },
+            "text": "Up next",
+            "textStyle": {
+              "fontSize": 34,
+              "textColor": "#a9bad1",
+              "textHorizontalAlign": "left",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "bold": true
+            }
+          },
+          {
+            "id": "next-group",
+            "name": "Next group",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 1140,
+              "y": 551,
+              "width": 680,
+              "height": 50
+            },
+            "text": "Workshop",
+            "textStyle": {
+              "fontSize": 46,
+              "textColor": "#68e0c0",
+              "textHorizontalAlign": "right",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "linkedTextEnabled": true,
+              "linkedTextSource": "Group",
+              "linkedTextGroupSource": "Next Slide"
+            }
+          },
+          {
+            "id": "next",
+            "name": "Next slide",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 92,
+              "y": 610,
+              "width": 1736,
+              "height": 200
+            },
+            "text": "Pick a table to get started.",
+            "textStyle": {
+              "fontSize": 76,
+              "textColor": "#68e0c0",
+              "textHorizontalAlign": "left",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "linkedTextEnabled": true,
+              "linkedTextSource": "Next Slide"
+            }
+          },
+          {
+            "id": "footer",
+            "name": "Timing strip",
+            "type": "Shape",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 64,
+              "y": 838,
+              "width": 1792,
+              "height": 176
+            },
+            "fill": "#1a2a3f",
+            "fillEnabled": true,
+            "fillType": "color"
+          },
+          {
+            "id": "clock-label",
+            "name": "Clock",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 128,
+              "y": 855,
+              "width": 348,
+              "height": 46
+            },
+            "text": "Clock",
+            "textStyle": {
+              "fontSize": 34,
+              "textColor": "#a9bad1",
+              "textHorizontalAlign": "left",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "bold": true
+            }
+          },
+          {
+            "id": "timer-label",
+            "name": "Segment",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 695,
+              "y": 855,
+              "width": 380,
+              "height": 46
+            },
+            "text": "Segment",
+            "textStyle": {
+              "fontSize": 34,
+              "textColor": "#a9bad1",
+              "textHorizontalAlign": "left",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "bold": true
+            }
+          },
+          {
+            "id": "video-label",
+            "name": "Video remaining",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 1262,
+              "y": 855,
+              "width": 520,
+              "height": 46
+            },
+            "text": "Video remaining",
+            "textStyle": {
+              "fontSize": 34,
+              "textColor": "#a9bad1",
+              "textHorizontalAlign": "left",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "bold": true
+            }
+          },
+          {
+            "id": "clock",
+            "name": "Clock",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 103,
+              "y": 902,
+              "width": 398,
+              "height": 91
+            },
+            "text": "14:25",
+            "textStyle": {
+              "fontSize": 74,
+              "textColor": "#f2f6fb",
+              "textHorizontalAlign": "center",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "linkedTextEnabled": true,
+              "linkedTextSource": "System Clock",
+              "systemClockTimeFormat": "hours-minutes",
+              "systemClockDateFormat": "none",
+              "systemClockUse24Hour": true,
+              "systemClockFormatString": "${clock}"
+            }
+          },
+          {
+            "id": "timer",
+            "name": "Segment countdown",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 672,
+              "y": 902,
+              "width": 418,
+              "height": 91
+            },
+            "text": "05:00",
+            "textStyle": {
+              "fontSize": 74,
+              "textColor": "#68e0c0",
+              "textHorizontalAlign": "center",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "linkedTextEnabled": true,
+              "linkedTextSource": "Countdown Timer",
+              "linkedTextTimerId": "7bdebe74-0aa6-4665-8e31-98831ae5adc8",
+              "linkedTextTimerName": "Segment Countdown"
+            }
+          },
+          {
+            "id": "video",
+            "name": "Video remaining",
+            "type": "Text",
+            "role": "custom",
+            "shape": "rectangle",
+            "bounds": {
+              "x": 1242,
+              "y": 902,
+              "width": 480,
+              "height": 91
+            },
+            "text": "01:12",
+            "textStyle": {
+              "fontSize": 74,
+              "textColor": "#f2f6fb",
+              "textHorizontalAlign": "center",
+              "textVerticalAlign": "middle",
+              "scaling": "Text down",
+              "linkedTextEnabled": true,
+              "linkedTextSource": "Video Countdown",
+              "videoCountdownSource": "presentation"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

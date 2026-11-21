@@ -1,0 +1,10 @@
+{
+  "symbols": "Default:M|Arrow:→|Audio:♫|Bell:🔔︎|Bulb:💡︎|Cloud:☁|Cupcake:🧁︎|Exclamation:!|Flask:⚗|Flower:✿|Glasses:👓︎|Hashtag:#|Hat:🎩︎|Heart:♡|Megaphone:📣︎|Message:💬︎|Paperclip:📎︎|Play:▶|Slide:▣|Star:★|Sun:☀|Sunglasses:🕶︎|Target:◎|Timer:◷|VideoInput:📹︎|XClear:×",
+  "digits": "One|Two|Three|Four|Five|Six|Seven|Eight|Nine|Zero",
+  "letters": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+  "clearAliases": {
+    "All": "XClear",
+    "Megahorn": "Megaphone",
+    "Eyeglasses": "Glasses"
+  }
+}

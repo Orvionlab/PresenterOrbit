@@ -1,0 +1,78 @@
+[package]
+name = "orbit-host"
+version.workspace = true
+description = "Presenter Orbit host services without a windowing or webview dependency"
+authors = ["Orvion Lab"]
+license = "GPL-3.0-only"
+edition = "2021"
+publish = false
+
+[lib]
+test = false
+doctest = false
+
+[dependencies]
+# Shared native paths used by workspace management and media search.
+dirs = "6"
+aes = "0.8"
+raw-window-handle = "0.6"
+base64 = "0.22"
+ctr = "0.9"
+getrandom = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+url = "2"
+uuid = { version = "1", features = ["v4", "v5"] }
+rfd = "0.15"
+arboard = "3"
+open = "5"
+ureq = { version = "3.4", default-features = false, features = ["rustls", "gzip"] }
+image = { version = "0.25.10", default-features = false, features = ["bmp", "gif", "ico", "jpeg", "png", "tiff", "webp"] }
+cosmic-text = "0.16.0"
+# Portable PDF rasterizer for stage chord charts (docs/dependency-policy.md).
+hayro = "0.8.0"
+resvg = "0.48.1"
+ffmpeg-sidecar = { version = "2.5.2", default-features = false }
+pollster = "0.4"
+wgpu = "26.0.1"
+# Native output audio. Symphonia is enabled for the common AAC/M4A and video
+# container paths; the focused license exception is recorded in
+# docs/dependency-policy.md.
+rodio = { version = "0.22.2", default-features = false, features = [
+    "playback",
+    "symphonia-all",
+] }
+# Reads ProPresenter .proBundle/.proPlaylist archives.
+zip = { version = "4.6", default-features = false, features = ["deflate-flate2"] }
+# DOM parser for .pptx OOXML parts; already in the lockfile through the SVG renderer.
+roxmltree = "0.21.1"
+# Native MIDI trigger input; WKWebView and WebKitGTK do not provide Web MIDI.
+midir = "0.11.1"
+# Native serial output; focused dependency review in docs/dependency-policy.md.
+serialport = { version = "=4.10.1", default-features = false }
+tungstenite = { version = "0.28", default-features = false, features = ["handshake"] }
+# mDNS/DNS-SD advertisement for the current ProPresenter Remote service.
+mdns-sd = { version = "0.21.6", default-features = false }
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.61", features = [
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Com",
+    "Win32_System_Ole",
+    "Win32_System_Variant",
+    "Win32_UI_Shell",
+    "Win32_Foundation",
+    "Win32_Devices_Display",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Graphics_Gdi",
+    "Win32_Storage_Xps",
+    "Win32_UI_Controls_Dialogs",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSError", "NSFileManager", "NSString", "NSURL"] }

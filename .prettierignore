@@ -1,0 +1,13 @@
+# Prettier owns only the files `npm run format` targets, so ad-hoc runs cannot reformat docs, fixtures, or integrations.
+*
+!*/
+!/scripts/**/*.cts
+!/scripts/**/*.mts
+!/tests/**/*.cts
+!/tests/**/*.mts
+!/*.json
+
+compiled/
+dist/
+node_modules/
+vendor/

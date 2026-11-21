@@ -1,0 +1,187 @@
+{
+  "id": "basic-black",
+  "title": "Black",
+  "editable": true,
+  "schemaVersion": 2,
+  "size": {
+    "width": 1920,
+    "height": 1080
+  },
+  "sourcePath": "",
+  "sourceType": "presenter-orbit",
+  "slides": [
+    {
+      "id": "general-text-slide",
+      "name": "General text",
+      "width": 1920,
+      "height": 1080,
+      "background": "#101217",
+      "backgroundEnabled": true,
+      "content": "Ideas take shape when we share them.",
+      "text": "Ideas take shape when we share them.",
+      "primaryTextLayerId": "main",
+      "layers": [
+        {
+          "id": "main",
+          "name": "Slide text",
+          "type": "Text",
+          "role": "slide-text",
+          "shape": "rectangle",
+          "bounds": {
+            "x": 164,
+            "y": 180,
+            "width": 1592,
+            "height": 720
+          },
+          "text": "Ideas take shape when we share them.",
+          "textStyle": {
+            "fontSize": 96,
+            "textColor": "#f6f7fb",
+            "textHorizontalAlign": "center",
+            "textVerticalAlign": "middle",
+            "scaling": "Text down"
+          }
+        }
+      ]
+    },
+    {
+      "id": "title-and-subtitle",
+      "name": "Title and subtitle",
+      "width": 1920,
+      "height": 1080,
+      "background": "#101217",
+      "backgroundEnabled": true,
+      "content": "Open studio",
+      "text": "Open studio",
+      "primaryTextLayerId": "main",
+      "layers": [
+        {
+          "id": "rule",
+          "name": "Accent",
+          "type": "Shape",
+          "role": "custom",
+          "shape": "rectangle",
+          "bounds": {
+            "x": 188,
+            "y": 184,
+            "width": 192,
+            "height": 12
+          },
+          "fill": "#69dfc4",
+          "fillEnabled": true,
+          "fillType": "color"
+        },
+        {
+          "id": "main",
+          "name": "Headline",
+          "type": "Text",
+          "role": "slide-text",
+          "shape": "rectangle",
+          "bounds": {
+            "x": 180,
+            "y": 232,
+            "width": 1540,
+            "height": 298
+          },
+          "text": "Open studio",
+          "textStyle": {
+            "fontSize": 154,
+            "textColor": "#f6f7fb",
+            "textHorizontalAlign": "left",
+            "textVerticalAlign": "middle",
+            "scaling": "Text down",
+            "bold": true
+          }
+        },
+        {
+          "id": "detail",
+          "name": "Subtitle",
+          "type": "Text",
+          "role": "custom",
+          "shape": "rectangle",
+          "bounds": {
+            "x": 188,
+            "y": 554,
+            "width": 1400,
+            "height": 140
+          },
+          "text": "A session for making and sharing ideas",
+          "textStyle": {
+            "fontSize": 58,
+            "textColor": "#f6f7fb",
+            "textHorizontalAlign": "left",
+            "textVerticalAlign": "middle",
+            "scaling": "Text down"
+          }
+        }
+      ]
+    },
+    {
+      "id": "lower-third",
+      "name": "Lower third",
+      "width": 1920,
+      "height": 1080,
+      "background": "transparent",
+      "backgroundEnabled": false,
+      "content": "Jordan Lee",
+      "text": "Jordan Lee",
+      "primaryTextLayerId": "main",
+      "layers": [
+        {
+          "id": "panel",
+          "name": "Caption panel",
+          "type": "Shape",
+          "role": "custom",
+          "shape": "rectangle",
+          "bounds": {
+            "x": 136,
+            "y": 794,
+            "width": 1456,
+            "height": 192
+          },
+          "fill": "#101217",
+          "fillEnabled": true,
+          "fillType": "color"
+        },
+        {
+          "id": "rule",
+          "name": "Accent",
+          "type": "Shape",
+          "role": "custom",
+          "shape": "rectangle",
+          "bounds": {
+            "x": 136,
+            "y": 794,
+            "width": 15,
+            "height": 192
+          },
+          "fill": "#69dfc4",
+          "fillEnabled": true,
+          "fillType": "color"
+        },
+        {
+          "id": "main",
+          "name": "Caption",
+          "type": "Text",
+          "role": "slide-text",
+          "shape": "rectangle",
+          "bounds": {
+            "x": 195,
+            "y": 816,
+            "width": 1320,
+            "height": 142
+          },
+          "text": "Jordan Lee",
+          "textStyle": {
+            "fontSize": 76,
+            "textColor": "#f6f7fb",
+            "textHorizontalAlign": "left",
+            "textVerticalAlign": "middle",
+            "scaling": "Text down",
+            "bold": true
+          }
+        }
+      ]
+    }
+  ]
+}

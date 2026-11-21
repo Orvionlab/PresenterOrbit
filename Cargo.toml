@@ -1,0 +1,22 @@
+[workspace]
+resolver = "2"
+members = ["crates/orbit-host", "crates/orbit-ui", "crates/orbit-app"]
+
+[workspace.package]
+version = "0.0.1-alpha.3"
+
+[profile.dev]
+incremental = true
+# Keep file/line backtraces without generating full debugger type information.
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
+# Full-resolution native output needs optimized rasterization during development.
+[profile.dev.package.orbit-host]
+opt-level = 2
+
+# Scene snapshots also need fast JSON cloning and transport in development builds.
+[profile.dev.package.serde_json]
+opt-level = 2

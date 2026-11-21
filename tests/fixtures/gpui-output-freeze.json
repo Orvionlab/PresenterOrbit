@@ -1,0 +1,4 @@
+{
+  "backgrounds": ["#ff0000", "#0000ff"],
+  "logoSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"64\" height=\"36\"><path fill=\"#00ff00\" d=\"M0 0h64v36H0z\"/></svg>"
+}

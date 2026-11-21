@@ -1,0 +1,23 @@
+{
+  "schema": "presenter-orbit.workspace",
+  "version": 1,
+  "id": "release-fixture-v1",
+  "title": "Release compatibility fixture",
+  "workspacePath": ".",
+  "createdAt": "2026-01-01T00:00:00.000Z",
+  "updatedAt": "2026-01-01T00:00:00.000Z",
+  "storage": {
+    "layout": "folders",
+    "libraryFolder": "Libraries",
+    "playlistsFolder": "Playlists",
+    "mediaFolder": "Media",
+    "themesFolder": "Themes",
+    "masksFolder": "Masks",
+    "propsFolder": "Configuration/Props"
+  },
+  "importedFrom": null,
+  "stats": {
+    "scannedFileCount": 0,
+    "skippedFileCount": 0
+  }
+}

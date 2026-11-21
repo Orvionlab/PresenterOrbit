@@ -1,0 +1,148 @@
+name: GPUI package acceptance
+
+# Builds the GPUI installers (scripts/package-gpui.mts) and smoke-tests the unpacked package. Windows is the
+# verified route. The macOS and Linux jobs are manual and allowed to fail: the packaging for them was written but
+# has not been run on those systems. Nothing here signs, publishes or uploads outside the workflow run: without the
+# signing secrets the artifacts are unsigned, and the job summary says so. Installed upgrade tests from the last Tauri
+# release need a disposable machine (docs/gpui-migration/phase-16.md).
+on:
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: Systems to package
+        type: choice
+        default: windows
+        options: [windows, windows-macos-linux]
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Windows x64 package
+    if: github.event.repository.private == true
+    runs-on: [self-hosted, Windows, X64, orbit-windows-x64]
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Configure persistent local build caches
+        if: runner.environment == 'self-hosted'
+        run: node scripts/configure-local-runner-caches.mts
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26.5.1
+          package-manager-cache: false
+
+      - name: Install pinned npm
+        run: npm install --global npm@12.0.2
+
+      - name: Package
+        run: node scripts/package-gpui.mts --platform windows --x64 --out "${{ runner.temp }}/gpui-package"
+
+      - name: Smoke test the portable package
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem "${{ runner.temp }}/gpui-package" -Filter *-portable.zip | Select-Object -First 1
+          $folder = Join-Path "${{ runner.temp }}" "gpui-portable"
+          Remove-Item $folder -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory $folder | Out-Null
+          tar.exe -xf $zip.FullName -C $folder
+          node scripts/gpui-smoke.mts --dir $folder --seconds 20
+
+      - name: Report signing state
+        shell: pwsh
+        run: |
+          $report = Get-Content "${{ runner.temp }}/gpui-package/package-report-windows-x64.json" | ConvertFrom-Json
+          "Windows package: osSigned=$($report.osSigned), updater=$($report.updater)" >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload packages
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gpui-windows-x64-packages
+          path: |
+            ${{ runner.temp }}/gpui-package/*.exe
+            ${{ runner.temp }}/gpui-package/*.zip
+            ${{ runner.temp }}/gpui-package/package-report-*.json
+            ${{ runner.temp }}/gpui-package/THIRD-PARTY-NOTICES.txt
+
+  macos:
+    name: macOS ${{ matrix.arch }} package (untested)
+    if: inputs.platforms == 'windows-macos-linux'
+    runs-on: ${{ matrix.os }}
+    continue-on-error: true
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-14, arch: arm64 }
+          - { os: macos-13, arch: x64 }
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26.5.1
+          package-manager-cache: false
+
+      - name: Install pinned npm
+        run: npm install --global npm@12.0.2
+
+      - name: Package (ad-hoc signed)
+        run: node scripts/package-gpui.mts --platform macos --${{ matrix.arch }} --out "$RUNNER_TEMP/gpui-package"
+
+      - name: Upload packages
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gpui-macos-${{ matrix.arch }}-packages
+          path: |
+            ${{ runner.temp }}/gpui-package/*.dmg
+            ${{ runner.temp }}/gpui-package/package-report-*.json
+
+  linux:
+    name: Linux x64 package (untested)
+    if: inputs.platforms == 'windows-macos-linux'
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26.5.1
+          package-manager-cache: false
+
+      - name: Install pinned npm
+        run: npm install --global npm@12.0.2
+
+      - name: Install prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes build-essential libfontconfig-dev libgtk-3-dev libssl-dev libvulkan1 \
+            libwayland-dev libwebkit2gtk-4.1-dev libasound2-dev libx11-xcb-dev libxdo-dev libxkbcommon-x11-dev \
+            librsvg2-dev libfuse2 fakeroot
+          curl -fsSL -o "$RUNNER_TEMP/appimagetool" https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x "$RUNNER_TEMP/appimagetool"
+
+      - name: Package
+        run: node scripts/package-gpui.mts --platform linux --x64 --out "$RUNNER_TEMP/gpui-package"
+        env:
+          PRESENTER_ORBIT_APPIMAGETOOL: ${{ runner.temp }}/appimagetool
+
+      - name: Upload packages
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gpui-linux-x64-packages
+          path: |
+            ${{ runner.temp }}/gpui-package/*.AppImage
+            ${{ runner.temp }}/gpui-package/*.deb
+            ${{ runner.temp }}/gpui-package/package-report-*.json

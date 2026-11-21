@@ -1,0 +1,30 @@
+{
+  "$schema": "https://schemas.elgato.com/streamdeck/plugins/manifest.json",
+  "UUID": "com.presenterorbit.control",
+  "Name": "Presenter Orbit",
+  "Version": "0.1.0.0",
+  "Author": "Orvion Lab",
+  "Description": "Direct Presenter Orbit control with workspace targets and live feedback.",
+  "Category": "Presenter Orbit",
+  "CategoryIcon": "imgs/action",
+  "Icon": "imgs/plugin",
+  "CodePath": "bin/plugin.js",
+  "PropertyInspectorPath": "ui/control.html",
+  "SDKVersion": 3,
+  "Nodejs": { "Version": "20" },
+  "Software": { "MinimumVersion": "6.9" },
+  "OS": [
+    { "Platform": "windows", "MinimumVersion": "10" },
+    { "Platform": "mac", "MinimumVersion": "12" }
+  ],
+  "Actions": [
+    {
+      "UUID": "com.presenterorbit.control.command",
+      "Name": "Orbit Control",
+      "Tooltip": "Navigate, clear a layer, or trigger an exact Orbit workspace target.",
+      "Icon": "imgs/action",
+      "Controllers": ["Keypad"],
+      "States": [{ "Image": "imgs/key", "TitleAlignment": "middle", "FontSize": 12, "TitleColor": "#ffffff" }]
+    }
+  ]
+}

@@ -1,0 +1,1164 @@
+[
+  {
+    "name": "font weight changes bold",
+    "kind": "text",
+    "field": "fontWeight",
+    "value": "Regular",
+    "layer": {
+      "id": "object",
+      "type": "Text",
+      "textStyle": {
+        "bold": true
+      }
+    },
+    "expected": {
+      "textStyle": {
+        "bold": false
+      }
+    }
+  },
+  {
+    "name": "linked feather updates both edges",
+    "kind": "text",
+    "field": "scrollFeatherLeft",
+    "value": 12,
+    "layer": {
+      "id": "object",
+      "type": "Text",
+      "textStyle": {
+        "scrollFeatherLeft": 3,
+        "scrollFeatherRight": 4,
+        "scrollFeatherLinked": true
+      }
+    },
+    "expected": {
+      "textStyle": {
+        "scrollFeatherLeft": 12,
+        "scrollFeatherRight": 12
+      }
+    }
+  },
+  {
+    "name": "relink feather copies left",
+    "kind": "text",
+    "field": "scrollFeatherLinked",
+    "value": true,
+    "layer": {
+      "id": "object",
+      "type": "Text",
+      "textStyle": {
+        "scrollFeatherLeft": 7,
+        "scrollFeatherRight": 2,
+        "scrollFeatherLinked": false
+      }
+    },
+    "expected": {
+      "textStyle": {
+        "scrollFeatherRight": 7
+      }
+    }
+  },
+  {
+    "name": "selecting linked source enables text",
+    "kind": "text",
+    "field": "linkedTextSource",
+    "value": "Next Slide",
+    "layer": {
+      "id": "object",
+      "type": "Text"
+    },
+    "expected": {
+      "textStyle": {
+        "linkedTextSource": "Next Slide",
+        "linkedTextEnabled": true
+      }
+    }
+  },
+  {
+    "name": "enabling linked text chooses current slide",
+    "kind": "text",
+    "field": "linkedTextEnabled",
+    "value": true,
+    "layer": {
+      "id": "object",
+      "type": "Text",
+      "textStyle": {
+        "linkedTextSource": "None"
+      }
+    },
+    "expected": {
+      "textStyle": {
+        "linkedTextSource": "Current Slide",
+        "linkedTextEnabled": true
+      }
+    }
+  },
+  {
+    "name": "paragraph range preserves other overrides",
+    "kind": "text",
+    "field": "textParagraphSpacingBefore",
+    "value": 14,
+    "layer": {
+      "id": "object",
+      "type": "Text",
+      "text": "a\nb\nc",
+      "textStyle": {
+        "textParagraphStyles": [
+          {},
+          {
+            "textHorizontalAlign": "left"
+          }
+        ]
+      }
+    },
+    "expected": {
+      "textStyle": {
+        "textParagraphStyles": [
+          {
+            "textParagraphSpacingBefore": 14
+          },
+          {
+            "textHorizontalAlign": "left",
+            "textParagraphSpacingBefore": 14
+          },
+          {}
+        ]
+      }
+    },
+    "range": {
+      "start": 0,
+      "end": 1
+    }
+  },
+  {
+    "name": "bullet list clears inherited affixes",
+    "kind": "text",
+    "field": "textListStyle",
+    "value": "disc",
+    "layer": {
+      "id": "object",
+      "type": "Text",
+      "textStyle": {
+        "textListPrefix": "(",
+        "textListPostfix": ")",
+        "textListStart": 3
+      }
+    },
+    "expected": {
+      "textStyle": {
+        "textListStyle": "disc"
+      }
+    },
+    "absent": [
+      "textStyle.textListPrefix",
+      "textStyle.textListPostfix",
+      "textStyle.textListStart"
+    ]
+  },
+  {
+    "name": "text angle wraps",
+    "kind": "text",
+    "field": "textGradientAngle",
+    "value": -90,
+    "layer": {
+      "id": "object",
+      "type": "Text"
+    },
+    "expected": {
+      "textStyle": {
+        "textGradientAngle": 270
+      }
+    }
+  },
+  {
+    "name": "text media color rejects invalid range",
+    "kind": "text",
+    "field": "mediaFillContrast",
+    "value": -1,
+    "layer": {
+      "id": "object",
+      "type": "Text"
+    },
+    "expected": {},
+    "error": true
+  },
+  {
+    "name": "stroke width keeps color",
+    "kind": "shape",
+    "field": "strokeWidth",
+    "value": 8,
+    "layer": {
+      "id": "object",
+      "type": "Shape",
+      "stroke": "2px #abcdef"
+    },
+    "expected": {
+      "stroke": "8px #abcdef",
+      "strokeEnabled": true
+    }
+  },
+  {
+    "name": "gradient preserves stops",
+    "kind": "shape",
+    "field": "fillType",
+    "value": "gradient",
+    "layer": {
+      "id": "object",
+      "type": "Shape",
+      "fillColors": [
+        "#112233",
+        "#445566"
+      ]
+    },
+    "expected": {
+      "fillType": "gradient",
+      "fill": "Gradient",
+      "fillColors": [
+        "#112233",
+        "#445566"
+      ]
+    }
+  },
+  {
+    "name": "disable fill clears colors",
+    "kind": "shape",
+    "field": "fillEnabled",
+    "value": false,
+    "layer": {
+      "id": "object",
+      "type": "Shape",
+      "fill": "#ffffff",
+      "fillColors": [
+        "#ffffff"
+      ]
+    },
+    "expected": {
+      "fillType": "none",
+      "fill": "",
+      "fillColors": []
+    }
+  },
+  {
+    "name": "shadow initializes defaults",
+    "kind": "shape",
+    "field": "shapeShadowEnabled",
+    "value": true,
+    "layer": {
+      "id": "object",
+      "type": "Shape"
+    },
+    "expected": {
+      "shadowEnabled": true,
+      "shadowBlur": 5,
+      "shadowOpacity": 75,
+      "shadowColor": "#000000",
+      "shadowAngle": 315,
+      "shadowOffset": 5
+    }
+  },
+  {
+    "name": "opacity clamps",
+    "kind": "shape",
+    "field": "opacity",
+    "value": 105,
+    "layer": {
+      "id": "object",
+      "type": "Shape"
+    },
+    "expected": {
+      "opacity": 100
+    }
+  },
+  {
+    "name": "media rotation wraps",
+    "kind": "shape",
+    "field": "mediaRotation",
+    "value": -90,
+    "layer": {
+      "id": "object",
+      "type": "Shape"
+    },
+    "expected": {
+      "mediaRotation": 270
+    }
+  },
+  {
+    "name": "capture color preserves other states",
+    "kind": "shape",
+    "field": "captureRecordingColor",
+    "value": "#010203",
+    "layer": {
+      "id": "object",
+      "type": "Shape",
+      "captureStatusColors": {
+        "idle": "#112233",
+        "recording": "#00aa00"
+      }
+    },
+    "expected": {
+      "captureStatusColors": {
+        "idle": "#112233",
+        "recording": "#010203"
+      }
+    }
+  },
+  {
+    "name": "media saturation uses normalized range",
+    "kind": "shape",
+    "field": "mediaSaturation",
+    "value": 1.25,
+    "layer": {
+      "id": "object",
+      "type": "Shape"
+    },
+    "expected": {
+      "mediaSaturation": 1.25
+    }
+  },
+  {
+    "name": "enable build in",
+    "kind": "build",
+    "field": "buildEnabled",
+    "value": true,
+    "layer": {
+      "id": "object",
+      "type": "Shape"
+    },
+    "expected": {
+      "build": {
+        "step": 1,
+        "start": "on-click",
+        "delaySeconds": 0
+      }
+    }
+  },
+  {
+    "name": "shift generated reveal steps with build in",
+    "kind": "build",
+    "field": "buildStep",
+    "value": 4,
+    "layer": {
+      "id": "object",
+      "type": "Shape",
+      "build": {
+        "step": 1,
+        "start": "on-click",
+        "delaySeconds": 0
+      },
+      "buildOut": {
+        "step": 3,
+        "start": "on-click",
+        "delaySeconds": 0
+      },
+      "textReveal": {
+        "mode": "paragraph",
+        "fromIndex": 0,
+        "children": [
+          {
+            "id": "orbit-paragraph-build:object:0",
+            "index": 0,
+            "step": 2,
+            "start": "on-click",
+            "delaySeconds": 0
+          }
+        ]
+      }
+    },
+    "expected": {
+      "build": {
+        "step": 4
+      },
+      "buildOut": {
+        "step": 6
+      },
+      "textReveal": {
+        "children": [
+          {
+            "step": 5
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "build out must follow reveal",
+    "kind": "build",
+    "field": "buildOutStep",
+    "value": 1,
+    "layer": {
+      "id": "object",
+      "type": "Shape",
+      "build": {
+        "step": 1
+      },
+      "buildOut": {
+        "step": 3
+      }
+    },
+    "expected": {},
+    "error": true
+  },
+  {
+    "name": "cut transition resets duration",
+    "kind": "build",
+    "field": "buildTransition",
+    "value": "cut",
+    "layer": {
+      "id": "object",
+      "type": "Shape",
+      "build": {
+        "step": 1,
+        "transition": {
+          "effectId": "EC52A828-AD85-4602-B70C-1DEE7C904DB6",
+          "durationSeconds": 0.6
+        }
+      }
+    },
+    "expected": {
+      "build": {
+        "transition": {
+          "effectId": "AB29D07B-E9E2-4E0A-93BD-AD3EA58120FA",
+          "durationSeconds": 0
+        }
+      }
+    }
+  },
+  {
+    "name": "transition rejects duration above limit",
+    "kind": "build",
+    "field": "buildTransitionDuration",
+    "value": 12,
+    "layer": {
+      "id": "object",
+      "type": "Shape",
+      "build": {
+        "step": 1,
+        "transition": {
+          "effectId": "EC52A828-AD85-4602-B70C-1DEE7C904DB6",
+          "durationSeconds": 0.6
+        }
+      }
+    },
+    "expected": {},
+    "error": true
+  },
+  {
+    "name": "stroke width restores visible color from transparent stroke",
+    "kind": "shape",
+    "field": "strokeWidth",
+    "value": 3,
+    "layer": {
+      "id": "object",
+      "type": "Shape",
+      "stroke": "0px transparent"
+    },
+    "expected": {
+      "stroke": "3px #ffffff",
+      "strokeEnabled": true
+    }
+  },
+  {
+    "name": "stroke edit reads six digit hex portion",
+    "kind": "shape",
+    "field": "strokeWidth",
+    "value": 2,
+    "layer": {
+      "id": "object",
+      "type": "Shape",
+      "stroke": "1px #aabbccdd"
+    },
+    "expected": {
+      "stroke": "2px #aabbcc"
+    }
+  },
+  {
+    "name": "enabling a media fill preserves its authored fill and stops",
+    "kind": "shape",
+    "field": "fillEnabled",
+    "value": true,
+    "layer": {
+      "id": "object",
+      "type": "Shape",
+      "fillType": "media",
+      "fill": "Custom",
+      "fillColors": [
+        "#123456"
+      ]
+    },
+    "expected": {
+      "fillType": "media",
+      "fill": "Custom",
+      "fillColors": [
+        "#123456"
+      ]
+    }
+  },
+  {
+    "name": "screen preview choice keeps the output identity",
+    "kind": "shape",
+    "field": "fillType",
+    "value": "screen-preview:stage",
+    "layer": {
+      "id": "object",
+      "type": "Shape",
+      "fillType": "color",
+      "fill": "#fff"
+    },
+    "expected": {
+      "fillType": "screen-preview",
+      "previewScreenId": "stage",
+      "fill": "",
+      "fillColors": []
+    }
+  },
+  {
+    "name": "data fill source rejects unknown selectors",
+    "kind": "shape",
+    "field": "dataFillSource",
+    "value": "Guessed Slide",
+    "layer": {
+      "id": "object",
+      "type": "Shape"
+    },
+    "error": true
+  },
+  {
+    "name": "new effect preserves a valid zero duration",
+    "kind": "build",
+    "field": "buildTransition",
+    "value": "dissolve",
+    "layer": {
+      "id": "object",
+      "type": "Shape",
+      "build": {
+        "step": 1,
+        "start": "on-click",
+        "delaySeconds": 0,
+        "transition": {
+          "effectId": "11111111-1111-1111-1111-111111111111",
+          "durationSeconds": 0
+        }
+      }
+    },
+    "expected": {
+      "build": {
+        "transition": {
+          "effectId": "EC52A828-AD85-4602-B70C-1DEE7C904DB6",
+          "durationSeconds": 0
+        }
+      }
+    }
+  },
+  {
+    "name": "superscript level arrives as text and is stored as a number",
+    "kind": "text",
+    "field": "superscript",
+    "value": "1",
+    "layer": {
+      "id": "object",
+      "type": "Text",
+      "textStyle": {}
+    },
+    "expected": {
+      "textStyle": {
+        "superscript": 1
+      }
+    }
+  },
+  {
+    "name": "subscript level is negative",
+    "kind": "text",
+    "field": "superscript",
+    "value": "-1",
+    "layer": {
+      "id": "object",
+      "type": "Text",
+      "textStyle": {}
+    },
+    "expected": {
+      "textStyle": {
+        "superscript": -1
+      }
+    }
+  },
+  {
+    "name": "an absolute right edge replaces the right inset",
+    "kind": "text",
+    "field": "textAbsoluteRightEdge",
+    "value": 300,
+    "layer": {
+      "id": "object",
+      "type": "Text",
+      "textStyle": {
+        "textRightIndent": 40
+      }
+    },
+    "expected": {
+      "textStyle": {
+        "textAbsoluteRightEdge": 300
+      }
+    },
+    "absent": [
+      "textStyle.textRightIndent"
+    ]
+  },
+  {
+    "name": "a right inset replaces the absolute right edge",
+    "kind": "text",
+    "field": "textRightIndent",
+    "value": 20,
+    "layer": {
+      "id": "object",
+      "type": "Text",
+      "textStyle": {
+        "textAbsoluteRightEdge": 300
+      }
+    },
+    "expected": {
+      "textStyle": {
+        "textRightIndent": 20
+      }
+    },
+    "absent": [
+      "textStyle.textAbsoluteRightEdge"
+    ]
+  },
+  {
+    "name": "stage message flash starts with a white box color",
+    "kind": "text",
+    "field": "linkedTextStageMessageFlash",
+    "value": true,
+    "layer": {
+      "id": "object",
+      "type": "Text",
+      "textStyle": {
+        "linkedTextSource": "Stage Message"
+      }
+    },
+    "expected": {
+      "textStyle": {
+        "linkedTextStageMessageFlash": true,
+        "linkedTextStageMessageFlashColor": "#ffffff"
+      }
+    }
+  },
+  {
+    "name": "stage message flash keeps a chosen color",
+    "kind": "text",
+    "field": "linkedTextStageMessageFlash",
+    "value": true,
+    "layer": {
+      "id": "object",
+      "type": "Text",
+      "textStyle": {
+        "linkedTextStageMessageFlashColor": "#ff0000"
+      }
+    },
+    "expected": {
+      "textStyle": {
+        "linkedTextStageMessageFlashColor": "#ff0000"
+      }
+    }
+  },
+  {
+    "name": "video countdown is a linked source",
+    "kind": "text",
+    "field": "linkedTextSource",
+    "value": "Video Countdown",
+    "layer": {
+      "id": "object",
+      "type": "Text",
+      "textStyle": {}
+    },
+    "expected": {
+      "textStyle": {
+        "linkedTextSource": "Video Countdown",
+        "linkedTextEnabled": true
+      }
+    }
+  },
+  {
+    "name": "natural alignment applies to a paragraph",
+    "kind": "text",
+    "field": "textHorizontalAlign",
+    "value": "natural",
+    "layer": {
+      "id": "object",
+      "type": "Text",
+      "textStyle": {
+        "textHorizontalAlign": "left"
+      }
+    },
+    "expected": {
+      "textStyle": {
+        "textHorizontalAlign": "natural"
+      }
+    }
+  },
+  {
+    "name": "feathering style accepts the three styles",
+    "kind": "shape",
+    "field": "featheringStyle",
+    "value": "outside",
+    "layer": {
+      "id": "object",
+      "type": "Shape"
+    },
+    "expected": {
+      "featheringStyle": "outside"
+    }
+  },
+  {
+    "name": "feathering style rejects unknown styles",
+    "kind": "shape",
+    "field": "featheringStyle",
+    "value": "around",
+    "layer": {
+      "id": "object",
+      "type": "Shape"
+    },
+    "error": true
+  },
+  {
+    "name": "conditional visibility starts with an empty all condition",
+    "kind": "object",
+    "field": "visibilityEnabled",
+    "value": true,
+    "layer": {
+      "id": "object"
+    },
+    "expected": {
+      "visibilityLink": {
+        "criterion": "all",
+        "conditions": []
+      }
+    }
+  },
+  {
+    "name": "disabling conditional visibility removes the link",
+    "kind": "object",
+    "field": "visibilityEnabled",
+    "value": false,
+    "layer": {
+      "id": "object",
+      "visibilityLink": {
+        "criterion": "all",
+        "conditions": [
+          {
+            "timerId": "segment",
+            "timerName": "Segment",
+            "criterion": "is-running"
+          }
+        ]
+      }
+    },
+    "expected": {},
+    "absent": [
+      "visibilityLink"
+    ]
+  },
+  {
+    "name": "visibility edits need the link",
+    "kind": "object",
+    "field": "visibilityCriterion",
+    "value": "any",
+    "layer": {
+      "id": "object"
+    },
+    "error": true
+  },
+  {
+    "name": "a timer condition keeps its reference",
+    "kind": "object",
+    "field": "visibilityAdd",
+    "value": {
+      "timerId": "segment",
+      "timerName": "Segment"
+    },
+    "layer": {
+      "id": "object",
+      "visibilityLink": {
+        "criterion": "all",
+        "conditions": []
+      }
+    },
+    "expected": {
+      "visibilityLink": {
+        "conditions": [
+          {
+            "timerId": "segment",
+            "timerName": "Segment",
+            "criterion": "has-time-remaining"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "an element condition needs an object reference",
+    "kind": "object",
+    "field": "visibilityAdd",
+    "value": {
+      "kind": "element",
+      "objectId": "",
+      "objectName": ""
+    },
+    "layer": {
+      "id": "object",
+      "visibilityLink": {
+        "criterion": "all",
+        "conditions": []
+      }
+    },
+    "error": true
+  },
+  {
+    "name": "an element condition starts with has-text",
+    "kind": "object",
+    "field": "visibilityAdd",
+    "value": {
+      "kind": "element",
+      "objectId": "text",
+      "objectName": "Title"
+    },
+    "layer": {
+      "id": "object",
+      "visibilityLink": {
+        "criterion": "all",
+        "conditions": []
+      }
+    },
+    "expected": {
+      "visibilityLink": {
+        "conditions": [
+          {
+            "kind": "element",
+            "objectId": "text",
+            "objectName": "Title",
+            "criterion": "has-text"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "a video condition may loop",
+    "kind": "object",
+    "field": "visibilityCondition:0",
+    "value": "looping",
+    "layer": {
+      "id": "object",
+      "visibilityLink": {
+        "criterion": "all",
+        "conditions": [
+          {
+            "kind": "video",
+            "criterion": "has-expired"
+          }
+        ]
+      }
+    },
+    "expected": {
+      "visibilityLink": {
+        "conditions": [
+          {
+            "kind": "video",
+            "criterion": "looping"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "an element condition rejects timer criteria",
+    "kind": "object",
+    "field": "visibilityCondition:0",
+    "value": "is-running",
+    "layer": {
+      "id": "object",
+      "visibilityLink": {
+        "criterion": "all",
+        "conditions": [
+          {
+            "kind": "element",
+            "objectId": "text",
+            "objectName": "Title",
+            "criterion": "has-text"
+          }
+        ]
+      }
+    },
+    "error": true
+  },
+  {
+    "name": "a capture condition is active or inactive",
+    "kind": "object",
+    "field": "visibilityCondition:0",
+    "value": "inactive",
+    "layer": {
+      "id": "object",
+      "visibilityLink": {
+        "criterion": "all",
+        "conditions": [
+          {
+            "kind": "capture",
+            "criterion": "active"
+          }
+        ]
+      }
+    },
+    "expected": {
+      "visibilityLink": {
+        "conditions": [
+          {
+            "kind": "capture",
+            "criterion": "inactive"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "a video input condition keeps the input identity",
+    "kind": "object",
+    "field": "visibilityKind:0",
+    "value": {
+      "kind": "video-input",
+      "inputIndex": 2,
+      "inputId": "camera"
+    },
+    "layer": {
+      "id": "object",
+      "visibilityLink": {
+        "criterion": "all",
+        "conditions": [
+          {
+            "timerId": "segment",
+            "timerName": "Segment",
+            "criterion": "is-running"
+          }
+        ]
+      }
+    },
+    "expected": {
+      "visibilityLink": {
+        "conditions": [
+          {
+            "kind": "video-input",
+            "inputIndex": 2,
+            "inputId": "camera",
+            "criterion": "active"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "a video input needs a valid index",
+    "kind": "object",
+    "field": "visibilityKind:0",
+    "value": {
+      "kind": "video-input",
+      "inputIndex": -1,
+      "inputId": "camera"
+    },
+    "layer": {
+      "id": "object",
+      "visibilityLink": {
+        "criterion": "all",
+        "conditions": [
+          {
+            "timerId": "segment",
+            "timerName": "Segment",
+            "criterion": "is-running"
+          }
+        ]
+      }
+    },
+    "error": true
+  },
+  {
+    "name": "a condition kind must exist",
+    "kind": "object",
+    "field": "visibilityKind:0",
+    "value": {
+      "kind": "guess"
+    },
+    "layer": {
+      "id": "object",
+      "visibilityLink": {
+        "criterion": "all",
+        "conditions": [
+          {
+            "timerId": "segment",
+            "timerName": "Segment",
+            "criterion": "is-running"
+          }
+        ]
+      }
+    },
+    "error": true
+  },
+  {
+    "name": "removing a condition keeps the others",
+    "kind": "object",
+    "field": "visibilityRemove:0",
+    "value": null,
+    "layer": {
+      "id": "object",
+      "visibilityLink": {
+        "criterion": "all",
+        "conditions": [
+          {
+            "timerId": "segment",
+            "timerName": "Segment",
+            "criterion": "is-running"
+          },
+          {
+            "kind": "capture",
+            "criterion": "active"
+          }
+        ]
+      }
+    },
+    "expected": {
+      "visibilityLink": {
+        "conditions": [
+          {
+            "kind": "capture",
+            "criterion": "active"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "a missing condition fails",
+    "kind": "object",
+    "field": "visibilityCondition:3",
+    "value": "active",
+    "layer": {
+      "id": "object",
+      "visibilityLink": {
+        "criterion": "all",
+        "conditions": [
+          {
+            "kind": "capture",
+            "criterion": "active"
+          }
+        ]
+      }
+    },
+    "error": true
+  },
+  {
+    "name": "path closing is stored as closedPath",
+    "kind": "object",
+    "field": "pathClosed",
+    "value": true,
+    "layer": {
+      "id": "object",
+      "pathPoints": [
+        {
+          "x": 0,
+          "y": 0
+        }
+      ]
+    },
+    "expected": {
+      "closedPath": true
+    }
+  },
+  {
+    "name": "a path anchor moves",
+    "kind": "object",
+    "field": "pathPoint:1:anchor:x",
+    "value": 12.5,
+    "layer": {
+      "id": "object",
+      "pathPoints": [
+        {
+          "x": 0,
+          "y": 0
+        },
+        {
+          "x": 1,
+          "y": 2
+        }
+      ]
+    },
+    "expected": {
+      "pathPoints": [
+        {
+          "x": 0,
+          "y": 0
+        },
+        {
+          "x": 12.5,
+          "y": 2
+        }
+      ]
+    }
+  },
+  {
+    "name": "a missing path control point fails",
+    "kind": "object",
+    "field": "pathPoint:0:q0:x",
+    "value": 5,
+    "layer": {
+      "id": "object",
+      "pathPoints": [
+        {
+          "x": 0,
+          "y": 0
+        }
+      ]
+    },
+    "error": true
+  },
+  {
+    "name": "a timer color trigger moves in time",
+    "kind": "object",
+    "field": "timerTrigger:0:time",
+    "value": "30",
+    "layer": {
+      "id": "object",
+      "textStyle": {
+        "linkedTextTimerColorTriggers": [
+          {
+            "time": 10,
+            "color": "#ff0000"
+          }
+        ]
+      }
+    },
+    "expected": {
+      "textStyle": {
+        "linkedTextTimerColorTriggers": [
+          {
+            "time": 30,
+            "color": "#ff0000"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "a timer color trigger time must be finite",
+    "kind": "object",
+    "field": "timerTrigger:0:time",
+    "value": "soon",
+    "layer": {
+      "id": "object",
+      "textStyle": {
+        "linkedTextTimerColorTriggers": [
+          {
+            "time": 10,
+            "color": "#ff0000"
+          }
+        ]
+      }
+    },
+    "error": true
+  }
+]

@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Presenter Orbit</title>
+    <link rel="stylesheet" href="control.css" />
+    <script src="control.js" defer></script>
+  </head>
+  <body>
+    <form id="connection">
+      <fieldset>
+        <legend>Orbit connection (all Orbit buttons)</legend>
+        <label>Host<input id="host" required placeholder="127.0.0.1" autocomplete="off" /></label>
+        <label>Port<input id="port" type="number" min="1" max="65535" required /></label>
+        <label>Remote password<input id="password" type="password" required autocomplete="off" /></label>
+        <label>Poll interval (ms)<input id="pollInterval" type="number" min="250" max="10000" required /></label>
+        <button type="submit">Save connection</button>
+      </fieldset>
+    </form>
+    <p id="status" role="status">Connecting to Stream Deck…</p>
+    <fieldset>
+      <legend>This button</legend>
+      <label
+        >Control<select id="mode">
+          <option value="">Choose control…</option>
+          <option value="navigate">Navigation / clear all</option>
+          <option value="target">Workspace target</option>
+          <option value="clearLayer">Clear layer</option>
+        </select></label
+      >
+      <label id="commandRow" hidden
+        >Command<select id="command">
+          <option value="nextSlide">Next cue</option>
+          <option value="previousSlide">Previous cue</option>
+          <option value="clearAll">Clear all</option>
+        </select></label
+      >
+      <label id="layerRow" hidden
+        >Layer<select id="layer">
+          <option value="slide">Slide</option>
+          <option value="media">Media</option>
+          <option value="music">Music</option>
+          <option value="props">Props</option>
+          <option value="messages">Messages</option>
+          <option value="announcements">Announcements</option>
+          <option value="videoInput">Video input</option>
+        </select></label
+      >
+      <label id="targetRow" hidden
+        >Target<select id="target">
+          <option value="">Connect to Orbit to load targets</option>
+        </select></label
+      >
+      <label>Button label<input id="label" maxlength="70" placeholder="Use target name" /></label>
+    </fieldset>
+    <p id="result" role="status"></p>
+    <p>
+      Enable Remote in Orbit and enter its port and password. Green indicates live content or a running timer; blue is
+      ready, amber needs a target or is working, red is offline. Exact targets remain bound to their workspace.
+    </p>
+  </body>
+</html>

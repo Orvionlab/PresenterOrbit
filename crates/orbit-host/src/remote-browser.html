@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Presenter Orbit Remote</title>
+<style>
+body{font:16px system-ui;background:#131820;color:#edf2fa;max-width:760px;margin:0 auto;padding:24px}h1{font-size:24px}section{padding:16px;background:#202936;border-radius:10px;margin:16px 0}button{font:inherit;padding:12px;margin:4px;border:0;border-radius:6px;background:#4082d0;color:white;cursor:pointer}button:disabled{opacity:.45;cursor:default}button[aria-pressed="true"]{background:#24528b;box-shadow:inset 0 0 0 2px #a9cfff}button[data-command="libraryCue"],button[data-command="playlistCue"],button[data-command="cue"]{vertical-align:top;min-height:90px;width:min(210px,100%);text-align:left;white-space:pre-wrap}input{font:inherit;padding:10px;margin:4px;width:140px;border:1px solid #8292a8;border-radius:6px;background:#131820;color:#edf2fa}#timers>div{padding:12px 0;border-bottom:1px solid #3c4c60}.timer-name{font-weight:600}#feedback{white-space:pre-wrap}#slide{white-space:pre-wrap}small{display:block;color:#bcc8d8}.definition{padding:12px 0;border-bottom:1px solid #3c4c60}input[type="checkbox"]{width:auto}#macro-runs{white-space:pre-wrap;padding-left:20px}
+</style>
+<h1>Presenter Orbit Remote</h1>
+<p id="connection" role="status">Connecting…</p>
+<section><h2>Library</h2><div id="library"></div></section>
+<section><h2>Playlists</h2><div id="playlists"></div></section>
+<section><h2 id="presentation">Live presentation</h2><p id="slide"></p>
+<h3>Next cue</h3><div id="next-cue"></div>
+<div id="navigation"></div><h3>Cues in the live arrangement</h3><div id="cues"></div></section>
+<section><h2>Media Bin</h2><div id="media-bin"></div><div id="media-transport"></div><label>Playback position within trimmed range <input id="media-seek" type="range" min="0" max="100" step="0.1" value="0" aria-label="media playback position percent"></label><button id="media-seek-button">Seek</button></section>
+<section><h2>Audio Bin</h2><div id="audio-bin"></div><div id="audio-transport"></div><label>Playback position within trimmed range <input id="audio-seek" type="range" min="0" max="100" step="0.1" value="0" aria-label="audio playback position percent"></label><button id="audio-seek-button">Seek</button></section>
+<section><h2>Tickers</h2><div id="tickers"></div><p id="ticker-status" role="status"></p><div id="ticker-transport"></div><input id="ticker-seek" type="number" min="0" max="86400" step="0.1" value="0" aria-label="Ticker seek seconds"><button id="ticker-seek-button">Seek</button></section>
+<section><h2>Timers</h2><div id="timers"></div></section>
+<section><h2>Timer definitions</h2><small>Edits the saved timer definitions of the active workspace. Unsaved drafts are kept while status refreshes.</small><div id="timer-definitions"></div></section>
+<section><h2>Stage message</h2><p id="stage-message-status" role="status"></p><input id="stage-message-text" type="text" aria-label="Stage message text"><div id="stage-message-controls"></div></section>
+<section><h2>Stage screen layouts</h2><div id="stage-layouts"></div></section>
+<section><h2>Messages</h2><p id="message-status" role="status"></p><div id="messages"></div></section>
+<section><h2>Message definitions</h2><small>Edits saved message text and text token values. Unsaved drafts are kept while status refreshes.</small><div id="message-definitions"></div></section>
+<section><h2>Props</h2><div id="props"></div></section>
+<section><h2>Clear layers</h2><div id="layers"></div><h3>Clear groups</h3><div id="clear-groups"></div></section>
+<section><h2>Audience Looks</h2><div id="looks"></div></section>
+<section><h2>Macros</h2><small>A macro is completed only after every enabled action, including delayed, nested and native actions, has finished. A failure names each failed action.</small><div id="macros"></div><ol id="macro-runs" aria-live="polite"></ol></section>
+<section><h2>Capture</h2><p id="capture-status" role="status"></p><div id="capture"></div></section>
+<section><h2>Command status</h2><p id="feedback" role="status" aria-live="polite">No command sent.</p></section>
+<script>
+const macroTitles = new Map();
+let workspacePath = null, busy = false, selectedLibrary = null, selectedPresentation = null, selectedArrangement = null, selectedPlaylist = null, selectedPlaylistEntry = null, stageDraftWorkspace = null;
+const el = id => document.getElementById(id);
+async function api(path, payload) {
+  const response = await fetch(path, {credentials:'same-origin',cache:'no-store',...(payload ? {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)} : {})});
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+  return result;
+}
+function button(parent, title, command, id, enabled = true) {
+  const node = document.createElement('button'); node.textContent = title;node.dataset.command = command;
+  node.disabled = busy || !enabled || !workspacePath;
+  node.dataset.disabled = String(!enabled || !workspacePath);
+  node.onclick = () => send({command,...(id ? {id,workspacePath} : {})});
+  parent.append(node);
+}
+function setBusy(value) {busy = value;document.querySelectorAll('button,input,select').forEach(node => {node.disabled = value || node.dataset.disabled === 'true';});}
+async function send(payload) {
+  if (busy) return;
+  setBusy(true);
+  try {
+    const result = await api('/api/v1/command', payload);
+    el('feedback').textContent = result.status === 'queued' ? 'Accepted and queued. Waiting for execution feedback…' : `${result.status}${result.revision !== undefined ? ` · native revision ${result.revision}` : ''}`;
+    if (result.requestId && result.command === 'macro') {el('feedback').textContent = 'Macro accepted; completion is tracked in the Macros section.';void trackMacro(result);}
+    else if (result.requestId) await waitResult(result.requestId);
+    else if (result.status === 'queued') el('feedback').textContent = 'Navigation queued; execution is not confirmed by this endpoint.';
+  } catch (error) {el('feedback').textContent = `Command failed: ${error.message}`;}
+  finally {setBusy(false);await refresh();}
+}
+async function waitResult(requestId) {
+  for (;;) {
+    const result = await api(`/api/v1/commands/${encodeURIComponent(requestId)}`);
+    if (result.status !== 'queued') {
+      el('feedback').textContent = result.status === 'applied' ? ({stageLayout:'Stage layout assigned.',timerDefinition:'Timer definition saved.',messageDefinition:'Message definition saved.'}[result.command] || 'Audience Look applied.') : result.status === 'dispatched' ? (result.command === 'message' ? 'Message command dispatched to the message runtime.' : 'Clear group dispatched.') : `Execution ${result.status}: ${result.error}`;
+      return;
+    }
+    await new Promise(resolve => setTimeout(resolve, 250));
+  }
+}
+async function trackMacro(accepted) {
+  const row = document.createElement('li'), label = macroTitles.get(accepted.id) || accepted.id;
+  el('macro-runs').prepend(row);
+  while (el('macro-runs').children.length > 5) el('macro-runs').lastChild.remove();
+  try {
+    for (;;) {
+      const result = await api(`/api/v1/commands/${encodeURIComponent(accepted.requestId)}`);
+      if (result.status === 'completed') {row.textContent = `${label}: completed`;return;}
+      if (result.status !== 'queued' && result.status !== 'dispatched') {row.textContent = `${label}: ${result.status}: ${result.error}`;return;}
+      row.textContent = result.status === 'queued' ? `${label}: accepted, waiting for execution feedback…` : `${label}: running, waiting for delayed and native actions…`;
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+  } catch (error) {row.textContent = `${label}: status unavailable: ${error.message}`;}
+}
+function syncDefinitionRows(container, items, create, update) {
+  const ids = new Set(items.map(item => item.id));
+  for (const row of Array.from(container.children)) if (!ids.has(row.dataset.id)) row.remove();
+  for (const item of items) {
+    let row = Array.from(container.children).find(node => node.dataset.id === item.id);
+    row = row || document.createElement('div');
+    row.item = item;
+    if (!row.parentNode) {row.className = 'definition';row.dataset.id = item.id;create(row);container.append(row);}
+    update(row,item);
+    row.querySelectorAll('button,input').forEach(node => {node.dataset.disabled = String(!workspacePath || node.dataset.locked === 'true');node.disabled = busy || node.dataset.disabled === 'true';});
+  }
+  if (!items.length && !container.children.length) container.textContent = 'No definitions available.';
+  else if (items.length && container.firstChild?.nodeType === Node.TEXT_NODE) container.firstChild.remove();
+}
+function field(row, className, type, label) {
+  const input = document.createElement('input');input.type = type;input.className = className;input.setAttribute('aria-label', label);row.append(input);return input;
+}
+function createTimerDefinitionRow(row) {
+  const status = document.createElement('small');status.className = 'persisted';status.setAttribute('role','status');row.append(status);
+  const name = field(row,'draft-name','text','Timer name'), duration = field(row,'draft-duration','number','Timer duration in seconds'), overrun = field(row,'draft-overrun','checkbox','Allow overrun');
+  duration.min = '0';duration.max = '359999';duration.step = '1';
+  const item = row.item;name.value = item.name;duration.value = String(item.durationSeconds);overrun.checked = item.allowsOverrun;
+  button(row,'Save timer','timerDefinition',item.id);
+  row.lastChild.onclick = () => {
+    const current = row.item, patch = {}, trimmed = name.value.trim();
+    if (!trimmed) {el('feedback').textContent = 'A timer name is required.';return;}
+    if (trimmed !== current.name) patch.name = trimmed;
+    if (current.durationEditable) {
+      const seconds = duration.valueAsNumber;
+      if (!Number.isFinite(seconds) || seconds < 0 || seconds > 359999) {el('feedback').textContent = 'Timer duration must be between 0 and 359999 seconds.';return;}
+      if (seconds !== current.durationSeconds) patch.durationSeconds = seconds;
+    }
+    if (overrun.checked !== current.allowsOverrun) patch.allowsOverrun = overrun.checked;
+    if (!Object.keys(patch).length) {el('feedback').textContent = 'No timer changes to save.';return;}
+    void send({command:'timerDefinition',workspacePath,id:current.id,patch});
+  };
+}
+function updateTimerDefinitionRow(row, item) {
+  row.querySelector('.persisted').textContent = `Saved: ${item.name} · ${item.type === 'countdown' ? `${item.durationSeconds} seconds` : `${item.type} timer (duration not editable)`} · overrun ${item.allowsOverrun ? 'on' : 'off'}`;
+  row.querySelector('.draft-duration').dataset.locked = String(!item.durationEditable);
+}
+function createMessageDefinitionRow(row) {
+  const status = document.createElement('small');status.className = 'persisted';status.setAttribute('role','status');row.append(status);
+  const text = field(row,'draft-text','text','Message text');text.style.width = '100%';text.value = row.item.text;
+  const tokens = document.createElement('div');tokens.className = 'tokens';row.append(tokens);
+  button(row,'Save message','messageDefinition',row.item.id);
+  row.lastChild.onclick = () => {
+    const current = row.item, patch = {command:'messageDefinition',workspacePath,id:current.id}, values = {};
+    if (!text.value.trim()) {el('feedback').textContent = 'Message text is required.';return;}
+    if (text.value !== current.text) patch.text = text.value;
+    for (const input of tokens.querySelectorAll('input')) if (input.value !== (current.tokenValues[input.dataset.token] ?? '')) values[input.dataset.token] = input.value;
+    if (Object.keys(values).length) patch.tokenValues = values;
+    if (patch.text === undefined && !patch.tokenValues) {el('feedback').textContent = 'No message changes to save.';return;}
+    void send(patch);
+  };
+}
+function updateMessageDefinitionRow(row, item) {
+  row.querySelector('.persisted').textContent = `Saved: ${item.title || item.id} · ${item.text}`;
+  const tokens = row.querySelector('.tokens'), names = JSON.stringify(item.textTokens);
+  if (tokens.dataset.names === names) return;
+  tokens.dataset.names = names;tokens.replaceChildren();
+  for (const name of item.textTokens) {
+    const input = field(tokens,'draft-token','text',`Value of token ${name}`);input.dataset.token = name;input.placeholder = name;input.value = item.tokenValues[name] ?? '';
+  }
+}
+async function refresh() {
+  try {
+    const state = await api('/api/v1/status');
+    if (workspacePath !== state.workspacePath) {selectedLibrary = null;selectedPresentation = null;selectedArrangement = null;selectedPlaylist = null;selectedPlaylistEntry = null;el('timer-definitions').replaceChildren();el('message-definitions').replaceChildren();}
+    workspacePath = state.workspacePath;
+    macroTitles.clear();for (const entry of state.macros || []) macroTitles.set(entry.id,entry.title || entry.id);
+    syncDefinitionRows(el('timer-definitions'),state.timerDefinitions || [],createTimerDefinitionRow,updateTimerDefinitionRow);
+    syncDefinitionRows(el('message-definitions'),state.messageDefinitions || [],createMessageDefinitionRow,updateMessageDefinitionRow);
+    for (const [type, target, transport, active] of [['graphics','media-bin','media-transport',state.background],['audio','audio-bin','audio-transport',state.audio]]) {
+      el(target).replaceChildren();el(transport).replaceChildren();
+      for (const bin of state.mediaBins || []) {
+        const items = bin.items.filter(item => type === 'audio' ? item.type === 'audio' : item.type === 'image' || item.type === 'video');
+        if (!items.length) continue;
+        const heading = document.createElement('h3');heading.textContent = bin.title || bin.id;el(target).append(heading);
+        for (const item of items) {
+          button(el(target),item.title || item.id,'media',item.id);
+          el(target).lastChild.setAttribute('aria-pressed',String(active?.id === item.id));
+          el(target).lastChild.onclick = () => send({command:'media',workspacePath,id:item.id,action:'trigger'});
+        }
+      }
+      const current = (state.mediaBins || []).flatMap(bin => bin.items).find(item => item.id === active?.id);
+      if (current && current.type !== 'image' && Number.isFinite(active.selectionId)) for (const action of ['play','pause','restart',...(type === 'graphics' ? ['inPoint','outPoint'] : [])]) {
+        button(el(transport),({play:'Play',pause:'Pause',restart:'Restart',inPoint:'In point',outPoint:'Out point'})[action],'media',current.id);
+        el(transport).lastChild.setAttribute('aria-pressed',String(action === 'pause' ? active.paused : action === 'play' && !active.paused));
+        el(transport).lastChild.onclick = () => send({command:'media',workspacePath,id:current.id,action,selectionId:active.selectionId});
+      }
+    }
+    for (const [name,active] of [['media',state.background],['audio',state.audio]]) {
+      const current = (state.mediaBins || []).flatMap(bin => bin.items).find(item => item.id === active?.id);
+      const enabled = current && current.type !== 'image' && Number.isFinite(active.selectionId) && workspacePath;
+      for (const suffix of ['seek','seek-button']) {el(name+'-'+suffix).dataset.disabled=String(!enabled);el(name+'-'+suffix).disabled=busy || !enabled;}
+      el(name+'-seek-button').onclick = () => send({command:'media',workspacePath,id:current.id,action:'seek',selectionId:active.selectionId,position:el(name+'-seek').valueAsNumber/100});
+    }
+    for (const playlist of state.mediaBins || []) {
+      if (!playlist.audioPlaylist) continue;
+      const tracks = playlist.items.filter(item => item.type === 'audio');
+      const index = tracks.findIndex(item => item.id === state.audio?.id);
+      if (index < 0 || !Number.isFinite(state.audio.selectionId)) continue;
+      for (const [action,offset] of [['previous',-1],['next',1]]) {
+        button(el('audio-transport'),(action === 'previous' ? 'Previous' : 'Next')+' · '+(playlist.title || playlist.id),'media',state.audio.id,!!tracks[index+offset]);
+        el('audio-transport').lastChild.onclick = () => send({command:'media',workspacePath,id:state.audio.id,action,selectionId:state.audio.selectionId,playlistId:playlist.id,playlistOrder:tracks.map(item => item.id)});
+      }
+    }
+    el('tickers').replaceChildren();el('ticker-transport').replaceChildren();
+    for (const ticker of state.tickers || []) {
+      button(el('tickers'),ticker.title,'ticker',ticker.id);
+      el('tickers').lastChild.setAttribute('aria-pressed',String(state.ticker?.id === ticker.id));
+      el('tickers').lastChild.onclick = () => send({command:'ticker',workspacePath,type:'play',id:ticker.id});
+    }
+    const ticker = state.ticker;
+    el('ticker-status').textContent = ticker ? ticker.sourceError || ticker.title + ' · ' + (ticker.paused ? 'Paused' : 'Running') + ' · ' + ticker.elapsedSeconds.toFixed(1) + ' seconds' : 'No active ticker.';
+    for (const type of ticker ? ['pause','resume','clear'] : []) {
+      button(el('ticker-transport'),type === 'pause' ? 'Pause' : type === 'resume' ? 'Resume' : 'Clear','ticker',ticker.id);
+      el('ticker-transport').lastChild.onclick = () => send({command:'ticker',workspacePath,type,generation:ticker.generation});
+    }
+    for (const id of ['ticker-seek','ticker-seek-button']) {el(id).dataset.disabled = String(!ticker || !workspacePath);el(id).disabled = busy || !ticker || !workspacePath;}
+    el('ticker-seek-button').onclick = () => {
+      const seconds = el('ticker-seek').valueAsNumber;
+      if (!Number.isFinite(seconds) || seconds < 0 || seconds > 86400) {el('feedback').textContent = 'Ticker seek must be between 0 and 86400 seconds.';return;}
+      send({command:'ticker',workspacePath,type:'seek',generation:ticker.generation,seconds});
+    };
+    el('library').replaceChildren();
+    const libraries = state.libraries || [];
+    const library = libraries.find(entry => entry.id === selectedLibrary);
+    const presentation = library?.presentations.find(entry => entry.id === selectedPresentation);
+    for (const entry of libraries) {
+      button(el('library'),entry.title || entry.id,'library');
+      el('library').lastChild.setAttribute('aria-pressed',String(entry.id === selectedLibrary));
+      el('library').lastChild.onclick = () => {selectedLibrary = entry.id;selectedPresentation = null;selectedArrangement = null;void refresh();};
+    }
+    if (library) for (const item of library.presentations) {
+      button(el('library'),item.title || item.id,'presentation');
+      el('library').lastChild.setAttribute('aria-pressed',String(item.id === selectedPresentation));
+      el('library').lastChild.onclick = () => {selectedPresentation = item.id;selectedArrangement = null;void refresh();};
+    }
+    const arrangement = presentation?.arrangements?.find(entry => entry.id === selectedArrangement);
+    if (presentation && selectedArrangement && !arrangement) selectedArrangement = null;
+    if (presentation?.arrangements?.length) {
+      const label = document.createElement('small');label.textContent = 'Arrangement';el('library').append(label);
+      for (const entry of presentation.arrangements) {
+        button(el('library'),entry.title || entry.id,'arrangement');
+        el('library').lastChild.setAttribute('aria-pressed',String(entry.id === (selectedArrangement || presentation.arrangementId)));
+        el('library').lastChild.onclick = () => {selectedArrangement = entry.id;void refresh();};
+      }
+    }
+    if (presentation) for (const cue of arrangement?.slides || presentation.slides) {
+      button(el('library'),`${cue.index}. ${cue.title || cue.text || cue.id}`,'libraryCue',null,!cue.disabled);
+      el('library').lastChild.onclick = () => send({command:'libraryCue',workspacePath,libraryId:library.id,presentationId:presentation.id,...(selectedArrangement ? {arrangementId:selectedArrangement} : {}),playlistEntryId:null,slideId:cue.id,cueInstanceId:cue.cueInstanceId});
+    }
+    el('playlists').replaceChildren();
+    const playlists = state.playlists || [];
+    const playlist = playlists.find(entry => entry.id === selectedPlaylist);
+    const playlistEntry = playlist?.entries.find(entry => entry.id === selectedPlaylistEntry);
+    for (const entry of playlists) {
+      button(el('playlists'),entry.title || entry.id,'playlist');
+      el('playlists').lastChild.setAttribute('aria-pressed',String(entry.id === selectedPlaylist));
+      el('playlists').lastChild.onclick = () => {selectedPlaylist = entry.id;selectedPlaylistEntry = null;void refresh();};
+    }
+    if (playlist) for (const [index,entry] of playlist.entries.entries()) {
+      button(el('playlists'),`${index+1}. ${entry.title || entry.presentationId}${entry.arrangementTitle ? ` · ${entry.arrangementTitle}` : ''}`,'playlistEntry');
+      el('playlists').lastChild.setAttribute('aria-pressed',String(entry.id === selectedPlaylistEntry));
+      el('playlists').lastChild.onclick = () => {selectedPlaylistEntry = entry.id;void refresh();};
+    }
+    if (playlistEntry) for (const cue of playlistEntry.slides) {
+      button(el('playlists'),`${cue.index}. ${cue.title || cue.text || cue.id}`,'playlistCue',null,!cue.disabled);
+      el('playlists').lastChild.onclick = () => send({command:'playlistCue',workspacePath,playlistId:playlist.id,playlistEntryId:playlistEntry.id,presentationId:playlistEntry.presentationId,slideId:cue.id,cueInstanceId:cue.cueInstanceId});
+    }
+    const stage = state.stageMessage;
+    const stageInput = el('stage-message-text');
+    if (stageDraftWorkspace !== workspacePath) {stageInput.value = stage?.text || '';stageDraftWorkspace = workspacePath;}
+    stageInput.dataset.disabled = String(!workspacePath || !stage);
+    stageInput.disabled = busy || !workspacePath || !stage;
+    el('stage-message-status').textContent = stage ? `${stage.state}: ${stage.text}` : 'Stage message unavailable.';
+    el('stage-message-controls').replaceChildren();
+    for (const [title,action] of [['Save text','edit'],['Show','show'],['Hide','hide'],['Clear','clear']]) {
+      button(el('stage-message-controls'),title,'stageMessage',null,Boolean(stage));
+      el('stage-message-controls').lastChild.onclick = () => send({command:'stageMessage',workspacePath,action,...(action === 'edit' ? {text:stageInput.value} : {})});
+    }
+    el('connection').textContent = state.controlsError || (workspacePath ? 'Connected to the active workspace.' : 'No active workspace.');
+    el('presentation').textContent = state.presentation?.title || 'No live presentation';
+    el('slide').textContent = state.currentSlide?.text || '';
+    el('next-cue').replaceChildren();
+    const next = state.nextSlide;
+    if (next && state.presentation) {
+      button(el('next-cue'),next.title || next.text || next.id,'cue');
+      el('next-cue').lastChild.onclick = () => send({command:'cue',workspacePath,presentationId:state.presentation.id,playlistEntryId:state.presentation.playlistEntryId,slideId:next.id,cueInstanceId:next.cueInstanceId});
+    } else el('next-cue').textContent = state.presentation ? 'End of arrangement.' : 'No next cue.';
+    el('navigation').replaceChildren();
+    for (const [title,command] of [['Previous slide','previousSlide'],['Next slide','nextSlide'],['Previous item','previousItem'],['Next item','nextItem'],['Clear all','clearAll']]) button(el('navigation'),title,command);
+    el('cues').replaceChildren();
+    for (const cue of state.presentation?.slides || []) {
+      button(el('cues'),`${cue.index}. ${cue.title || cue.text || cue.id}`, 'cue', null, !cue.disabled);
+      if (state.presentation.slideIndex === cue.index) el('cues').lastChild.setAttribute('aria-current','true');
+      el('cues').lastChild.onclick = () => send({command:'cue',workspacePath,presentationId:state.presentation.id,playlistEntryId:state.presentation.playlistEntryId,slideId:cue.id,cueInstanceId:cue.cueInstanceId});
+    }
+    const timerIds = new Set((state.timers || []).map(timer => timer.id));
+    for (const row of el('timers').children) if (!timerIds.has(row.dataset.timerId)) row.remove();
+    for (const timer of state.timers || []) {
+      let row = Array.from(el('timers').children).find(node => node.dataset.timerId === timer.id);
+      if (!row) {
+        row = document.createElement('div');row.dataset.timerId = timer.id;
+        const label = document.createElement('span');label.className = 'timer-name';row.append(label);
+        const status = document.createElement('small');status.className = 'timer-status';status.setAttribute('role','status');row.append(status);
+        for (const action of ['start','stop','reset']) {button(row, action, 'timer', timer.id);row.lastChild.onclick = () => send({command:'timer',id:timer.id,action});}
+        const adjustment = document.createElement('input');adjustment.type = 'number';adjustment.step = 'any';adjustment.placeholder = 'Signed seconds';adjustment.setAttribute('aria-label',`Adjust ${timer.name} by seconds`);row.append(adjustment);
+        button(row,'Adjust','timer',timer.id);
+        row.lastChild.onclick = () => {
+          if (adjustment.value === '' || !Number.isFinite(adjustment.valueAsNumber)) {el('feedback').textContent = 'Enter a finite signed adjustment in seconds.';return;}
+          void send({command:'timer',id:timer.id,action:'increment',seconds:adjustment.valueAsNumber});
+        };
+        el('timers').append(row);
+      }
+      row.querySelector('.timer-name').textContent = timer.name;
+      row.querySelector('input').setAttribute('aria-label',`Adjust ${timer.name} by seconds`);
+      const run = state.timerRuns?.[timer.id];
+      if (run) {
+        const now = state.serverTimeMs;
+        const milliseconds = run.paused ? run.remaining : run.elapsed ? now - run.end : run.end - now;
+        const seconds = Math.ceil(Math.abs(milliseconds) / 1000);
+        const time = `${milliseconds < 0 ? '-' : ''}${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2,'0')}`;
+        row.querySelector('.timer-status').textContent = `${run.paused ? 'Paused' : 'Running'} · ${time}`;
+      } else row.querySelector('.timer-status').textContent = 'Not started.';
+      row.querySelectorAll('button,input').forEach(node => {node.dataset.disabled = String(!workspacePath);node.disabled = busy || !workspacePath;});
+    }
+    el('stage-layouts').replaceChildren();
+    const stageScreens = (state.outputs || []).filter(output => output.type === 'stage');
+    for (const screen of stageScreens) {
+      const label = document.createElement('label');label.textContent = `${screen.label || screen.id} `;
+      const select = document.createElement('select');select.setAttribute('aria-label',`Stage layout for ${screen.label || screen.id}`);
+      if (!screen.stageLayoutId) select.append(new Option('No layout', ''));
+      for (const layout of state.stageLayouts || []) select.append(new Option(layout.title || layout.id, layout.id));
+      select.value = screen.stageLayoutId || '';
+      select.disabled = busy || !workspacePath;select.dataset.disabled = String(!workspacePath);
+      select.onchange = () => {if (select.value) send({command:'stageLayout',screenId:screen.id,id:select.value,workspacePath});};
+      label.append(select);el('stage-layouts').append(label);
+    }
+    if (!stageScreens.length) el('stage-layouts').textContent = 'No stage screens.';
+    el('messages').replaceChildren();
+    const activeMessage = (state.messages || []).find(message => message.id === state.activeMessage?.id);
+    el('message-status').textContent = state.activeMessage ? `Showing: ${activeMessage?.title || state.activeMessage.id}` : 'No message showing.';
+    for (const message of state.messages || []) {
+      button(el('messages'),`Show ${message.title || message.id}`,'message',message.id);
+      el('messages').lastChild.onclick = () => send({command:'message',action:'show',id:message.id,workspacePath});
+    }
+    button(el('messages'),'Clear message','message',null,Boolean(state.activeMessage));
+    el('messages').lastChild.onclick = () => send({command:'message',action:'clear',workspacePath});
+    el('props').replaceChildren();
+    for (const prop of state.props || []) {
+      const active = state.livePropIds?.includes(prop.id);button(el('props'),`${active ? 'Clear' : 'Show'} ${prop.title}`, 'prop', prop.id);
+      el('props').lastChild.onclick = () => send({command:'prop',id:prop.id,action:active ? 'clear' : 'show'});
+    }
+    el('layers').replaceChildren();
+    for (const layer of new Set(Object.values(state.layers || {}).flatMap(layers => Object.keys(layers)))) {button(el('layers'),`Clear ${layer}`,'clearLayer');el('layers').lastChild.onclick = () => send({command:'clearLayer',layer});}
+    el('capture-status').textContent = state.captureStatus?.error ? `Recording error: ${state.captureStatus.error}` : state.captureStatus?.finalizing ? 'Finalizing recording…' : state.captureStatus?.active ? `Recording: ${state.captureStatus.framesWritten} frames, ${Math.floor(state.captureStatus.elapsedSeconds)} seconds` : 'Recording idle.';
+    el('capture').replaceChildren();
+    const running = state.captureStatus?.active || state.captureStatus?.finalizing;
+    for (const preset of state.recordingPresets || []) {
+      button(el('capture'),`Start ${preset.title || preset.id}`,'capture',preset.id,preset.enabled && !running);
+      el('capture').lastChild.onclick = () => send({command:'capture',action:'start',id:preset.id,workspacePath});
+    }
+    button(el('capture'),'Stop recording','capture',null,Boolean(state.captureStatus?.active));
+    el('capture').lastChild.onclick = () => send({command:'capture',action:'stop',workspacePath});
+    for (const [target,entries,command] of [['looks',state.audienceLooks,'audienceLook'],['macros',state.macros,'macro'],['clear-groups',state.clearGroups,'clearGroup']]) {
+      el(target).replaceChildren();
+      for (const entry of entries || []) {
+        button(el(target),entry.title || entry.id,command,entry.id,entry.enabled !== false);
+      }
+      if (!entries?.length) el(target).textContent = 'No available targets.';
+    }
+  } catch (error) {workspacePath = null;el('connection').textContent = `Connection failed: ${error.message}`;document.querySelectorAll('button,input').forEach(node => {node.disabled = true;node.dataset.disabled = 'true';});}
+}
+async function poll() {await refresh();setTimeout(poll,1000);}
+void poll();
+</script>
+</html>

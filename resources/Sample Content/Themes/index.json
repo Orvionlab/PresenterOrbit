@@ -1,0 +1,38 @@
+{
+  "themes": [
+    {
+      "folder": "Black",
+      "id": "basic-black",
+      "title": "Black"
+    },
+    {
+      "folder": "White",
+      "id": "basic-white",
+      "title": "White"
+    },
+    {
+      "folder": "Harbor",
+      "id": "orbit-harbor",
+      "title": "Harbor"
+    },
+    {
+      "folder": "Afterglow",
+      "id": "orbit-afterglow",
+      "title": "Afterglow"
+    }
+  ],
+  "countdownTimers": [
+    {
+      "id": "sample-preshow-countdown",
+      "name": "Preshow Countdown",
+      "durationSeconds": 600,
+      "allowsOverrun": false
+    },
+    {
+      "id": "sample-game-timer",
+      "name": "Activity Timer",
+      "durationSeconds": 60,
+      "allowsOverrun": false
+    }
+  ]
+}

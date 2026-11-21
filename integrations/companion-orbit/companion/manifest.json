@@ -1,0 +1,23 @@
+{
+  "$schema": "../node_modules/@companion-module/base/assets/manifest.schema.json",
+  "type": "connection",
+  "id": "presenter-orbit",
+  "name": "Presenter Orbit",
+  "shortname": "Orbit",
+  "description": "Control Presenter Orbit over its authenticated HTTP API",
+  "version": "0.1.0",
+  "license": "MIT",
+  "repository": "https://github.com/Joelsuperstar/Presenter-Orbit",
+  "bugs": "https://github.com/Joelsuperstar/Presenter-Orbit/issues",
+  "maintainers": [{ "name": "Orvion Lab", "email": "info@orvionlab.com" }],
+  "runtime": {
+    "type": "node26",
+    "api": "nodejs-ipc",
+    "apiVersion": "0.0.0",
+    "entrypoint": "../src/main.js"
+  },
+  "legacyIds": [],
+  "manufacturer": "Presenter Orbit",
+  "products": ["Presenter Orbit"],
+  "keywords": ["presentation", "slides", "remote", "orbit"]
+}
