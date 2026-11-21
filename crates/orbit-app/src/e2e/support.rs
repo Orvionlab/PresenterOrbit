@@ -118,20 +118,14 @@ impl Scenario {
             controller,
         );
         if controller {
-            let executable = std::env::current_exe()
-                .unwrap()
-                .parent()
-                .unwrap()
-                .parent()
-                .unwrap()
-                .join(if cfg!(windows) {
-                    "orbit-app.exe"
-                } else {
-                    "orbit-app"
-                });
+            let executable = PathBuf::from(
+                std::env::var_os("PRESENTER_ORBIT_E2E_EXECUTABLE")
+                    .expect("Run npm run test:e2e to locate the output executable"),
+            );
             assert!(
                 executable.is_file(),
-                "Build orbit-app before running E2E tests"
+                "E2E output executable is missing: {}",
+                executable.display(),
             );
             crate::shell::start_output_link_with(&host, sender, "normal".into(), |events| {
                 Arc::new(crate::output_process::client::ProcessSpawner {
