@@ -3,8 +3,7 @@ name: GPUI package acceptance
 # Builds the GPUI installers (scripts/package-gpui.mts) and smoke-tests the unpacked package. Windows is the
 # verified route. The macOS and Linux jobs are manual and allowed to fail: the packaging for them was written but
 # has not been run on those systems. Nothing here signs, publishes or uploads outside the workflow run: without the
-# signing secrets the artifacts are unsigned, and the job summary says so. Installed upgrade tests from the last Tauri
-# release need a disposable machine (docs/gpui-migration/phase-16.md).
+# signing secrets the artifacts are unsigned. Test installed upgrades on a disposable machine.
 on:
   workflow_dispatch:
     inputs:

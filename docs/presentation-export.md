@@ -23,8 +23,6 @@ A canceled native destination dialog writes nothing. Workspace/revision changes 
 
 `cargo test -p orbit-host presentation_export::tests -- --test-threads=1` verifies order/repeated arrangements, disabled selection, notes, CCLI, native library theme inheritance, missing sections/sources/assets/fonts, corrupt images, unsupported dynamic sources, existing-file protection, write failures, real native PNG pixels, PDF page order and selected static media foreground/scale pixels.
 
-The Tauri-era renderer tests (`tests/renderer/presentation-export*.test.ts*`, at commit `64121abe`) verified the bridge options, cancellation without retries, native error propagation, invalid/stale targets, actual dialog order controls, visual notes exclusion, StrictMode lifecycle and rejection of stale workspace results.
-
 The native fixture creates two genuine 320 x 180 PNGs and a PDF. Poppler `pdfinfo` confirmed PDF 1.4, two pages, correct page dimensions, no suspects and no encryption. `pypdf.PdfReader(..., strict=True)` reopened both pages and extracted one RGB image per page; both extracted images exactly match their native PNG pixels. Both pages were rendered with Poppler and visually inspected: the blue theme background, orange theme object, centered white verse text and occurrence order are correct. Fixture outputs are evidence artifacts outside the source tree, not generated files committed to the repository.
 
 Desktop end-to-end destination-dialog testing still depends on a working native UI automation/runtime session. Automated native output evidence and React interaction tests do not establish manual desktop workflow verification.

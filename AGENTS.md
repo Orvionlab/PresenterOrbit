@@ -4,7 +4,7 @@
 
 Presenter Orbit is a cross-platform desktop app for live presentations: libraries, playlists, cue editing, media, theme editing, stage displays, audience outputs, and optional NDI output.
 
-The whole app is Rust. The UI is GPUI (`crates/orbit-app/`), built on the Presenter Orbit design system in `crates/orbit-ui/`. Host services (workspace storage, settings, output composition, audio, NDI, ProPresenter import, remote control) live in `crates/orbit-host/` and have no windowing or UI dependency. Program output runs in a separate process of the same executable (`crates/orbit-app/src/output_process/`). See `docs/tauri-migration.md` for background on the earlier Tauri and React app.
+The whole app is Rust. The UI is GPUI (`crates/orbit-app/`), built on the Presenter Orbit design system in `crates/orbit-ui/`. Host services (workspace storage, settings, output composition, audio, NDI, ProPresenter import, remote control) live in `crates/orbit-host/` and have no windowing or UI dependency. Program output runs in a separate process of the same executable (`crates/orbit-app/src/output_process/`).
 
 ## Dependencies
 
@@ -58,7 +58,7 @@ scripts/                  Node scripts: packaging (package-gpui*.mts, package-ff
 tests/                    Reference assets for import and release acceptance checks
 integrations/             Companion and Stream Deck modules (their own npm packages)
 vendor/                   Downloaded, Git-ignored ProPresenter reference schemas
-docs/                     Design system, architecture, GPUI migration plan and logs
+docs/                     Design system, architecture, development and release guides
 ```
 
 ## Data and Storage
@@ -80,7 +80,7 @@ The UI reaches native capabilities only through the host: `Host::invoke(method, 
 2. A typed wrapper in `orbit-app` next to the feature that uses it.
 3. Controller code that calls it from a background task, never on the UI thread.
 
-Only the UI process writes workspace or settings files. The output process has an invoke allow-list that must not grow writers; record any addition in `docs/gpui-migration/README.md`.
+Only the UI process writes workspace or settings files. The output process has an invoke allow-list that must not grow writers; record any addition in `docs/architecture-dataflow.md`.
 
 ## UI Patterns
 

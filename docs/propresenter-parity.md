@@ -1,6 +1,6 @@
 # ProPresenter / Presenter Orbit feature parity
 
-> **Note (GPUI migration):** this inventory and its evidence were written against the Tauri/React app. Links into `src/renderer/`, `src/shared/`, and `src-tauri/` and the `npm run tauri:*`/Vitest commands refer to files and scripts that were deleted in Phase 16; read them at commit `64121abe` (`git show 64121abe:<path>`). Links into `crates/` are current. The GPUI parity rows are in `docs/gpui-migration/`.
+> This is a historical compatibility assessment. It includes legacy source paths and test commands. See the [end-to-end testing guide](e2e-testing.md) for the current operator workflows.
 
 **Assessment date:** 2026-10-14, Europe/Berlin\
 **Summary and development priorities refreshed:** 2026-10-30, Europe/Berlin. Remote phone findings, the bounded timer-authoring follow-up and the 2026-10-30 evening round (Remote fixes, macOS PowerPoint image import, INT-21 gradients/timer display rules, INT-02 exclusion) are recorded below; this is not a new whole-product audit.\

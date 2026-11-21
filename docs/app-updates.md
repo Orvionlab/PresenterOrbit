@@ -6,7 +6,7 @@ The default development/build configuration has no endpoint or key. It reports t
 
 ## Configure signed releases
 
-The signing key is the Tauri/minisign key the earlier Tauri releases used; keep using it so installed Tauri apps accept the transition release. A new key pair can be generated with any minisign-compatible tool (for example `cargo install tauri-cli` and `cargo tauri signer generate -w <path>`, or `minisign -G`); the packaging script needs the Tauri encoding (base64 of the password-protected secret key file). `scripts/updater-signing.mts` writes the `.sig` and is tested with a throwaway key; it has not been exercised with the production key.
+The updater verifies minisign signatures. Use the signing key that matches the public key in the installed app. A new key pair can be generated with `cargo tauri signer generate -w <path>` or `minisign -G`. The packaging script expects the Tauri format, which is the password-protected secret key file encoded as base64.
 
 Keep the private key and its password backed up securely, outside this repository. Keep using the same key for later releases. The `.pub` file is public. Before building, set:
 
@@ -29,7 +29,7 @@ Build public releases from the exact tagged source. Link that source on the down
 
 ## Cloudflare hosting
 
-The tag-triggered workflow that published the signed packages to GitHub Releases and the update feed to Cloudflare R2 belonged to the Tauri CI and was deleted with it (last version: `git show 64121abe:.github/workflows/ci.yml`, the release jobs). There is no GPUI release workflow yet; it needs to be written and run by a person who holds the signing secrets and the Cloudflare credentials. Until then, publish by hand: build with `--updater`, upload `dist/gpui/updates/` to the R2 bucket (versioned files first, `latest.json` last with `no-cache`), and attach the packages to a GitHub release.
+Publish releases manually. Build with `--updater`, upload `dist/gpui/updates/` to the configured host with the versioned files first and `latest.json` last, then attach the packages to a GitHub release.
 
 The settings the old workflow used are still the right ones: repository **Variables** `PRESENTER_ORBIT_UPDATE_BASE_URL` (public HTTPS custom domain of the bucket, no path, query or fragment), `PRESENTER_ORBIT_UPDATE_PUBLIC_KEY` (contents of the `.pub` file), `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_R2_BUCKET`; **Secrets** `TAURI_SIGNING_PRIVATE_KEY` (full contents of the private key, not a path), `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, and the R2 access key pair scoped to the bucket. Avoid publishing two versions concurrently: the last publication sets the feed. The first signed installer must be installed once by hand; builds without an endpoint cannot discover the feed. Updater signing does not provide Windows Authenticode signing or macOS notarization.
 

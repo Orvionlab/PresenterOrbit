@@ -1,7 +1,6 @@
 name: GPUI CI
 
-# The repository gate. Windows runs `npm run verify` (see AGENTS.md); macOS and Linux build and test but may fail
-# until they have been run on real machines (Phase 16 of docs/gpui-migration).
+# Windows runs `npm run verify`. macOS and Linux build and run the end-to-end suite as informational checks.
 on:
   push:
     branches: [main, "gpui/**"]

@@ -1,8 +1,6 @@
 name: GPUI burn-in
 
-# The GPUI counterpart of critical-burn-in.yml: repeats the test suites and the packaged-application smoke test.
-# The service-length burn-in on real hardware (hours of live output, leak check) is a manual release step and is
-# not something CI can replace (docs/gpui-migration/phase-16.md).
+# Repeats the test suites and packaged smoke test. Service-length output testing still needs real hardware.
 on:
   schedule:
     - cron: "30 3 * * 3"

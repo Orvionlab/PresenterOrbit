@@ -1,11 +1,9 @@
 # Architecture and data flow
 
-This document is the short path through Presenter Orbit for contributors. The
-GPUI-specific structure (crates, themes, HiDPI, output windows and process,
-canvas editor) is in [`gpui-migration/architecture.md`](gpui-migration/architecture.md); the
-Rust and docs rules are in [`maintenance-guide.md`](maintenance-guide.md). The earlier
-Tauri/React app, whose last commit is `64121abe`, was described here in terms of UI
-controllers; the host rules below are unchanged.
+This guide describes the boundaries between the GPUI app, shared UI controls,
+native host services, and program output. See the [design system](design-system.md)
+for UI conventions and the [maintenance guide](maintenance-guide.md) for
+contributor checks.
 
 ## Runtime ownership
 
@@ -361,7 +359,7 @@ save from overwriting a newer Rust-owned mutation.
    focused Rust module in `crates/orbit-host/`.
 2. Add a typed wrapper in `orbit-app` next to the feature that needs it, and call it from a
    controller off the UI thread. If the output process needs it, add it to the output invoke
-   allow-list only when it is not a workspace or settings writer, and record the decision.
+   allow-list only when it is not a workspace or settings writer, and record the decision in this guide.
 3. Do not add an unstructured settings or workspace dictionary; use typed payloads.
 4. Add malformed-payload, success, and failure tests.
 5. Run `npm run verify`; manually test hardware-dependent behavior when applicable.
@@ -371,6 +369,5 @@ save from overwriting a newer Rust-owned mutation.
 - `npm run check` is the quick gate: toolchain and workflow-pin checks, the orbit-app color-literal
   check, locale consistency, version agreement, workspace compatibility, formatting of scripts, `cargo fmt`,
   and clippy (`scripts/check-clippy.mts`: none in `orbit-app` and `orbit-ui`, `orbit-host` within its baseline).
-- `npm run verify` adds `cargo test --workspace` and the Node script tests.
-- `node scripts/gpui-smoke.mts` starts a packaged build on a private data folder (see
-  `docs/gpui-migration/phase-16.md`).
+- `npm run verify` adds the [operator end-to-end tests](e2e-testing.md).
+- `node scripts/gpui-smoke.mts --dir <unpacked package>` starts a packaged build on a private data folder.

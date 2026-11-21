@@ -165,7 +165,7 @@ upgrades and security review.
 
 ## GPUI application
 
-`crates/orbit-app` and `crates/orbit-ui` use `gpui-pre` and `gpui-pre-platform` at the exact version 0.3.11, Apache-2.0, snapshots of [Zed](https://github.com/zed-industries/zed) commit `f816e1f`. crates.io `gpui` is a year behind, and these snapshots are what `gpui-component` builds on. They have one publisher, so the version stays pinned and upgrades are deliberate; a git revision of Zed is the fallback. `docs/gpui-migration/` owns the upgrade decision.
+`crates/orbit-app` and `crates/orbit-ui` use `gpui-pre` and `gpui-pre-platform` at the exact version 0.3.11 under Apache-2.0. These packages are snapshots of [Zed](https://github.com/zed-industries/zed) commit `f816e1f`. Review and test the three GPUI dependencies together when upgrading.
 
 `gpui-base` =0.9.0 (Apache-2.0, https://github.com/longbridge/gpui-kit) supplies unstyled behavior for controls: text editing with IME, focus, keyboard, and accessibility. It is the same project as `gpui-component` without that crate's visual layer, and only `orbit-ui` may use it.
 
