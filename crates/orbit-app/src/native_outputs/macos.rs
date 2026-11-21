@@ -333,7 +333,7 @@ impl NativeOutputs {
             OBSERVER.with(|observer| {
                 if let Some(token) = observer.borrow_mut().take() {
                     unsafe {
-                        NSNotificationCenter::defaultCenter().removeObserver(&token);
+                        NSNotificationCenter::defaultCenter().removeObserver((*token).as_ref());
                     }
                 }
             });

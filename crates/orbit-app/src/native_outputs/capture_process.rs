@@ -27,11 +27,11 @@ mod platform;
 
 /// The output process runs AppKit on its main thread without GPUI.
 #[cfg(target_os = "macos")]
-pub(super) fn initialize_app() -> Result<(), String> {
+pub(crate) fn initialize_app() -> Result<(), String> {
     platform::initialize()
 }
 #[cfg(target_os = "macos")]
-pub(super) fn pump_app() {
+pub(crate) fn pump_app() {
     platform::pump()
 }
 

@@ -31,7 +31,7 @@ mod capture_protocol;
 pub mod framing;
 
 #[cfg(target_os = "macos")]
-pub use capture_process::{initialize_app, pump_app};
+pub(crate) use capture_process::{initialize_app, pump_app};
 
 pub fn run_capture_helper() -> bool {
     #[cfg(any(target_os = "macos", target_os = "linux"))]

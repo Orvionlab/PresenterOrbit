@@ -15,7 +15,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
 };
-use wry::WebViewExtDarwin;
+use wry::WebViewExtMacOS;
 pub fn initialize() -> Result<(), String> {
     let mtm =
         MainThreadMarker::new().ok_or("The capture helper must run on the AppKit main thread.")?;
