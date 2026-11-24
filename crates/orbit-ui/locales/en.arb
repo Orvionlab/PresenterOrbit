@@ -640,6 +640,30 @@
   "@settings.import.importProPresenter": {
     "description": "Button text for importing a ProPresenter workspace."
   },
+  "settings.import.importProPresenterFiles": "Import ProPresenter files",
+  "@settings.import.importProPresenterFiles": {
+    "description": "Opens the presentation file import with the ProPresenter file filter."
+  },
+  "fileImport.title": "Import files",
+  "@fileImport.title": {
+    "description": "Title of the dialog for choosing where to import the selected files."
+  },
+  "fileImport.confirm": "Import",
+  "@fileImport.confirm": {
+    "description": "Confirms the destination and imports the selected files."
+  },
+  "fileImport.selection": "{count} files selected",
+  "@fileImport.selection": {
+    "description": "Number of files selected for a shared import destination."
+  },
+  "fileImport.working": "Importing files…",
+  "@fileImport.working": {
+    "description": "Status while importing the selected files."
+  },
+  "fileImport.result": "Imported {count} of {total} files",
+  "@fileImport.result": {
+    "description": "Summary above warnings and failures from a file import."
+  },
   "settings.import.exportProPresenter": "Export ProPresenter workspace",
   "@settings.import.exportProPresenter": {
     "description": "Button text for exporting the current Presenter Orbit workspace to ProPresenter."
@@ -1215,9 +1239,9 @@
   "@appMenu.keynoteSelectPlaylist": {
     "description": "Reason the Keynote import menu action is disabled when no regular playlist is selected."
   },
-  "appMenu.importTextFile": "Text File...",
-  "@appMenu.importTextFile": {
-    "description": "User-facing import text file text in the app menu interface."
+  "appMenu.importFiles": "Files...",
+  "@appMenu.importFiles": {
+    "description": "File import menu item for text and ProPresenter presentations."
   },
   "appMenu.importPowerPoint": "PowerPoint (.pptx)...",
   "@appMenu.importPowerPoint": {

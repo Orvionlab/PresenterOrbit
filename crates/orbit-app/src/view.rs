@@ -604,15 +604,19 @@ impl AppView {
                 crate::output::windows::toggle_group(&runtime, stage, cx);
             });
         }
-        for (id, method) in [
-            ("import-text-file", "selectPresentationTextFile"),
-            ("import-clipboard", "readClipboardText"),
-        ] {
+        for (id, clipboard) in [("import-files", false), ("import-clipboard", true)] {
             let weak = cx.weak_entity();
             let runtime = self.runtime.clone();
             self.commands.register(id, false, move |_, cx| {
                 let owner = weak.clone();
                 let _ = weak.update(cx, |view, cx| {
+                    if view
+                        .imports
+                        .as_ref()
+                        .is_some_and(|import| import.read(cx).picking_files())
+                    {
+                        return;
+                    }
                     view.imports = Some(cx.new(|cx| {
                         let mut imports = crate::imports::Imports::new(
                             runtime.clone(),
@@ -624,7 +628,11 @@ impl AppView {
                             },
                             cx,
                         );
-                        imports.load_text(method, cx);
+                        if clipboard {
+                            imports.load_clipboard(cx);
+                        } else {
+                            imports.pick_file(false, cx);
+                        }
                         imports
                     }));
                     cx.notify();
@@ -1484,7 +1492,7 @@ impl AppView {
                     label: t.t("appMenu.import").into(),
                     disabled: false,
                     entries: vec![
-                        command(t.t("appMenu.importTextFile"), "import-text-file", None),
+                        command(t.t("appMenu.importFiles"), "import-files", None),
                         command(t.t("appMenu.importClipboard"), "import-clipboard", None),
                         command(t.t("appMenu.importPowerPoint"), "open-bundles", None),
                         command(t.t("portableBundle.import"), "open-bundles", None),

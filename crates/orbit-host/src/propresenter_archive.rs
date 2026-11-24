@@ -1,9 +1,8 @@
-//! Import of ProPresenter `.proBundle` and `.proPlaylist` archives into an
-//! existing Orbit workspace. Both are ZIP files: presentation documents
-//! (`*.pro`), their media and, for playlists, a `data` PlaylistDocument.
+//! Import of ProPresenter presentations and ZIP bundles into an existing Orbit workspace.
 
 use super::{
-    content_themes, propresenter_proto, read_workspace, safe_name, save_workspace, unique_id,
+    content_themes, propresenter_assets, propresenter_proto, read_workspace, safe_name,
+    save_read_workspace, unique_id, unique_presentation_entry_id,
 };
 use crate::workspace_import::{place, same_title, Duplicate};
 use serde_json::{json, Value};
@@ -30,7 +29,7 @@ const ASSET_KEYS: [&str; 10] = [
 ];
 
 struct Archive {
-    zip: zip::ZipArchive<fs::File>,
+    zip: Option<zip::ZipArchive<fs::File>>,
     documents: Vec<(String, Vec<u8>)>,
     playlist: Option<Vec<u8>>,
     media: Vec<(usize, String)>,
@@ -50,6 +49,30 @@ fn read_entry(entry: &mut zip::read::ZipFile<'_, fs::File>, name: &str) -> Resul
 }
 
 fn open(path: &Path) -> Result<Archive, String> {
+    if path
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("pro"))
+    {
+        let mut file = fs::File::open(path).map_err(|error| error.to_string())?;
+        let mut bytes = Vec::new();
+        (&mut file)
+            .take(MAX_DOCUMENT_BYTES + 1)
+            .read_to_end(&mut bytes)
+            .map_err(|error| error.to_string())?;
+        if bytes.len() as u64 > MAX_DOCUMENT_BYTES {
+            return Err("ProPresenter presentation is too large.".into());
+        }
+        let name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or("ProPresenter file name is invalid.")?;
+        return Ok(Archive {
+            zip: None,
+            documents: vec![(name.into(), bytes)],
+            playlist: None,
+            media: Vec::new(),
+        });
+    }
     let file = fs::File::open(path)
         .map_err(|error| format!("ProPresenter archive could not be opened: {error}"))?;
     let mut zip = zip::ZipArchive::new(file)
@@ -85,7 +108,7 @@ fn open(path: &Path) -> Result<Archive, String> {
         return Err("ProPresenter archive contains no presentation documents.".into());
     }
     Ok(Archive {
-        zip,
+        zip: Some(zip),
         documents,
         playlist,
         media,
@@ -144,13 +167,20 @@ struct Extractor<'a> {
     archive: &'a mut Archive,
     root: PathBuf,
     extracted: HashMap<usize, PathBuf>,
+    warnings: Vec<String>,
 }
 
 impl Extractor<'_> {
-    fn extract(&mut self, reference: &str) -> Result<PathBuf, String> {
-        let index = locate(reference, &self.archive.media)?;
+    fn extract(&mut self, reference: &str) -> Result<Option<PathBuf>, String> {
+        let index = match locate(reference, &self.archive.media) {
+            Ok(index) => index,
+            Err(warning) => {
+                self.warnings.push(warning);
+                return Ok(None);
+            }
+        };
         if let Some(path) = self.extracted.get(&index) {
-            return Ok(path.clone());
+            return Ok(Some(path.clone()));
         }
         let name = &self
             .archive
@@ -170,6 +200,8 @@ impl Extractor<'_> {
         let mut entry = self
             .archive
             .zip
+            .as_mut()
+            .ok_or("ProPresenter media archive is unavailable.")?
             .by_index(index)
             .map_err(|error| error.to_string())?;
         let mut output = fs::File::create(&target).map_err(|error| error.to_string())?;
@@ -178,7 +210,7 @@ impl Extractor<'_> {
         })?;
         crate::portable_bundle::validate_asset(&target)?;
         self.extracted.insert(index, target.clone());
-        Ok(target)
+        Ok(Some(target))
     }
 
     fn rewrite(&mut self, value: &mut Value) -> Result<(), String> {
@@ -191,7 +223,9 @@ impl Extractor<'_> {
                             .as_str()
                             .filter(|value| !value.is_empty() && !value.starts_with("data:"))
                         {
-                            let path = self.extract(reference)?;
+                            let Some(path) = self.extract(reference)? else {
+                                continue;
+                            };
                             *child = if key.ends_with("Url") {
                                 json!(url::Url::from_file_path(&path)
                                     .map_err(|_| "Extracted media path is not absolute.")?
@@ -230,9 +264,8 @@ fn media_type(path: &Path) -> &'static str {
     }
 }
 
-/// Register one workspace media item per media action target so imported
-/// actions keep resolving through their original ProPresenter identity.
-fn media_items(value: &Value, workspace: &Value, items: &mut Vec<Value>) -> Result<(), String> {
+/// Presentations that share a ProPresenter media action target share its workspace item.
+fn media_items(value: &Value, root: &Path, workspace: &Value, items: &mut Vec<Value>) {
     match value {
         Value::Object(object) => {
             if object.get("type").and_then(Value::as_str) == Some("media") {
@@ -246,28 +279,22 @@ fn media_items(value: &Value, workspace: &Value, items: &mut Vec<Value>) -> Resu
                     .and_then(Value::as_str)
                     .filter(|_| !target.is_empty())
                 {
-                    if workspace["media"]
-                        .as_array()
-                        .into_iter()
-                        .flatten()
-                        .any(|item| {
-                            item["sourceId"].as_str() == Some(target)
-                                || item["id"].as_str() == Some(target)
-                        })
-                    {
-                        return Err(format!(
-                            "Workspace already contains media imported as {target}. Import into a separate workspace or remove the conflicting media explicitly."
-                        ));
-                    }
-                    if !items
-                        .iter()
-                        .any(|item| item["sourceId"].as_str() == Some(target))
-                    {
-                        let path = url::Url::parse(source)
-                            .ok()
-                            .and_then(|url| url.to_file_path().ok())
-                            .ok_or("Extracted media URL is invalid.")?;
-                        items.push(json!({
+                    let path = url::Url::parse(source)
+                        .ok()
+                        .and_then(|url| url.to_file_path().ok())
+                        .and_then(|path| path.canonicalize().ok());
+                    if let Some(path) = path.filter(|path| path.starts_with(root)) {
+                        let registered = workspace["media"]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .chain(items.iter())
+                            .any(|item| {
+                                item["sourceId"].as_str() == Some(target)
+                                    || item["id"].as_str() == Some(target)
+                            });
+                        if !registered {
+                            items.push(json!({
                             "id": format!("media-{}", uuid::Uuid::new_v4()),
                             "title": path.file_stem().and_then(|value| value.to_str()).unwrap_or("Media"),
                             "sourcePath": path,
@@ -275,21 +302,21 @@ fn media_items(value: &Value, workspace: &Value, items: &mut Vec<Value>) -> Resu
                             "sourceId": target,
                             "type": media_type(&path),
                         }));
+                        }
                     }
                 }
             }
             for child in object.values() {
-                media_items(child, workspace, items)?;
+                media_items(child, root, workspace, items);
             }
         }
         Value::Array(values) => {
             for child in values {
-                media_items(child, workspace, items)?;
+                media_items(child, root, workspace, items);
             }
         }
         _ => {}
     }
-    Ok(())
 }
 
 fn file_name(path: &str) -> String {
@@ -396,8 +423,9 @@ pub fn import_archive(
     workspace_path: &Path,
     archive_path: &Path,
     library_id: &str,
+    playlist_id: Option<&str>,
     duplicate: Duplicate,
-) -> Result<Value, String> {
+) -> Result<(Value, Vec<String>), String> {
     let mut archive = open(archive_path)?;
     let workspace = read_workspace(workspace_path)?;
     let library_index = workspace["libraries"]
@@ -408,6 +436,18 @@ pub fn import_archive(
                 .position(|library| library["id"].as_str() == Some(library_id))
         })
         .ok_or("Selected destination library is missing.")?;
+    let playlist_index = playlist_id
+        .map(|id| {
+            workspace["playlist"]
+                .as_array()
+                .and_then(|playlists| {
+                    playlists.iter().position(|playlist| {
+                        playlist["id"].as_str() == Some(id) && playlist["type"] != "folder"
+                    })
+                })
+                .ok_or("Selected destination playlist is missing.")
+        })
+        .transpose()?;
     let mut taken = workspace["library"]
         .as_array()
         .ok_or("Library is invalid.")?
@@ -445,8 +485,8 @@ pub fn import_archive(
         documents.push((name.clone(), id));
         items.push(item);
     }
-    if items.is_empty() && archive.playlist.is_none() {
-        return Ok(workspace);
+    if items.is_empty() && archive.playlist.is_none() && playlist_index.is_none() {
+        return Ok((workspace, Vec::new()));
     }
     let mut themes = workspace["themes"]
         .as_array()
@@ -462,25 +502,37 @@ pub fn import_archive(
         .transpose()?
         .unwrap_or_default();
 
-    let folder = workspace_path
+    let source = archive_path
+        .canonicalize()
+        .map_err(|error| error.to_string())?;
+    let source_root = source
         .parent()
-        .ok_or("Workspace folder is required.")?;
-    let container = folder.join("Media").join("ProPresenter Bundles");
-    fs::create_dir_all(&container).map_err(|error| error.to_string())?;
+        .ok_or("ProPresenter source folder is required.")?;
+    let container = propresenter_assets::media_directory(workspace_path, "ProPresenter Bundles")?;
     let root = container.join(uuid::Uuid::new_v4().to_string());
     fs::create_dir(&root).map_err(|error| error.to_string())?;
     let result = (|| {
-        let mut extractor = Extractor {
-            archive: &mut archive,
-            root: root.clone(),
-            extracted: HashMap::new(),
+        let warnings = if archive.zip.is_some() {
+            let mut extractor = Extractor {
+                archive: &mut archive,
+                root: root.clone(),
+                extracted: HashMap::new(),
+                warnings: Vec::new(),
+            };
+            for value in items.iter_mut().chain(new_themes.iter_mut()) {
+                extractor.rewrite(value)?;
+            }
+            extractor.warnings
+        } else {
+            let mut capture = propresenter_assets::Capture::new(root.clone(), source_root);
+            for value in items.iter_mut().chain(new_themes.iter_mut()) {
+                capture.rewrite(value, &source.display().to_string())?;
+            }
+            capture.warnings
         };
-        for value in items.iter_mut().chain(new_themes.iter_mut()) {
-            extractor.rewrite(value)?;
-        }
         let mut media = Vec::new();
         for item in &items {
-            media_items(item, &workspace, &mut media)?;
+            media_items(item, &root, &workspace, &mut media);
         }
         let mut patch = workspace.clone();
         for item in items {
@@ -494,11 +546,33 @@ pub fn import_archive(
             .as_array_mut()
             .ok_or("Themes are invalid.")?
             .extend(new_themes);
+        if let Some(index) = playlist_index {
+            let playlist = &mut patch["playlist"][index];
+            let entries = playlist["items"]
+                .as_array_mut()
+                .ok_or("Playlist entries are invalid.")?;
+            for (_, item_id) in &documents {
+                let id = unique_presentation_entry_id(item_id, entries);
+                entries.push(json!({"id": id, "type": "presentation", "itemId": item_id}));
+            }
+            playlist["itemIds"] = json!(entries
+                .iter()
+                .filter(|entry| entry["type"] == "presentation")
+                .map(|entry| &entry["itemId"])
+                .collect::<Vec<_>>());
+        }
         patch["playlist"]
             .as_array_mut()
             .ok_or("Playlists are invalid.")?
             .extend(playlist);
-        save_workspace(workspace_path, &patch)
+        patch["importWarnings"]
+            .as_array_mut()
+            .ok_or("Import warnings are required.")?
+            .extend(warnings.iter().map(|warning| json!(warning)));
+        Ok((
+            save_read_workspace(workspace_path, workspace, &patch, &[])?,
+            warnings,
+        ))
     })();
     if result.is_err() {
         fs::remove_dir_all(&root).map_err(|error| {

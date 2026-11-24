@@ -12,11 +12,13 @@ use orbit_ui::{
 use serde_json::{json, Value};
 
 mod clipboard;
+mod files;
 
 pub struct Imports {
     runtime: Runtime,
     form: Form,
     clipboard: Option<clipboard::ClipboardImport>,
+    file: Option<files::FileImport>,
     busy: bool,
     status: String,
     /// The titles an import found in its destination library, while the operator decides what to do with them.
@@ -156,51 +158,12 @@ impl Imports {
             runtime,
             form,
             clipboard: None,
+            file: None,
             busy: false,
             status: String::new(),
             duplicates: Vec::new(),
             close,
         }
-    }
-    pub fn load_text(&mut self, method: &'static str, cx: &mut Context<Self>) {
-        if method == "readClipboardText" {
-            self.load_clipboard(cx);
-            return;
-        }
-        self.busy = true;
-        let runtime = self.runtime.clone();
-        let scope = runtime.content.read(cx).workspace_path.clone();
-        cx.spawn(async move |this, cx| {
-            let result = call(&runtime, cx, method, vec![], false).await;
-            let _ = this.update(cx, |this, cx| {
-                this.busy = false;
-                if runtime.content.read(cx).workspace_path != scope {
-                    return;
-                }
-                match result {
-                    Ok(value) if value["canceled"] == true => {}
-                    Ok(value) => match value["text"].as_str() {
-                        Some(text) if !text.trim().is_empty() => {
-                            this.form.draft["content"] = json!(text.trim());
-                            let t = Runtime::translator(cx);
-                            this.form.draft["title"] = json!(std::path::Path::new(
-                                value["filePath"].as_str().unwrap_or(""),
-                            )
-                            .file_stem()
-                            .and_then(|s| s.to_str())
-                            .map(str::to_string)
-                            .unwrap_or_else(|| t.t("collections.default.textFilePresentation"),));
-                            this.form.refresh();
-                        }
-                        Some(_) => this.status = "status.import.textFileEmpty".into(),
-                        None => this.status = "textImport.invalidResponse".into(),
-                    },
-                    Err(error) => this.status = error,
-                }
-                cx.notify();
-            });
-        })
-        .detach();
     }
     fn create_text(&mut self, cx: &mut Context<Self>) {
         let draft = self.form.draft.clone();
@@ -211,6 +174,13 @@ impl Imports {
             |mut mutation| {
                 if let Some(clipboard) = &self.clipboard {
                     clipboard.configure_mutation(&mut mutation, &draft, cx)?;
+                } else if matches!(self.file, Some(files::FileImport::Text))
+                    && mutation.get("playlistTitle").is_none()
+                    && draft["playlistId"]
+                        .as_str()
+                        .is_some_and(|id| !id.is_empty())
+                {
+                    mutation["playlistId"] = draft["playlistId"].clone();
                 }
                 Ok(mutation)
             },
@@ -394,6 +364,9 @@ impl Render for Imports {
         if self.clipboard.is_some() {
             return self.clipboard_dialog(window, cx).into_any_element();
         }
+        if self.file.is_some() {
+            return self.file_dialog(window, cx);
+        }
         let t = Runtime::translator(cx);
         let m = cx.theme().metrics;
         let workspace = self.runtime.content.read(cx).workspace.clone();
@@ -435,34 +408,7 @@ impl Render for Imports {
             window,
             cx,
         ));
-        for spec in [
-            Spec::new("title", t.t("textImport.presentationTitle"), Kind::Text),
-            Spec::new("content", t.t("cue.editSlides"), Kind::Multiline),
-            Spec::new("author", t.t("textImport.author"), Kind::Text),
-            Spec::new("operatorNotes", t.t("cue.operatorNotes"), Kind::Multiline),
-            Spec::new(
-                "splitMode",
-                t.t("textImport.splitBy"),
-                Kind::Choice(
-                    [
-                        ("paragraph", "textImport.paragraphs"),
-                        ("line", "textImport.lines"),
-                        ("marker", "textImport.marker"),
-                    ]
-                    .into_iter()
-                    .map(|(v, k)| (v.into(), t.t(k)))
-                    .collect(),
-                ),
-            ),
-            Spec::new("splitMarker", t.t("textImport.marker"), Kind::Text),
-            Spec::new("splitUnits", t.t("textImport.perSlide"), Kind::Number),
-            Spec::new(
-                "createPlaylist",
-                t.t("textImport.createPlaylist"),
-                Kind::Check,
-            ),
-            Spec::new("playlistTitle", t.t("textImport.playlistTitle"), Kind::Text),
-        ] {
+        for spec in files::text_fields(t) {
             body = body.child(self.form.field("text-import", &spec, form, window, cx));
         }
         body = body.child(

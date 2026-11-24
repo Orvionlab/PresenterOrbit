@@ -4,6 +4,209 @@ use serde_json::{json, Value};
 use super::support::{Folder, Scenario};
 
 #[gpui::test]
+fn presentation_file_batch_uses_one_destination_and_reports_failures(cx: &mut TestAppContext) {
+    let app = Scenario::new(cx, false, super::seed);
+    let transfer = Folder::new();
+    let source = transfer.0.join("Media.pro");
+    std::fs::write(
+        &source,
+        include_bytes!("../../../../tests/fixtures/propresenter/media.pro"),
+    )
+    .unwrap();
+    let missing = transfer.0.join("Missing.pro");
+    let text = transfer.0.join("Imported reading.txt");
+    std::fs::write(
+        &text,
+        "First paragraph
+
+Second paragraph",
+    )
+    .unwrap();
+
+    let path = json!(app.workspace.0.join("workspace.json"));
+    let snapshot = app
+        .host
+        .invoke("readWorkspaceSnapshot", vec![path.clone()])
+        .unwrap();
+    let snapshot = app
+        .host
+        .invoke(
+            "mutatePresentationLibrary",
+            vec![
+                path.clone(),
+                json!({"type": "create", "baseTitle": "Import destination"}),
+                snapshot["revision"].clone(),
+            ],
+        )
+        .unwrap();
+    let workspace = &snapshot["workspace"];
+    let library_id = &snapshot["createdLibraryId"];
+    let playlist_id = &workspace["playlist"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["title"] == "Sunday")
+        .unwrap()["id"];
+    let args = |sources: Value, playlist_id: &Value| {
+        vec![
+            path.clone(),
+            json!({"sources": sources, "libraryId": library_id, "playlistId": playlist_id}),
+            snapshot["revision"].clone(),
+        ]
+    };
+    assert!(app
+        .host
+        .invoke(
+            "importPresentationFiles",
+            args(json!(["relative.pro"]), playlist_id)
+        )
+        .unwrap_err()
+        .contains("absolute"));
+    assert!(app
+        .host
+        .invoke(
+            "importPresentationFiles",
+            args(json!([source]), &json!("missing"))
+        )
+        .unwrap_err()
+        .contains("playlist"));
+    let answer = app
+        .host
+        .invoke(
+            "importPresentationFiles",
+            args(json!([source, missing, text]), playlist_id),
+        )
+        .unwrap();
+    assert_eq!(answer["importedFiles"], 2);
+    let failures = answer["failures"].as_array().unwrap();
+    assert_eq!(failures.len(), 1);
+    assert!(failures[0].as_str().unwrap().contains("Missing.pro"));
+    assert!(answer["warnings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|warning| warning.as_str().unwrap().contains("is unavailable")));
+
+    let imported = app.snapshot();
+    let destination = imported["libraries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|library| library["id"] == *library_id)
+        .unwrap();
+    let items = destination["itemIds"].as_array().unwrap();
+    assert_eq!(items.len(), 2);
+    let presentations = imported["library"].as_array().unwrap();
+    assert!(presentations
+        .iter()
+        .any(|item| item["id"] == items[0] && !item["slides"].as_array().unwrap().is_empty()));
+    let reading = presentations
+        .iter()
+        .find(|item| item["id"] == items[1])
+        .unwrap();
+    assert_eq!(reading["title"], "Imported reading");
+    assert_eq!(reading["slides"].as_array().unwrap().len(), 2);
+    let playlist = imported["playlist"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["id"] == *playlist_id)
+        .unwrap();
+    assert!(playlist["itemIds"].as_array().unwrap().ends_with(items));
+}
+
+#[gpui::test]
+fn propresenter_workspace_import_warns_about_partial_outputs_and_relative_media(
+    cx: &mut TestAppContext,
+) {
+    let app = Scenario::new(cx, false, |_| {});
+    let source = Folder::new();
+    let library = source.0.join("Libraries/Imported");
+    std::fs::create_dir_all(&library).unwrap();
+
+    // Keep each protobuf string the same byte length so enclosing fields stay valid.
+    let mut presentation =
+        include_bytes!("../../../../tests/fixtures/propresenter/authentic-layered-21.pro").to_vec();
+    for file in ["orbit-int12-image.png", "orbit-int12-video.mp4"] {
+        let original = format!(r"C:\Users\Demo\Documents\ProPresenter\Media\Assets\{file}");
+        let folder = format!(
+            "Media/Assets/{}",
+            "a".repeat(original.len() - file.len() - "Media/Assets//".len())
+        );
+        let relative = format!("{folder}/{file}");
+        let offsets: Vec<_> = presentation
+            .windows(original.len())
+            .enumerate()
+            .filter_map(|(offset, bytes)| (bytes == original.as_bytes()).then_some(offset))
+            .collect();
+        assert!(!offsets.is_empty());
+        for offset in offsets {
+            presentation[offset..offset + original.len()].copy_from_slice(relative.as_bytes());
+        }
+        if file.ends_with(".png") {
+            std::fs::create_dir_all(source.0.join(folder)).unwrap();
+            std::fs::write(
+                source.0.join(&relative),
+                include_bytes!("../../../../tests/fixtures/propresenter/orbit-int12-image.png"),
+            )
+            .unwrap();
+        }
+    }
+    std::fs::write(library.join("Media.pro"), presentation).unwrap();
+
+    // Workspace.screen -> single arrangement -> device -> subscreen_unit_rect.
+    fn message(field: u8, bytes: &[u8]) -> Vec<u8> {
+        assert!(bytes.len() < 128);
+        [vec![(field << 3) | 2, bytes.len() as u8], bytes.to_vec()].concat()
+    }
+    let size = [
+        vec![9],
+        0.5_f64.to_le_bytes().to_vec(),
+        vec![17],
+        1_f64.to_le_bytes().to_vec(),
+    ]
+    .concat();
+    let rectangle = [message(1, &[]), message(2, &size)].concat();
+    let screen = [
+        message(1, b"Partial screen"),
+        message(3, &message(1, &message(8, &rectangle))),
+        vec![0x48, 1],
+    ]
+    .concat();
+    std::fs::write(source.0.join("Workspace"), message(1, &screen)).unwrap();
+
+    let result = app
+        .host
+        .invoke(
+            "selectProPresenterWorkspace",
+            vec![
+                json!(source.0),
+                json!({"libraries":["Imported"], "categories":["settings"]}),
+            ],
+        )
+        .unwrap();
+    let workspace = &result["workspace"];
+    assert_eq!(workspace["library"].as_array().unwrap().len(), 1);
+    assert_eq!(workspace["screenConfig"]["audience-1"]["enabled"], false);
+    let warnings = workspace["importWarnings"].as_array().unwrap();
+    assert!(warnings.iter().any(|warning| warning
+        .as_str()
+        .unwrap()
+        .contains("partial hardware output target")));
+    assert!(warnings.iter().any(|warning| {
+        let warning = warning.as_str().unwrap();
+        warning.contains("orbit-int12-video.mp4") && warning.contains("is unavailable")
+    }));
+    assert!(!warnings.iter().any(|warning| {
+        let warning = warning.as_str().unwrap();
+        warning.contains("orbit-int12-image.png") && warning.contains("is unavailable")
+    }));
+    assert!(workspace["library"]
+        .to_string()
+        .contains("ProPresenter Imports"));
+}
+
+#[gpui::test]
 fn propresenter_import_preserves_masks_and_opens_imported_masks(cx: &mut TestAppContext) {
     let mut app = Scenario::new(cx, false, |_| {});
     let original = app.snapshot()["masks"][0].clone();

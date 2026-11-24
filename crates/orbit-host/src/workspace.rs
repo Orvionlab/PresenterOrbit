@@ -10764,7 +10764,7 @@ pub fn import_pro_presenter_workspace_media(
     screen_preview_import::resolve_sources(&mut imported_content)?;
     let import_destination = crate::workspace_import::Destination::reserve(destination)?;
     ensure_workspace(destination)?;
-    let imported = propresenter_assets::save(destination, &imported_content)?;
+    let imported = propresenter_assets::save(destination, &source, &imported_content)?;
     import_destination.commit();
     Ok(imported)
 }
@@ -11921,7 +11921,11 @@ fn import_native_workspace_config(source: &Path, stats: &mut ImportStats) -> Res
                 continue;
             }
         };
-        if let Some(config) = propresenter_proto::decode_workspace_config(&bytes)? {
+        let mut warnings = Vec::new();
+        if let Some(config) = propresenter_proto::decode_workspace_config(&bytes, &mut warnings)? {
+            for warning in warnings {
+                stats.warn(&candidate, &warning);
+            }
             return Ok(config);
         }
         stats.skipped(

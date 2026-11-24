@@ -346,6 +346,12 @@ fn bridge_invoke_inner(
             export_pro_presenter_workspace(&state, argument(&args, 0)?)
         }
         "selectPresentationTextFile" => select_presentation_text_file(),
+        "selectPresentationImportFiles" => portable_bundle_commands::select_files(
+            argument(&args, 0)?
+                .as_bool()
+                .ok_or("ProPresenter-only file selection must be a boolean.")?,
+        ),
+        "importPresentationFiles" => portable_bundle_commands::import_files(state, &args),
         "startLocalTextWatch" => {
             let workspace = args
                 .first()

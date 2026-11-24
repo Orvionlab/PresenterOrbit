@@ -121,7 +121,7 @@ impl ClipboardImport {
 }
 
 impl Imports {
-    pub(super) fn load_clipboard(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn load_clipboard(&mut self, cx: &mut Context<Self>) {
         let clipboard = cx
             .read_from_clipboard()
             .and_then(|item| item.text())

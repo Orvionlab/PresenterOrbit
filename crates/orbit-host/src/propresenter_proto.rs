@@ -4392,7 +4392,10 @@ fn communication_device_type(value: u64) -> Option<&'static str> {
 /// This intentionally returns the same portable shape consumed by the Orbit
 /// workspace as the previous importer. Unknown protobuf fields remain
 /// ignored, which keeps imports from newer ProPresenter versions resilient.
-pub fn decode_workspace_config(bytes: &[u8]) -> Result<Option<Value>, String> {
+pub fn decode_workspace_config(
+    bytes: &[u8],
+    warnings: &mut Vec<String>,
+) -> Result<Option<Value>, String> {
     let fields = decode_message(bytes)?;
     if !fields.iter().any(|field| matches!(field.number, 1..=11)) {
         return Ok(None);
@@ -4500,15 +4503,24 @@ pub fn decode_workspace_config(bytes: &[u8]) -> Result<Option<Value>, String> {
         config.insert("sourceScreenId".to_string(), json!(source_id));
         config.insert("arrangement".to_string(), json!(arrangement));
         config.insert("outputScreens".to_string(), json!(output_screens));
-        if let Some(layout) = screen_config::decode(&screen, &arrangement_fields, arrangement)? {
-            config.insert(
-                "canvasSize".to_string(),
-                serde_json::to_value(layout.canvas()?).map_err(|error| error.to_string())?,
-            );
-            config.insert(
-                "outputLayout".to_string(),
-                serde_json::to_value(layout).map_err(|error| error.to_string())?,
-            );
+        match screen_config::decode(&screen, &arrangement_fields, arrangement) {
+            Ok(Some(layout)) => {
+                config.insert(
+                    "canvasSize".to_string(),
+                    serde_json::to_value(layout.canvas()?).map_err(|error| error.to_string())?,
+                );
+                config.insert(
+                    "outputLayout".to_string(),
+                    serde_json::to_value(layout).map_err(|error| error.to_string())?,
+                );
+            }
+            Ok(None) => {}
+            Err(error) => {
+                config.insert("enabled".into(), json!(false));
+                warnings.push(format!(
+                    "Screen '{label}' was imported disabled without its hardware layout: {error}"
+                ));
+            }
         }
         config.insert(
             "lookLayers".to_string(),

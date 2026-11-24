@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use gpui::{div, prelude::*, AnyElement, Context, SharedString, Window};
+use gpui::{div, prelude::*, AnyElement, Context, Entity, SharedString, Window};
 use orbit_ui::controls::{
     ActionButton, SegmentedControl, SegmentedOption, SelectOption, ToggleSwitch,
 };
@@ -38,6 +38,7 @@ pub struct Services {
     polling: bool,
     pub import_status: Option<String>,
     pub pro_import: Option<super::pro_presenter_import::ProImport>,
+    file_import: Option<Entity<crate::imports::Imports>>,
     pub review: Option<Value>,
     pub cleanup_busy: bool,
     pub cleanup_error: Option<String>,
@@ -55,6 +56,29 @@ pub fn update_is_busy(update: Option<&Value>, pending: bool) -> bool {
 }
 
 impl SettingsView {
+    fn import_pro_presenter_file(&mut self, cx: &mut Context<Self>) {
+        if self.services.file_import.is_some() {
+            return;
+        }
+        let runtime = self.runtime.clone();
+        let owner = cx.weak_entity();
+        self.services.file_import = Some(cx.new(|cx| {
+            let mut import = crate::imports::Imports::new(
+                runtime,
+                move |cx| {
+                    let _ = owner.update(cx, |view, cx| {
+                        view.services.file_import = None;
+                        cx.notify();
+                    });
+                },
+                cx,
+            );
+            import.pick_file(true, cx);
+            import
+        }));
+        cx.notify();
+    }
+
     /// Reads the update status once a second while the panel is shown, as the React hook does, and stops when it
     /// is not.
     #[cfg_attr(test, allow(dead_code))]
@@ -537,6 +561,17 @@ impl SettingsView {
                         )
                         .child(
                             ActionButton::new(
+                                "import-pro-presenter-file",
+                                t.t("settings.import.importProPresenterFiles"),
+                            )
+                            .variant(orbit_ui::controls::ButtonVariant::Secondary)
+                            .disabled(!has_workspace)
+                            .on_click(
+                                cx.listener(|view, _, _, cx| view.import_pro_presenter_file(cx)),
+                            ),
+                        )
+                        .child(
+                            ActionButton::new(
                                 "export-pro-presenter",
                                 t.t("settings.import.exportProPresenter"),
                             )
@@ -548,6 +583,7 @@ impl SettingsView {
                 .child(muted(status, cx)),
         }
         .children(self.pro_import_dialog(window, cx))
+        .children(self.services.file_import.clone())
         .into_any_element()
     }
 

@@ -2,7 +2,7 @@ use serde_json::{json, Value};
 use std::{
     collections::HashMap,
     fs,
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
 };
 
 const ASSET_KEYS: &[&str] = &[
@@ -17,30 +17,53 @@ const ASSET_KEYS: &[&str] = &[
     "backgroundMediaUrl",
 ];
 
-struct Capture {
+pub(super) struct Capture<'a> {
     root: PathBuf,
+    source_root: &'a Path,
     paths: HashMap<PathBuf, PathBuf>,
-    warnings: Vec<String>,
+    pub warnings: Vec<String>,
 }
 
-impl Capture {
+impl<'a> Capture<'a> {
+    pub fn new(root: PathBuf, source_root: &'a Path) -> Self {
+        Self {
+            root,
+            source_root,
+            paths: HashMap::new(),
+            warnings: Vec::new(),
+        }
+    }
+
     fn copy(&mut self, reference: &str) -> Result<Option<PathBuf>, String> {
         let source = if reference.starts_with("file:") {
-            let url = url::Url::parse(reference).map_err(|error| error.to_string())?;
-            let Ok(path) = url.to_file_path() else {
+            let Some(path) = url::Url::parse(reference)
+                .ok()
+                .and_then(|url| url.to_file_path().ok())
+            else {
                 return Ok(None);
             };
             path
         } else {
             PathBuf::from(reference)
         };
-        if !source.is_absolute() {
-            return Err(format!(
-                "Imported media requires an absolute local path: {reference}"
-            ));
-        }
+        let relative = !source.is_absolute();
+        let source = if relative {
+            let local = reference.replace('\\', "/");
+            let path = Path::new(&local);
+            if local.contains(':')
+                || !path
+                    .components()
+                    .all(|part| matches!(part, Component::Normal(_) | Component::CurDir))
+            {
+                return Ok(None);
+            }
+            self.source_root.join(path)
+        } else {
+            source
+        };
         let source = match source.canonicalize() {
-            Ok(source) => source,
+            Ok(source) if !relative || source.starts_with(self.source_root) => source,
+            Ok(_) => return Ok(None),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
             Err(error) => {
                 return Err(format!(
@@ -57,7 +80,7 @@ impl Capture {
             .and_then(|extension| extension.to_str())
             .ok_or("Imported media extension is required.")?;
         if self.paths.is_empty() {
-            fs::create_dir(&self.root).map_err(|error| error.to_string())?;
+            fs::create_dir_all(&self.root).map_err(|error| error.to_string())?;
         }
         let target = self
             .root
@@ -68,7 +91,7 @@ impl Capture {
         Ok(Some(target))
     }
 
-    fn rewrite(&mut self, value: &mut Value, location: &str) -> Result<(), String> {
+    pub fn rewrite(&mut self, value: &mut Value, location: &str) -> Result<(), String> {
         match value {
             Value::Object(object) => {
                 let provenance = object.contains_key("sourceType");
@@ -108,7 +131,7 @@ impl Capture {
     }
 }
 
-pub(super) fn save(workspace_path: &Path, patch: &Value) -> Result<Value, String> {
+pub(super) fn media_directory(workspace_path: &Path, name: &str) -> Result<PathBuf, String> {
     let folder = workspace_path
         .parent()
         .ok_or("Workspace folder is required.")?
@@ -121,7 +144,7 @@ pub(super) fn save(workspace_path: &Path, patch: &Value) -> Result<Value, String
     if !media.starts_with(&folder) {
         return Err("Imported media must remain inside the workspace.".into());
     }
-    let container = media.join("ProPresenter Imports");
+    let container = media.join(name);
     fs::create_dir_all(&container).map_err(|error| error.to_string())?;
     let container = container
         .canonicalize()
@@ -129,11 +152,24 @@ pub(super) fn save(workspace_path: &Path, patch: &Value) -> Result<Value, String
     if !container.starts_with(&media) {
         return Err("Imported media folder escapes the workspace.".into());
     }
-    let mut capture = Capture {
-        root: container.join(uuid::Uuid::new_v4().to_string()),
-        paths: HashMap::new(),
-        warnings: Vec::new(),
-    };
+    Ok(container)
+}
+
+pub(super) fn save(
+    workspace_path: &Path,
+    source_root: &Path,
+    patch: &Value,
+) -> Result<Value, String> {
+    let container = media_directory(workspace_path, "ProPresenter Imports")?;
+    let folder = workspace_path
+        .parent()
+        .ok_or("Workspace folder is required.")?
+        .canonicalize()
+        .map_err(|error| error.to_string())?;
+    let mut capture = Capture::new(
+        container.join(uuid::Uuid::new_v4().to_string()),
+        source_root,
+    );
     let mut charts = Vec::new();
     let result = (|| {
         let mut patch = patch.clone();
