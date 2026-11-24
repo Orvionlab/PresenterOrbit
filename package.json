@@ -1,6 +1,6 @@
 {
   "name": "presenter-orbit",
-  "version": "0.0.1-alpha.4",
+  "version": "0.0.1-alpha.1",
   "description": "Presenter Orbit - modular presentation control app",
   "scripts": {
     "postinstall": "npm run proto:prepare",
