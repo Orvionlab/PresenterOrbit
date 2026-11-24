@@ -36,7 +36,7 @@ Configure the GitHub environment named `release` with a deployment tag rule for 
 - Variables are `PRESENTER_ORBIT_UPDATE_BASE_URL` (currently `https://presenter-update.orvionlab.com`), `PRESENTER_ORBIT_UPDATE_PUBLIC_KEY` (the `.pub` file contents), `CLOUDFLARE_ACCOUNT_ID`, and `CLOUDFLARE_R2_BUCKET`.
 - Secrets are `TAURI_SIGNING_PRIVATE_KEY` (the encrypted key file contents), `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, `CLOUDFLARE_R2_ACCESS_KEY_ID`, and `CLOUDFLARE_R2_SECRET_ACCESS_KEY`. Scope the R2 token to Object Read & Write on the release bucket.
 
-The workflow verifies the signing keys match before building. It uploads versioned objects first, checks the public URLs, and publishes the manifests after the GitHub release assets. Existing public versioned objects are immutable. Public builds before `0.0.1-alpha.2` must be upgraded manually once to move to the root feed.
+The workflow verifies the signing keys match before building. It uploads versioned objects first, checks the public URLs, and publishes the manifests after the GitHub release assets. Existing public versioned objects are immutable. If you installed the first `0.0.1-alpha.1` build, install the replacement from GitHub once to move to the root feed.
 
 For a manual release, build with `--updater`, upload the versioned files from `dist/gpui/updates/` under the configured prefix, then publish each `latest.json` and attach the installers to the GitHub release. Install the first build with the configured updater manually. Windows Authenticode and macOS notarization are separate from updater signing.
 

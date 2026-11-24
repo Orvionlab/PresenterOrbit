@@ -31,7 +31,7 @@ if (base.protocol !== "https:" || base.username || base.password || base.search 
 const baseUrl = base.href.replace(/\/$/u, "");
 const prefix = base.pathname.slice(1).replace(/\/$/u, "");
 const objectPrefix = prefix ? `${decodeURIComponent(prefix)}/` : "";
-const migratingLegacyFeed = baseUrl === "https://presenter-update.orvionlab.com" && version === "0.0.1-alpha.2";
+const migratingLegacyFeed = baseUrl === "https://presenter-update.orvionlab.com" && version === "0.0.1-alpha.1";
 // Only the known private manifests can bypass the public feed's version ordering during the cutover.
 const legacyManifests = {
   "windows-x64": "8c5393d02d96d4fa62d40ac2e4a5ec2e760d0453de2633c1a5452f93f2299e64",
@@ -268,12 +268,20 @@ for (const path of assets) {
     const digest = `sha256:${createHash("sha256")
       .update(await readFile(path))
       .digest("hex")}`;
-    if (existing.digest !== digest) throw new Error(`GitHub has a different release asset named ${basename(path)}.`);
+    if (existing.digest !== digest) {
+      if (!migratingLegacyFeed) throw new Error(`GitHub has a different release asset named ${basename(path)}.`);
+      command("gh", ["release", "upload", tag, path, "--repo", repo, "--clobber"]);
+    }
   } else {
     command("gh", ["release", "upload", tag, path, "--repo", repo]);
   }
 }
-if (release.isDraft) command("gh", ["release", "edit", tag, "--repo", repo, "--draft=false"]);
+if (migratingLegacyFeed) {
+  // Keep the alpha version in the tag while allowing GitHub to show this download in the repository sidebar.
+  command("gh", ["release", "edit", tag, "--repo", repo, "--draft=false", "--prerelease=false", "--latest"]);
+} else if (release.isDraft) {
+  command("gh", ["release", "edit", tag, "--repo", repo, "--draft=false"]);
+}
 
 for (const feed of feeds) {
   const precondition = feed.previousObject
