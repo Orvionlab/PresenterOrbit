@@ -1,5 +1,6 @@
 // The default text style in canvas/editing.rs is one json! literal, which exceeds the default limit.
 #![recursion_limit = "256"]
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 mod appearance;
 mod automation;

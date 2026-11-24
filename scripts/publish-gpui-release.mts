@@ -29,8 +29,16 @@ if (base.protocol !== "https:" || base.username || base.password || base.search 
   throw new Error("The updater requires a public HTTPS base URL.");
 }
 const baseUrl = base.href.replace(/\/$/u, "");
-const prefix = base.pathname.split("/").filter(Boolean).map(decodeURIComponent).join("/");
-if (!prefix) throw new Error("Choose a path for the GPUI feed to protect the existing update manifests.");
+const prefix = base.pathname.slice(1).replace(/\/$/u, "");
+const objectPrefix = prefix ? `${decodeURIComponent(prefix)}/` : "";
+const migratingLegacyFeed = baseUrl === "https://presenter-update.orvionlab.com" && version === "0.0.1-alpha.2";
+// Only the known private manifests can bypass the public feed's version ordering during the cutover.
+const legacyManifests = {
+  "windows-x64": "8c5393d02d96d4fa62d40ac2e4a5ec2e760d0453de2633c1a5452f93f2299e64",
+  "macos-arm64": "6d0987913dd5e80bff6efc7af71dc5a46727a2aec8b1808680dbba35f1b06856",
+  "macos-x64": "205a1502423808aa8be9ab77f7bc326926572b7958bface4bfa7223e68a1fc12",
+  "linux-x64": "de11e760ee1a14c2758be2c537231264eff8fa2d2e8a14a2b6c4f13548757d04",
+};
 
 const publicText = Buffer.from(required("PRESENTER_ORBIT_UPDATE_PUBLIC_KEY"), "base64").toString("utf8");
 const publicKey = Buffer.from(publicText.split(/\r?\n/u)[1] ?? "", "base64");
@@ -105,7 +113,12 @@ async function getManifest(url: string) {
   const response = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(30000) });
   if (response.status === 404) return null;
   if (!response.ok) throw new Error(`Could not read ${url}: HTTP ${response.status}.`);
-  return response.json() as Promise<{ version: string; platforms: Record<string, { signature: string; url: string }> }>;
+  const bytes = Buffer.from(await response.arrayBuffer());
+  const manifest = JSON.parse(bytes.toString("utf8")) as {
+    version: string;
+    platforms: Record<string, { signature: string; url: string }>;
+  };
+  return { ...manifest, sha256: createHash("sha256").update(bytes).digest("hex") };
 }
 
 function compareVersions(left: string, right: string) {
@@ -134,7 +147,8 @@ function compareVersions(left: string, right: string) {
 
 const assets = [];
 const feeds = [];
-for (const [target, platform] of Object.entries(targets)) {
+for (const target of Object.keys(targets) as (keyof typeof targets)[]) {
+  const platform = targets[target];
   const output = join(directory, `release-package-${target}`);
   const downloads = (await readdir(output)).filter((file) => /\.(?:exe|zip|dmg|AppImage|deb)$/u.test(file));
   const expected = target.startsWith("windows") ? 2 : target.startsWith("macos") ? 1 : 2;
@@ -155,22 +169,24 @@ for (const [target, platform] of Object.entries(targets)) {
     throw new Error(`Update artifact does not match the manifest for ${target}.`);
   const bytes = await readFile(artifact);
   verifySignature(bytes, entry.signature);
-  if (downloads.includes(fileName) && !bytes.equals(await readFile(join(output, fileName)))) {
+  const downloadName = downloads.find((name) => name.replaceAll(" ", "-") === fileName);
+  if (downloadName && !bytes.equals(await readFile(join(output, downloadName)))) {
     throw new Error(`GitHub and updater downloads differ for ${target}.`);
   }
 
-  const manifestKey = `${prefix}/${target}/latest.json`;
+  const manifestKey = `${objectPrefix}${target}/latest.json`;
   const previousObject = aws("head-object", "--key", manifestKey);
   const manifestUrl = `${baseUrl}/${target}/latest.json`;
   const previous = await getManifest(manifestUrl);
   if (Boolean(previous) !== Boolean(previousObject)) throw new Error(`R2 and public feed disagree for ${target}.`);
-  if (previous) {
+  if (previous && !(migratingLegacyFeed && previous.sha256 === legacyManifests[target])) {
     const order = compareVersions(version, previous.version);
     if (order < 0 || (order === 0 && previous.platforms[platform]?.signature !== entry.signature)) {
       throw new Error(`Refusing to replace the newer or different update already served for ${target}.`);
     }
   }
   feeds.push({
+    target,
     manifest,
     manifestKey,
     manifestUrl,
@@ -194,7 +210,7 @@ for (const [target, platform] of Object.entries(targets)) {
 for (const feed of feeds) {
   for (const suffix of ["", ".sig"]) {
     const path = feed.artifact + suffix;
-    const objectKey = `${prefix}/${feed.versionPath}/${feed.fileName}${suffix}`;
+    const objectKey = `${objectPrefix}${feed.versionPath}/${feed.fileName}${suffix}`;
     const checksum = createHash("sha256")
       .update(await readFile(path))
       .digest("hex");
@@ -278,6 +294,42 @@ for (const feed of feeds) {
   const published = await getManifest(feed.manifestUrl);
   if (published?.version !== version || published.platforms[feed.platform]?.signature !== feed.signature) {
     throw new Error(`Public update manifest verification failed for ${feed.manifestUrl}.`);
+  }
+}
+
+function removeLegacyObject(objectKey: string) {
+  if (!aws("head-object", "--key", objectKey)) return;
+  aws("delete-object", "--key", objectKey);
+  if (aws("head-object", "--key", objectKey)) throw new Error(`Legacy object still exists: ${objectKey}.`);
+  console.log(`Removed legacy update object: ${objectKey}.`);
+}
+
+if (migratingLegacyFeed) {
+  for (const feed of feeds) {
+    const manifestKey = `gpui/${feed.target}/latest.json`;
+    const manifestUrl = `${baseUrl}/${manifestKey}`;
+    const previous = await getManifest(manifestUrl);
+    if (previous && previous.version !== "0.0.1-alpha.1") {
+      throw new Error(`Unexpected existing GPUI migration manifest for ${feed.target}.`);
+    }
+    removeLegacyObject(manifestKey);
+    if (await getManifest(manifestUrl)) throw new Error(`Former GPUI feed is still available: ${manifestUrl}.`);
+  }
+
+  // These exact filenames belong to the retired feeds. New public artifacts use names without spaces.
+  for (const oldVersion of ["0.0.1-alpha.1", "0.0.1-alpha.2", "0.0.1-alpha.3"]) {
+    const wasPublic = oldVersion === "0.0.1-alpha.1";
+    const oldFiles = {
+      "windows-x64": `Presenter Orbit_${oldVersion}_x64-setup.exe`,
+      "macos-arm64": "Presenter Orbit.app.tar.gz",
+      "macos-x64": "Presenter Orbit.app.tar.gz",
+      "linux-x64": `Presenter Orbit_${oldVersion}_${wasPublic ? "x64" : "amd64"}.AppImage`,
+    };
+    for (const [target, name] of Object.entries(oldFiles)) {
+      for (const suffix of ["", ".sig"]) {
+        removeLegacyObject(`${wasPublic ? "gpui/" : ""}${target}/${oldVersion}/${name}${suffix}`);
+      }
+    }
   }
 }
 console.log(`Published ${tag} and verified all four public update manifests.`);

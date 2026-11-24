@@ -214,6 +214,11 @@ async function packageWindows() {
   await record(zip);
 
   const lists = await writeNsisLists(app);
+  const licenseFile = join(staging, "installer-license.txt");
+  const license = await readFile(join(projectRoot, "LICENSE"), "utf8");
+  const windowsLicense = license.replace(/^\uFEFF/u, "").replace(/\r?\n/gu, "\r\n");
+  // NSIS treats license text without a BOM as ANSI, even in a Unicode installer.
+  await writeFile(licenseFile, `\uFEFF${windowsLicense}`, "utf16le");
   const setup = join(outputRoot, `${productName}_${version}_${architecture}-setup.exe`);
   const makensis = await findMakensis();
   await run(makensis, [
@@ -223,7 +228,7 @@ async function packageWindows() {
     `/DARCH=${architecture}`,
     `/DOUTFILE=${setup}`,
     `/DICON=${join(packaging, "icons", "icon.ico")}`,
-    `/DLICENSEFILE=${join(projectRoot, "LICENSE")}`,
+    `/DLICENSEFILE=${licenseFile}`,
     `/DFILES_INSTALL=${lists.install}`,
     `/DFILES_UNINSTALL=${lists.uninstall}`,
     join(packaging, "windows", "installer.nsi"),
@@ -296,7 +301,8 @@ async function findMakensis() {
 // ---------------------------------------------------------------- Updater artifacts
 
 /** Signs `artifact` with the updater key (Tauri-compatible minisign) and writes `updates/<platform>-<arch>/latest.json`. */
-async function writeUpdateRelease(artifact: string, fileName: string) {
+async function writeUpdateRelease(artifact: string, packageName: string) {
+  const fileName = packageName.replaceAll(" ", "-");
   signUpdaterArtifact(artifact, updaterSigningEnv);
   const signature = (await readFile(`${artifact}.sig`, "utf8")).trim();
   if (!signature) throw new Error("The updater signature is empty.");
