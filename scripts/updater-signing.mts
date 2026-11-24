@@ -65,9 +65,10 @@ export function signUpdaterData(
   password: string,
   now = Date.now(),
 ) {
-  const keyText = existsSync(privateKey)
-    ? readFileSync(privateKey, "utf8")
-    : Buffer.from(privateKey, "base64").toString("utf8");
+  const keyInput = existsSync(privateKey) ? readFileSync(privateKey, "utf8") : privateKey;
+  const keyText = keyInput.trimStart().startsWith("untrusted comment:")
+    ? keyInput
+    : Buffer.from(keyInput, "base64").toString("utf8");
   const { keyId, seed } = decryptSecretKey(keyText, password);
   const key = privateKeyFromSeed(seed);
   const signature = sign(null, createHash("blake2b512").update(data).digest(), key);

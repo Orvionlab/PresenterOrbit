@@ -116,8 +116,9 @@ export async function packageLinux(context: Context) {
     mode: 0o755,
   });
   const appimagetool = process.env.PRESENTER_ORBIT_APPIMAGETOOL ?? "appimagetool";
+  const runtime = process.env.PRESENTER_ORBIT_APPIMAGE_RUNTIME;
   const appImage = join(outputRoot, `${productName}_${version}_${architecture}.AppImage`);
-  await run(appimagetool, [appDir, appImage], projectRoot, {
+  await run(appimagetool, [...(runtime ? ["--runtime-file", runtime] : []), appDir, appImage], projectRoot, {
     ...process.env,
     ARCH: architecture === "arm64" ? "aarch64" : "x86_64",
   });

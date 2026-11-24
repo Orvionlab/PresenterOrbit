@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/orbit-host", "crates/orbit-ui", "crates/orbit-app"]
 
 [workspace.package]
-version = "0.0.1-alpha.1"
+version = "0.0.1-alpha.4"
 
 [profile.dev]
 incremental = true

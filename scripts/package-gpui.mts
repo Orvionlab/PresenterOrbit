@@ -58,8 +58,14 @@ if (packageVersion !== version)
 
 const updateBaseUrl = process.env.PRESENTER_ORBIT_UPDATE_BASE_URL?.replace(/\/$/u, "");
 const updatePublicKey = process.env.PRESENTER_ORBIT_UPDATE_PUBLIC_KEY?.trim();
+const updaterSigningEnv = {
+  TAURI_SIGNING_PRIVATE_KEY: process.env.TAURI_SIGNING_PRIVATE_KEY,
+  TAURI_SIGNING_PRIVATE_KEY_PASSWORD: process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD,
+};
+delete process.env.TAURI_SIGNING_PRIVATE_KEY;
+delete process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD;
 if (updater) {
-  if (!updateBaseUrl || !updatePublicKey || !process.env.TAURI_SIGNING_PRIVATE_KEY)
+  if (!updateBaseUrl || !updatePublicKey || !updaterSigningEnv.TAURI_SIGNING_PRIVATE_KEY)
     throw new Error(
       "Updater builds require PRESENTER_ORBIT_UPDATE_BASE_URL, PRESENTER_ORBIT_UPDATE_PUBLIC_KEY and TAURI_SIGNING_PRIVATE_KEY.",
     );
@@ -291,7 +297,7 @@ async function findMakensis() {
 
 /** Signs `artifact` with the updater key (Tauri-compatible minisign) and writes `updates/<platform>-<arch>/latest.json`. */
 async function writeUpdateRelease(artifact: string, fileName: string) {
-  signUpdaterArtifact(artifact);
+  signUpdaterArtifact(artifact, updaterSigningEnv);
   const signature = (await readFile(`${artifact}.sig`, "utf8")).trim();
   if (!signature) throw new Error("The updater signature is empty.");
   const folder = `${platform}-${architecture}`;

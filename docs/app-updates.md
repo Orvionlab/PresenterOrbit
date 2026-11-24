@@ -27,13 +27,20 @@ Each platform/architecture has its own manifest so publishing a Windows build do
 
 Build public releases from the exact tagged source. Link that source on the download page and verify the notices in the packaged artifact for each target. The notices include the pinned crate source archives and Tabler's license. Windows and macOS packages also include FFmpeg's corresponding source, notices and build recipe. Keep those files available for every binary you offer, including binaries served by the update feed.
 
-## Cloudflare hosting
+## GitHub releases and Cloudflare hosting
 
-Publish releases manually. Build with `--updater`, upload `dist/gpui/updates/` to the configured host with the versioned files first and `latest.json` last, then attach the packages to a GitHub release.
+Push a `v` tag matching the workspace version to run the Presenter Orbit release workflow. It builds Windows x64, macOS Apple Silicon and Intel, and Linux x64. It publishes the installers and portable downloads to GitHub Releases, marks pre-release versions as pre-releases, and publishes signed update artifacts and per-platform manifests to R2. A failed publication can be retried by re-running the failed jobs so it reuses the same packages.
 
-The settings the old workflow used are still the right ones: repository **Variables** `PRESENTER_ORBIT_UPDATE_BASE_URL` (public HTTPS custom domain of the bucket, no path, query or fragment), `PRESENTER_ORBIT_UPDATE_PUBLIC_KEY` (contents of the `.pub` file), `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_R2_BUCKET`; **Secrets** `TAURI_SIGNING_PRIVATE_KEY` (full contents of the private key, not a path), `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, and the R2 access key pair scoped to the bucket. Avoid publishing two versions concurrently: the last publication sets the feed. The first signed installer must be installed once by hand; builds without an endpoint cannot discover the feed. Updater signing does not provide Windows Authenticode signing or macOS notarization.
+Configure the GitHub environment named `release` with a deployment tag rule for `v*`.
 
-No dynamic update backend is required: static JSON and public HTTPS files are sufficient. Cloudflare Pages can serve the manifests, but its individual file limit is 25 MiB, which can be too small for desktop installers. R2 is suitable for larger files: upload the contents of `dist/updates/` to an R2 bucket and expose them through a public custom domain. Use that domain as the update base URL. Set the manifest's cache metadata to `no-cache`.
+- Variables are `PRESENTER_ORBIT_UPDATE_BASE_URL` (public HTTPS custom domain and GPUI path, currently `https://presenter-update.orvionlab.com/gpui`), `PRESENTER_ORBIT_UPDATE_PUBLIC_KEY` (the `.pub` file contents), `CLOUDFLARE_ACCOUNT_ID`, and `CLOUDFLARE_R2_BUCKET`.
+- Secrets are `TAURI_SIGNING_PRIVATE_KEY` (the encrypted key file contents), `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, `CLOUDFLARE_R2_ACCESS_KEY_ID`, and `CLOUDFLARE_R2_SECRET_ACCESS_KEY`. Scope the R2 token to Object Read & Write on the release bucket.
+
+The workflow verifies the signing keys match before building. It uploads versioned objects first, checks the public URLs, and publishes the manifests after the GitHub release assets. Existing versioned objects are immutable. The GPUI prefix keeps the earlier application feed on the same domain available to its installed apps.
+
+For a manual release, build with `--updater`, upload the versioned files from `dist/gpui/updates/` under the configured prefix, then publish each `latest.json` and attach the installers to the GitHub release. Install the first build with the configured updater manually. Windows Authenticode and macOS notarization are separate from updater signing.
+
+The public R2 custom domain serves static JSON and installers over HTTPS. Manifests use `Cache-Control: no-cache`.
 
 Cloudflare R2 has a free allowance, with charges above the allowance; do not assume unlimited free storage or requests. Public production access should use a custom domain rather than the development `r2.dev` endpoint. No Cloudflare account, bucket or deployment is created by these scripts.
 

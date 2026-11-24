@@ -1,0 +1,164 @@
+name: Presenter Orbit release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: presenter-orbit-release
+  cancel-in-progress: false
+
+jobs:
+  check:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    environment: release
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26.5.1
+          package-manager-cache: false
+      - name: Validate tag and signing configuration
+        run: node scripts/publish-gpui-release.mts --check
+        env:
+          PRESENTER_ORBIT_UPDATE_BASE_URL: ${{ vars.PRESENTER_ORBIT_UPDATE_BASE_URL }}
+          PRESENTER_ORBIT_UPDATE_PUBLIC_KEY: ${{ vars.PRESENTER_ORBIT_UPDATE_PUBLIC_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+  windows-media:
+    needs: check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26.5.1
+          package-manager-cache: false
+      - name: Build Windows FFmpeg and its corresponding sources
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes gcc-mingw-w64-x86-64-posix nasm pkg-config
+          node scripts/package-ffmpeg.mts --platform windows --x64
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-windows-media
+          path: artifacts/package-ffmpeg/windows-x64/
+          if-no-files-found: error
+
+  package:
+    needs: [check, windows-media]
+    environment: release
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: windows-2025, platform: windows, arch: x64 }
+          - { runner: macos-15, platform: macos, arch: arm64 }
+          - { runner: macos-15-intel, platform: macos, arch: x64 }
+          - { runner: ubuntu-24.04, platform: linux, arch: x64 }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26.5.1
+          package-manager-cache: false
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+        with:
+          shared-key: ${{ matrix.platform }}-${{ matrix.arch }}-release
+      - name: Prepare Windows packaging
+        if: runner.os == 'Windows'
+        run: |
+          choco install nsis --yes --no-progress
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: runner.os == 'Windows'
+        with:
+          name: release-windows-media
+          path: artifacts/package-ffmpeg/windows-x64/
+      - name: Prepare macOS packaging
+        if: runner.os == 'macOS'
+        run: brew install pkgconf nasm
+      - name: Prepare Linux packaging
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes build-essential libfontconfig-dev libgtk-3-dev libssl-dev libvulkan1 \
+            libwayland-dev libwebkit2gtk-4.1-dev libasound2-dev libx11-xcb-dev libxdo-dev libxkbcommon-x11-dev \
+            librsvg2-dev libfuse2t64 fakeroot
+          tool="$RUNNER_TEMP/appimagetool"
+          curl --fail --silent --show-error --location --output "$tool" \
+            https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage
+          printf '%s  %s\n' 'ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0' "$tool" | sha256sum --check
+          runtime="$RUNNER_TEMP/runtime-x86_64"
+          curl --fail --silent --show-error --location --output "$runtime" \
+            https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64
+          printf '%s  %s\n' '2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d' "$runtime" | sha256sum --check
+          chmod +x "$tool"
+          echo "PRESENTER_ORBIT_APPIMAGETOOL=$tool" >> "$GITHUB_ENV"
+          echo "PRESENTER_ORBIT_APPIMAGE_RUNTIME=$runtime" >> "$GITHUB_ENV"
+          echo 'APPIMAGE_EXTRACT_AND_RUN=1' >> "$GITHUB_ENV"
+      - name: Build installer and sign updater artifact
+        run: node scripts/package-gpui.mts --platform ${{ matrix.platform }} --${{ matrix.arch }} --updater
+        env:
+          PRESENTER_ORBIT_UPDATE_BASE_URL: ${{ vars.PRESENTER_ORBIT_UPDATE_BASE_URL }}
+          PRESENTER_ORBIT_UPDATE_PUBLIC_KEY: ${{ vars.PRESENTER_ORBIT_UPDATE_PUBLIC_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-package-${{ matrix.platform }}-${{ matrix.arch }}
+          if-no-files-found: error
+          path: |
+            dist/gpui/*.exe
+            dist/gpui/*.zip
+            dist/gpui/*.dmg
+            dist/gpui/*.AppImage
+            dist/gpui/*.deb
+            dist/gpui/updates/**
+
+  publish:
+    needs: package
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26.5.1
+          package-manager-cache: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: release-package-*
+          path: ${{ runner.temp }}/release-packages
+      - name: Publish GitHub assets and the R2 update feed
+        run: node scripts/publish-gpui-release.mts "$RUNNER_TEMP/release-packages"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRESENTER_ORBIT_UPDATE_BASE_URL: ${{ vars.PRESENTER_ORBIT_UPDATE_BASE_URL }}
+          PRESENTER_ORBIT_UPDATE_PUBLIC_KEY: ${{ vars.PRESENTER_ORBIT_UPDATE_PUBLIC_KEY }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_R2_BUCKET: ${{ vars.CLOUDFLARE_R2_BUCKET }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+
+# The packaging scripts use Node directly. Pinned npm for the repository toolchain: npm@12.0.2.
