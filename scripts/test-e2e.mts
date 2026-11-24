@@ -1,5 +1,14 @@
 import { spawnSync } from "node:child_process";
 
+for (const executable of ["ffmpeg", "ffprobe"]) {
+  const result = spawnSync(executable, ["-version"], { stdio: "ignore", timeout: 5000 });
+  if (result.status !== 0) {
+    const detail = result.error?.message ?? `exit status ${result.status ?? result.signal}`;
+    console.error(`End-to-end tests require a working ${executable} on PATH (${detail}).`);
+    process.exit(1);
+  }
+}
+
 // Cargo links the app for the integration tests. Pass that path to the GPUI harness too.
 const command = ["test", "-p", "orbit-app"];
 const build = spawnSync("cargo", [...command, "--no-run", "--message-format=json-render-diagnostics"], {
