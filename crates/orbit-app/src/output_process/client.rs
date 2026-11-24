@@ -319,11 +319,11 @@ impl Inner {
                             .map(|(state, _)| state)
                             .unwrap_or_else(|error| error.into_inner().0);
                     }
-                    state.connection = None;
-                    drop(state);
                     if self.quitting() {
                         return;
                     }
+                    state.connection = None;
+                    drop(state);
                     self.emit("output:link-changed", json!({ "attached": false }));
                 }
                 Ok(Attach::Draining) => {
@@ -439,8 +439,18 @@ impl OutputLink {
     /// Ends the output process: asks it to shut down, waits briefly, and kills a process this link started if
     /// it is still running.
     pub fn shutdown(&self) {
-        self.inner.quitting.store(true, Ordering::Release);
-        let connection = self.inner.state.locked().connection.clone();
+        let mut supervisor = self.supervisor.locked();
+        let Some(handle) = supervisor.take() else {
+            return;
+        };
+        {
+            let _state = self.inner.state.locked();
+            self.inner.quitting.store(true, Ordering::Release);
+            self.inner.changed.notify_all();
+        }
+        // Let any in-flight attach finish before taking ownership of the socket and child.
+        let _ = handle.join();
+        let connection = self.inner.state.locked().connection.take();
         if let Some(connection) = &connection {
             let _ = write_message(&mut *connection.writer.locked(), &ToOutput::Shutdown);
             let _ = connection.writer.locked().flush();
@@ -462,9 +472,6 @@ impl OutputLink {
             if child.exit_code().is_none() {
                 child.kill();
             }
-        }
-        if let Some(handle) = self.supervisor.locked().take() {
-            let _ = handle.join();
         }
     }
 }

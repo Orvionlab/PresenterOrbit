@@ -291,9 +291,10 @@ fn main() {
     gpui_platform::application()
         .with_assets(Assets)
         .run(move |cx: &mut App| {
+            foreground::stop_output_on_quit(cx, host.clone());
             cx.set_global(Translator::new("en"));
             init_theme(cx, AppearanceSettings::default(), cx.window_appearance());
-            let control: Rc<dyn native_window::WindowControl> = Rc::new(PlatformControl);
+            let control: Rc<dyn native_window::WindowControl> = Rc::new(PlatformControl::new(cx));
             AuxiliaryWindows::install(
                 cx,
                 host.clone(),
@@ -365,13 +366,6 @@ fn main() {
             })
             .detach();
         });
-    // The output process ends with the application: a crash leaves it on air, a normal quit does not.
-    if let Some(link) = shutdown_host
-        .try_state::<output_process::OutputRoute>()
-        .and_then(|route| route.0.get())
-    {
-        link.shutdown();
-    }
     orbit_host::stop_host(&shutdown_host);
     shutdown_outputs.shutdown();
 }

@@ -539,6 +539,19 @@ fn stage_picker_defaults_and_switches_the_output_layout(cx: &mut TestAppContext)
         }),
     ]);
     orbit_host::native_compositor::render_stage_layout_still(&thumbnail, 128, 72).unwrap();
+
+    let directory =
+        crate::output_process::protocol::data_directory(&app.host.path().app_data_dir().unwrap());
+    assert!(crate::output_process::protocol::read_endpoint(&directory)
+        .unwrap()
+        .is_some());
+    cx.update(|cx| {
+        crate::foreground::stop_output_on_quit(cx, app.host.clone());
+        cx.shutdown();
+    });
+    assert!(crate::output_process::protocol::read_endpoint(&directory)
+        .unwrap()
+        .is_none());
 }
 
 #[gpui::test]

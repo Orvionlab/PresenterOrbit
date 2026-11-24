@@ -13,7 +13,19 @@ pub trait WindowControl {
     fn is_minimized(&self, window: &Window) -> Result<bool, String>;
 }
 
-pub struct PlatformControl;
+pub struct PlatformControl {
+    #[cfg(target_os = "macos")]
+    foreground: gpui::ForegroundExecutor,
+}
+
+impl PlatformControl {
+    pub fn new(_cx: &gpui::App) -> Self {
+        Self {
+            #[cfg(target_os = "macos")]
+            foreground: _cx.foreground_executor().clone(),
+        }
+    }
+}
 
 #[cfg(windows)]
 mod platform {
@@ -84,14 +96,89 @@ mod platform {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+mod platform {
+    use gpui::Window;
+    use objc2::rc::{Retained, Weak};
+    use objc2_app_kit::{NSView, NSWindow};
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+
+    use super::{PlatformControl, WindowControl};
+
+    fn native_window(window: &Window) -> Result<Retained<NSWindow>, String> {
+        let handle = HasWindowHandle::window_handle(window)
+            .map_err(|error| format!("The window handle is unavailable: {error}"))?;
+        let RawWindowHandle::AppKit(handle) = handle.as_raw() else {
+            return Err("The window is not an AppKit window.".to_string());
+        };
+        // SAFETY: GPUI provides a live NSView for the borrowed window on the main thread.
+        let view = unsafe { handle.ns_view.cast::<NSView>().as_ref() };
+        view.window()
+            .ok_or_else(|| "The AppKit view has no window.".to_string())
+    }
+
+    impl PlatformControl {
+        fn schedule(
+            &self,
+            window: &Window,
+            action: impl FnOnce(&NSWindow) + 'static,
+        ) -> Result<(), String> {
+            let native = Weak::from_retained(&native_window(window)?);
+            // AppKit can call GPUI delegates during these operations. Run them after GPUI
+            // has returned the borrowed app and window, and skip windows destroyed in between.
+            self.foreground
+                .spawn(async move {
+                    if let Some(native) = native.load() {
+                        action(&native);
+                    }
+                })
+                .detach();
+            Ok(())
+        }
+    }
+
+    impl WindowControl for PlatformControl {
+        fn show(&self, window: &Window) -> Result<(), String> {
+            self.schedule(window, |native| {
+                if native.isMiniaturized() {
+                    native.deminiaturize(None);
+                }
+                native.orderFront(None);
+            })
+        }
+        fn hide(&self, window: &Window) -> Result<(), String> {
+            self.schedule(window, |native| native.orderOut(None))
+        }
+        fn minimize(&self, window: &Window) -> Result<(), String> {
+            self.schedule(window, |native| native.miniaturize(None))
+        }
+        fn maximize(&self, window: &Window) -> Result<(), String> {
+            self.schedule(window, |native| {
+                if !native.isZoomed() {
+                    native.zoom(None);
+                }
+            })
+        }
+        fn restore(&self, window: &Window) -> Result<(), String> {
+            self.show(window)
+        }
+        fn is_visible(&self, window: &Window) -> Result<bool, String> {
+            Ok(native_window(window)?.isVisible())
+        }
+        fn is_minimized(&self, window: &Window) -> Result<bool, String> {
+            Ok(native_window(window)?.isMiniaturized())
+        }
+    }
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 mod platform {
     use gpui::Window;
 
     use super::{PlatformControl, WindowControl};
 
     fn unsupported<T>() -> Result<T, String> {
-        Err("Hiding and showing windows is only implemented on Windows so far.".to_string())
+        Err("Native window controls are unavailable on this platform.".to_string())
     }
 
     impl WindowControl for PlatformControl {

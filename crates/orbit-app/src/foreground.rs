@@ -5,6 +5,7 @@ use serde_json::Value;
 
 use crate::appearance;
 use crate::auxiliary::AuxiliaryWindows;
+use crate::output_process::OutputRoute;
 use crate::shell::{ForegroundMessage, WindowCommand};
 use crate::view::{AppView, HostEvent};
 
@@ -13,6 +14,21 @@ use crate::view::{AppView, HostEvent};
 pub struct MainWindow {
     pub window: AnyWindowHandle,
     pub view: Entity<AppView>,
+}
+
+pub fn stop_output_on_quit(cx: &App, host: orbit_host::Host) {
+    cx.on_app_quit(move |_| {
+        // AppKit exits without returning from the event loop. Finish shutting down the
+        // output process inside the quit callback so a normal quit does not orphan it.
+        if let Some(link) = host
+            .try_state::<OutputRoute>()
+            .and_then(|route| route.0.get())
+        {
+            link.shutdown();
+        }
+        std::future::ready(())
+    })
+    .detach();
 }
 
 pub fn handle_message(cx: &mut App, main: &MainWindow, message: ForegroundMessage) {
