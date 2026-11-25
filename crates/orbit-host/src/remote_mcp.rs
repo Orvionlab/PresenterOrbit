@@ -15,6 +15,7 @@ pub(super) struct Settings {
     pub read_status: bool,
     pub read_catalog: bool,
     pub create_presentations: bool,
+    pub manage_playlists: bool,
 }
 
 impl Settings {
@@ -26,6 +27,7 @@ impl Settings {
             read_status: value.get("mcpReadStatus").is_none_or(|flag| flag == true),
             read_catalog: value.get("mcpReadCatalog").is_none_or(|flag| flag == true),
             create_presentations: value["mcpCreatePresentations"] == true,
+            manage_playlists: value["mcpManagePlaylists"] == true,
         }
     }
 }
@@ -64,6 +66,21 @@ pub(super) fn handle(
         }
         return match create_presentation(app, &request.body) {
             Ok(result) => (201, result),
+            Err(message) => error(400, &message),
+        };
+    }
+    if request.method == "POST"
+        && matches!(
+            request.path.as_str(),
+            "/api/v1/mcp/playlists" | "/api/v1/mcp/playlists/delete"
+        )
+    {
+        if !settings.manage_playlists {
+            return error(403, "Managing playlists is disabled in Local MCP settings.");
+        }
+        let create = request.path == "/api/v1/mcp/playlists";
+        return match mutate_playlist(app, &request.body, create) {
+            Ok(result) => (if create { 201 } else { 200 }, result),
             Err(message) => error(400, &message),
         };
     }
@@ -122,7 +139,13 @@ fn catalog(status: &Value, field: &str) -> Result<Value, String> {
             if field == "libraries" {
                 let presentations = entries(item, "presentations")?
                     .iter()
-                    .map(|item| json!({"id":item["id"],"title":item["title"]}))
+                    .map(|item| {
+                        json!({
+                            "id":item["id"],"title":item["title"],
+                            "arrangementId":item["arrangementId"],
+                            "arrangements":item["modern"]["arrangements"]
+                        })
+                    })
                     .collect::<Vec<_>>();
                 return Ok(
                     json!({"id":item["id"],"title":item["title"],"presentations":presentations}),
@@ -199,17 +222,7 @@ enum Layer {
 fn create_presentation(app: &Host, body: &[u8]) -> Result<Value, String> {
     let input: Presentation =
         serde_json::from_slice(body).map_err(|error| format!("Invalid presentation: {error}"))?;
-    let state = app.state::<crate::AppState>();
-    let path = crate::active_workspace(state, Value::Null)?;
-    let path_text = path.to_str().ok_or("Workspace path is not text.")?;
-    if input.workspace_id != workspace_id(path_text) {
-        return Err("The workspace has changed. Read the current library or theme catalog.".into());
-    }
-    let revision = {
-        let mut io = crate::lock_workspace_io(state)?;
-        io.require_active(&path)?;
-        io.revision(&path)
-    };
+    let (path, revision) = workspace_target(app, &input.workspace_id)?;
     let mut mutation = json!({
         "type":"createPresentation", "title":input.title, "libraryId":input.library_id,
         "presentationThemeId":input.theme_layout_id,
@@ -232,7 +245,7 @@ fn create_presentation(app: &Host, body: &[u8]) -> Result<Value, String> {
     }
     let accepted = app.invoke(
         "mutatePresentationLibrary",
-        vec![json!(path_text), mutation, json!(revision)],
+        vec![json!(path), mutation, json!(revision)],
     )?;
     let id = &accepted["createdItemId"];
     let item = entries(&accepted["workspace"], "library")?
@@ -244,7 +257,7 @@ fn create_presentation(app: &Host, body: &[u8]) -> Result<Value, String> {
         "playlistId": input.playlist_id, "arrangementId":accepted["createdArrangementId"],
         "revision":accepted["revision"]
     });
-    let _ = app.emit_to("main", "workspace-presentation-created", accepted);
+    let _ = app.emit_to("main", "workspace-mcp-mutated", accepted);
     Ok(result)
 }
 
@@ -253,4 +266,70 @@ fn entries<'a>(value: &'a Value, field: &str) -> Result<&'a [Value], String> {
         .as_array()
         .map(Vec::as_slice)
         .ok_or_else(|| format!("Presenter Orbit status is missing the {field} catalog."))
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct CreatePlaylist {
+    workspace_id: String,
+    title: String,
+    #[serde(default)]
+    entries: Vec<Value>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct DeletePlaylist {
+    workspace_id: String,
+    playlist_id: String,
+}
+
+fn mutate_playlist(app: &Host, body: &[u8], create: bool) -> Result<Value, String> {
+    let (expected_id, mutation) = if create {
+        let input: CreatePlaylist = serde_json::from_slice(body)
+            .map_err(|error| format!("Invalid playlist creation: {error}"))?;
+        (
+            input.workspace_id,
+            json!({"type":"createWithEntries","baseTitle":input.title,"entries":input.entries}),
+        )
+    } else {
+        let input: DeletePlaylist = serde_json::from_slice(body)
+            .map_err(|error| format!("Invalid playlist deletion: {error}"))?;
+        (
+            input.workspace_id,
+            json!({"type":"deletePlaylist","playlistId":input.playlist_id}),
+        )
+    };
+    let (path, revision) = workspace_target(app, &expected_id)?;
+    let accepted = app.invoke(
+        "mutatePresentationPlaylist",
+        vec![json!(path), mutation, json!(revision)],
+    )?;
+    let result = if create {
+        let id = &accepted["createdPlaylistIds"][0];
+        let playlist = entries(&accepted["workspace"], "playlist")?
+            .iter()
+            .find(|playlist| playlist["id"] == *id)
+            .ok_or("The saved playlist is missing from the workspace.")?;
+        json!({"id":id,"title":playlist["title"],"entries":playlist["items"],"revision":accepted["revision"]})
+    } else {
+        json!({"id":accepted["deletedPlaylistIds"][0],"revision":accepted["revision"]})
+    };
+    let _ = app.emit_to("main", "workspace-mcp-mutated", accepted);
+    Ok(result)
+}
+
+fn workspace_target(app: &Host, expected_id: &str) -> Result<(std::path::PathBuf, u64), String> {
+    let state = app.state::<crate::AppState>();
+    let path = crate::active_workspace(state, Value::Null)?;
+    let path_text = path.to_str().ok_or("Workspace path is not text.")?;
+    if expected_id != workspace_id(path_text) {
+        return Err("The workspace has changed. Read the current workspace catalog.".into());
+    }
+    let revision = {
+        let mut io = crate::lock_workspace_io(state)?;
+        io.require_active(&path)?;
+        io.revision(&path)
+    };
+    Ok((path, revision))
 }

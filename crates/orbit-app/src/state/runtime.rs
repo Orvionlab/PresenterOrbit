@@ -317,7 +317,7 @@ impl Runtime {
         });
     }
 
-    pub fn accept_created_presentation(&self, payload: &Value, cx: &mut App) {
+    pub fn accept_mcp_mutation(&self, payload: &Value, cx: &mut App) {
         let runtime = self.clone();
         let response = payload.clone();
         cx.spawn(async move |cx| {
@@ -333,6 +333,23 @@ impl Runtime {
             {
                 revisions.remember_workspace(path, &accepted.response);
                 runtime.apply_canonical(cx, accepted.snapshot);
+                if let Some(deleted) = accepted.response["deletedPlaylistIds"].as_array() {
+                    cx.update(|cx| {
+                        runtime.ui.update(cx, |ui, cx| {
+                            if deleted.iter().any(|id| *id == ui.selected_playlist_id) {
+                                ui.selected_playlist_id.clear();
+                                ui.selected_documents.clear();
+                                ui.document_anchor = None;
+                            }
+                            ui.selected_playlist_ids.retain(|selected| {
+                                !deleted.iter().any(|id| id == selected.as_str())
+                            });
+                            ui.playlist_anchor = None;
+                            ui.playlist_menu = None;
+                            cx.notify();
+                        });
+                    });
+                }
             }
         })
         .detach();

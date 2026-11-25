@@ -24,10 +24,10 @@ environment. Set `PRESENTER_ORBIT_MCP_PORT` if Orbit uses a port other than
 49324. The client communicates with the process over stdio. The process reads
 Orbit's password-protected MCP endpoints on `127.0.0.1`.
 
-The **Read live status**, **Read libraries, playlists, and themes**, and
-**Create presentations** switches apply to all MCP clients using the password.
-The read permissions are selected by default. Creation requires an explicit
-opt-in. A tool whose permission is switched off returns an access error.
+The Local MCP permission switches apply to all clients using the password.
+Read permissions are enabled by default. **Create presentations** and
+**Create and delete playlists** are disabled by default. The playlist permission
+also allows the source presentation edits described below.
 
 ### Codex
 
@@ -67,10 +67,29 @@ session, and use `/mcp` to check the connection.
 | MCP tool | Result |
 | --- | --- |
 | `get_live_status` | Live presentation, current slide, outputs and layers |
-| `list_libraries` | Library and presentation titles and IDs |
+| `list_libraries` | Library and presentation titles and IDs, plus available arrangements |
 | `list_playlists` | Playlist titles and IDs, folder relationships, and ordered entries |
 | `list_themes` | Themes and layout IDs |
 | `create_presentation` | The ID and title of a saved presentation |
+| `create_playlist` | The saved playlist ID, title, and ordered entries |
+| `delete_playlist` | The deleted playlist ID |
+
+Use `create_playlist` with `workspaceId`, `title`, and optional `entries`. For
+each entry, specify one of these types.
+
+- `header` takes a `title` and optional `color` (hex RGB/RGBA or `transparent`).
+- `placeholder` takes a `title`. Set `linkedItemId` to reference an existing
+  presentation and optionally choose its `arrangementId`.
+- `presentation` takes an `itemId` and an optional `arrangementId`. An optional
+  `themeLayoutId` applies a layout from `list_themes` to every slide in the
+  source presentation. Optional `size` takes an integer `width` and `height` in
+  pixels and changes the source resolution. These two settings apply wherever
+  that presentation is used.
+
+Use `list_libraries` for presentation and arrangement IDs. Use
+`delete_playlist` with `workspaceId` and `playlistId` from `list_playlists`.
+Deleting a playlist removes its entries and preserves its source presentations.
+
 
 The read tools take no arguments. To create a presentation, use the
 `workspaceId` from the library or theme catalog, choose `libraryId` and

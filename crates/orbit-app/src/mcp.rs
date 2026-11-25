@@ -160,11 +160,17 @@ fn rpc_error(id: &Value, code: i32, message: &str) -> Value {
 
 fn call_tool(params: &Value, orbit: &Orbit) -> Result<Value, &'static str> {
     let name = params["name"].as_str().ok_or("A tool name is required")?;
-    let result = if name == "create_presentation" {
+    let write_path = match name {
+        "create_presentation" => Some("presentations"),
+        "create_playlist" => Some("playlists"),
+        "delete_playlist" => Some("playlists/delete"),
+        _ => None,
+    };
+    let result = if let Some(path) = write_path {
         if !params["arguments"].is_object() {
-            return Err("Presentation arguments must be an object");
+            return Err("Tool arguments must be an object");
         }
-        orbit.request("presentations", Some(&params["arguments"]))
+        orbit.request(path, Some(&params["arguments"]))
     } else {
         let (_, _, path) = READ_TOOLS
             .iter()
@@ -224,6 +230,64 @@ fn tools() -> Vec<Value> {
             }
         }
     }));
+    let workspace_id = json!({
+        "type":"string","description":"Workspace ID from list_playlists, list_libraries or list_themes."
+    });
+    let arrangement = json!({
+        "type":"string","description":"Arrangement ID for this entry's presentation from list_libraries."
+    });
+    tools.extend([
+        json!({
+            "name":"create_playlist",
+            "description":"Create a playlist with ordered headers, linked or unlinked placeholders, and library presentations. Optional theme and size change the source presentation everywhere it is used. Requires the Create and delete playlists permission.",
+            "annotations":{"readOnlyHint":false,"destructiveHint":true,"idempotentHint":false,"openWorldHint":false},
+            "inputSchema":{
+                "type":"object","additionalProperties":false,"required":["workspaceId","title"],
+                "properties":{
+                    "workspaceId":workspace_id,
+                    "title":{"type":"string","minLength":1},
+                    "entries":{"type":"array","items":{"oneOf":[
+                        {"type":"object","additionalProperties":false,"required":["type","title"],
+                            "properties":{
+                                "type":{"const":"header"},
+                                "title":{"type":"string","minLength":1},
+                                "color":{"type":"string","pattern":"^(transparent|#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?)$","description":"Optional header color as #RRGGBB, #RRGGBBAA, or transparent."}
+                            }},
+                        {"type":"object","additionalProperties":false,"required":["type","title"],
+                            "properties":{
+                                "type":{"const":"placeholder"},
+                                "title":{"type":"string","minLength":1},
+                                "linkedItemId":{"type":"string","description":"Optional presentation ID from list_libraries."},
+                                "arrangementId":arrangement
+                            }},
+                        {"type":"object","additionalProperties":false,"required":["type","itemId"],
+                            "properties":{
+                                "type":{"const":"presentation"},
+                                "itemId":{"type":"string","description":"Presentation ID from list_libraries."},
+                                "arrangementId":arrangement,
+                                "themeLayoutId":{"type":"string","description":"Apply this layout ID from list_themes to every slide of the source presentation."},
+                                "size":{"type":"object","additionalProperties":false,"required":["width","height"],"properties":{
+                                    "width":{"type":"integer","minimum":1,"maximum":16384},
+                                    "height":{"type":"integer","minimum":1,"maximum":16384}
+                                }}
+                            }}
+                    ]}}
+                }
+            }
+        }),
+        json!({
+            "name":"delete_playlist",
+            "description":"Delete one playlist and its entries by ID. Library presentations are preserved. Requires the Create and delete playlists permission.",
+            "annotations":{"readOnlyHint":false,"destructiveHint":true,"idempotentHint":false,"openWorldHint":false},
+            "inputSchema":{
+                "type":"object","additionalProperties":false,"required":["workspaceId","playlistId"],
+                "properties":{
+                    "workspaceId":workspace_id,
+                    "playlistId":{"type":"string","description":"Playlist ID from list_playlists."}
+                }
+            }
+        }),
+    ]);
     tools
 }
 

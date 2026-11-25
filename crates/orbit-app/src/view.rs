@@ -1213,9 +1213,7 @@ impl AppView {
                 }
             }
             "remote-command" => crate::automation::remote::event(&self.runtime, payload, cx),
-            "workspace-presentation-created" => {
-                self.runtime.accept_created_presentation(payload, cx)
-            }
+            "workspace-mcp-mutated" => self.runtime.accept_mcp_mutation(payload, cx),
             "automation-due" => crate::automation::on_due(&self.runtime, payload, cx),
             "trigger-bindings-changed" => {
                 revisions.accept_workspace_event(payload, false);

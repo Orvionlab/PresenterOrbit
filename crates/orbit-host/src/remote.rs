@@ -857,6 +857,7 @@ pub fn validate_settings_value(value: &Value) -> Result<(), String> {
         "mcpReadStatus",
         "mcpReadCatalog",
         "mcpCreatePresentations",
+        "mcpManagePlaylists",
     ] {
         if object.get(field).is_some_and(|value| !value.is_boolean()) {
             return Err(format!("{field} must be a boolean."));
@@ -894,6 +895,7 @@ pub fn normalize_settings_value(value: &Value) -> Value {
         "mcpReadStatus": settings.mcp.read_status,
         "mcpReadCatalog": settings.mcp.read_catalog,
         "mcpCreatePresentations": settings.mcp.create_presentations,
+        "mcpManagePlaylists": settings.mcp.manage_playlists,
         "networkName": settings.pro7.network_name,
         "proPresenterEnabled": settings.pro7.remote_enabled,
         "stageEnabled": settings.pro7.stage_enabled,

@@ -228,6 +228,7 @@ fn modern_playlist_items(entries: &[Value], presentations: &[Value]) -> Result<V
                     })
                 }),
                 "headerColor": entry.get("color"),
+                "linkedPresentationId": entry.get("linkedItemId"),
                 "isHidden": entry.get("hidden").or_else(|| entry.get("isHidden")).cloned().unwrap_or(serde_json::json!(false)),
                 "isPco": entry.get("isPco").cloned().unwrap_or(serde_json::json!(false))
             }))

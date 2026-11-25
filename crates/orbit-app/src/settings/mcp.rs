@@ -84,6 +84,11 @@ impl SettingsView {
                         "settings.remote.mcp.createPresentations",
                         "mcpCreatePresentations",
                     ),
+                    toggle(
+                        "mcp-manage-playlists",
+                        "settings.remote.mcp.managePlaylists",
+                        "mcpManagePlaylists",
+                    ),
                 ],
                 cx,
             ))

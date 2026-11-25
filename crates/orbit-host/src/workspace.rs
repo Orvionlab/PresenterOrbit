@@ -5770,6 +5770,9 @@ fn unique_presentation_library_id(title: &str, libraries: &[Value]) -> String {
     candidate
 }
 
+#[path = "playlist_creation.rs"]
+mod playlist_creation;
+
 pub fn mutate_presentation_playlist(
     path: &Path,
     mutation: &Value,
@@ -5797,8 +5800,9 @@ pub fn mutate_presentation_playlist(
     let mut reordered_entry_ids = Vec::new();
     let mut copied_entry_ids = Vec::new();
 
+    let mut updated_library = None;
     match operation {
-        "create" => {
+        "create" | "createWithEntries" => {
             let base_title = required_mutation_string(
                 mutation,
                 "baseTitle",
@@ -5813,6 +5817,19 @@ pub fn mutate_presentation_playlist(
                 }
                 None => Map::new(),
             };
+            if operation == "createWithEntries" {
+                validate_mutation_keys(
+                    mutation,
+                    &["type", "baseTitle", "entries"],
+                    "playlist creation",
+                )?;
+                let input = mutation
+                    .get("entries")
+                    .ok_or("Playlist entries are required.")?;
+                let (entries, library) = playlist_creation::build_entries(document, input)?;
+                playlist.insert("items".into(), json!(entries));
+                updated_library = Some(library);
+            }
             playlist.insert("id".to_string(), json!(playlist_id));
             playlist.insert("title".to_string(), json!(title));
             playlist
@@ -5999,6 +6016,16 @@ pub fn mutate_presentation_playlist(
                 .filter_map(|id| copies_by_source.get(id).cloned())
                 .collect();
         }
+        "deletePlaylist" => {
+            validate_mutation_keys(mutation, &["type", "playlistId"], "playlist deletion")?;
+            let id = required_mutation_string(mutation, "playlistId", "Playlist id is required.")?;
+            let index = playlist_index(&playlists, id)?;
+            if source_playlist_is_folder(&playlists[index]) {
+                return Err("Only playlists can be deleted with this operation.".into());
+            }
+            playlists.remove(index);
+            deleted_playlist_ids.push(id.to_owned());
+        }
         "delete" => {
             let requested_ids = required_mutation_string_array(
                 mutation,
@@ -6152,13 +6179,7 @@ pub fn mutate_presentation_playlist(
             let color = mutation["color"]
                 .as_str()
                 .ok_or("Header color must be text.")?;
-            if color != "transparent"
-                && !(matches!(color.len(), 7 | 9)
-                    && color.starts_with('#')
-                    && color[1..].bytes().all(|byte| byte.is_ascii_hexdigit()))
-            {
-                return Err("Header color must be a hex color.".into());
-            }
+            validate_playlist_header_color(color)?;
             let playlist = entry_playlist_object_mut(&mut playlists, playlist_id)?;
             let mut entries = playlist_entries(playlist);
             let entry = entries
@@ -6900,7 +6921,11 @@ pub fn mutate_presentation_playlist(
     if playlists == original {
         return Ok(unchanged_presentation_playlist_result(workspace));
     }
-    let workspace = save_workspace(path, &json!({ "playlist": playlists }))?;
+    let mut patch = json!({"playlist": playlists});
+    if let Some(library) = updated_library {
+        patch["library"] = json!(library);
+    }
+    let workspace = save_read_workspace(path, workspace, &patch, &[])?;
     Ok(PresentationPlaylistMutationResult {
         workspace,
         changed: true,
@@ -6914,6 +6939,17 @@ pub fn mutate_presentation_playlist(
         reordered_entry_ids,
         copied_entry_ids,
     })
+}
+
+fn validate_playlist_header_color(color: &str) -> Result<(), String> {
+    if color != "transparent"
+        && !(matches!(color.len(), 7 | 9)
+            && color.starts_with('#')
+            && color[1..].bytes().all(|byte| byte.is_ascii_hexdigit()))
+    {
+        return Err("Header color must be a hex color.".into());
+    }
+    Ok(())
 }
 
 fn unchanged_presentation_playlist_result(workspace: Value) -> PresentationPlaylistMutationResult {

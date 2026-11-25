@@ -549,6 +549,10 @@
   "@settings.remote.mcp.readCatalog": {
     "description": "Allow MCP clients to list libraries, playlist entries, and available theme layouts."
   },
+  "settings.remote.mcp.managePlaylists": "Create and delete playlists",
+  "@settings.remote.mcp.managePlaylists": {
+    "description": "Local MCP permission to create or delete playlists and apply a theme or resolution to their source presentations during creation."
+  },
   "settings.remote.mcp.createPresentations": "Create presentations",
   "@settings.remote.mcp.createPresentations": {
     "description": "Allow MCP clients to save new presentations and append them to an existing playlist."

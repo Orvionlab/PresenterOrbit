@@ -255,6 +255,7 @@
   "settings.remote.mcp.permissions": "Rechten",
   "settings.remote.mcp.readStatus": "Live status lezen",
   "settings.remote.mcp.readCatalog": "Bibliotheken, afspeellijsten en thema’s lezen",
+  "settings.remote.mcp.managePlaylists": "Afspeellijsten maken en verwijderen",
   "settings.remote.mcp.createPresentations": "Presentaties maken",
   "settings.remote.mcp.setup": "Een MCP-client verbinden",
   "settings.remote.mcp.setupIntro": "Schakel Lokale MCP in, stel een wachtwoord in en laat Presenter Orbit draaien op dezelfde computer als je client.",

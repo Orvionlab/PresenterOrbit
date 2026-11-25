@@ -98,13 +98,16 @@ fn mcp_reads_the_open_workspace_over_the_remote_api(cx: &mut TestAppContext) {
     let responses = &responses[2..];
     assert_eq!(responses[0]["result"]["protocolVersion"], "2025-11-25");
     let tools = responses[1]["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 5);
-    assert!(
-        tools
-            .iter()
-            .all(|tool| tool["annotations"]["readOnlyHint"]
-                == (tool["name"] != "create_presentation"))
-    );
+    assert_eq!(tools.len(), 7);
+    for tool in tools {
+        assert_eq!(
+            tool["annotations"]["readOnlyHint"],
+            !matches!(
+                tool["name"].as_str().unwrap(),
+                "create_presentation" | "create_playlist" | "delete_playlist"
+            )
+        );
+    }
     let tool_content = |id: usize| -> Value {
         let response = &responses[id];
         assert_eq!(response["id"], id);
@@ -161,16 +164,31 @@ fn mcp_reads_the_open_workspace_over_the_remote_api(cx: &mut TestAppContext) {
         "operatorNotes":"Whole presentation note","layer":"announcements",
         "arrangement":{"name":"Alternate","slideOrder":[2,1,2]}
     });
-    let create = |arguments: Value| {
+    let call = |name: &str, arguments: Value| {
         mcp_requests(
             port,
             [json!({"id":"create","method":"tools/call","params":{
-                "_meta":modern_metadata(),"name":"create_presentation","arguments":arguments
+                "_meta":modern_metadata(),"name":name,"arguments":arguments
             }})],
         )
         .remove(0)["result"]
             .clone()
     };
+    let create = |arguments| call("create_presentation", arguments);
+    let delete_playlist = |id: &Value| {
+        call(
+            "delete_playlist",
+            json!({"workspaceId":workspace_id,"playlistId":id}),
+        )
+    };
+    assert_eq!(
+        call(
+            "create_playlist",
+            json!({"workspaceId":workspace_id,"title":"MCP playlist"})
+        )["isError"],
+        true
+    );
+    assert_eq!(delete_playlist(&sunday["id"])["isError"], true);
     assert_eq!(create(arguments.clone())["isError"], true);
 
     let set_permissions = |app: &Scenario, read_status, read_catalog, create_presentations| {
@@ -260,6 +278,111 @@ fn mcp_reads_the_open_workspace_over_the_remote_api(cx: &mut TestAppContext) {
     let entry = playlist["items"].as_array().unwrap().last().unwrap();
     assert_eq!(entry["itemId"], created["id"]);
     assert_eq!(entry["arrangementId"], created["arrangementId"]);
+
+    let settings = app.host.invoke("getSettings", vec![]).unwrap();
+    let mut remote = settings["remoteSettings"].clone();
+    remote["mcpManagePlaylists"] = json!(true);
+    remote["mcpReadCatalog"] = json!(true);
+    app.host
+        .invoke(
+            "saveSettings",
+            vec![
+                json!({"remoteSettings":remote}),
+                settings["settingsRevision"].clone(),
+            ],
+        )
+        .unwrap();
+
+    let libraries = call("list_libraries", json!({}));
+    let catalog: Value =
+        serde_json::from_str(libraries["content"][0]["text"].as_str().unwrap()).unwrap();
+    assert!(catalog["libraries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|library| library["presentations"].as_array().unwrap())
+        .any(|item| item["id"] == created["id"]
+            && item["arrangements"][0]["id"] == created["arrangementId"]));
+    let color = format!("{}336699", '#');
+    let playlist_args = json!({
+        "workspaceId":workspace_id,"title":"MCP playlist","entries":[
+            {"type":"header","title":"Opening","color":color},
+            {"type":"placeholder","title":"Welcome"},
+            {"type":"placeholder","title":"Closing","linkedItemId":created["id"],"arrangementId":created["arrangementId"]},
+            {"type":"presentation","itemId":created["id"],"arrangementId":created["arrangementId"],
+             "themeLayoutId":layout["id"],"size":{"width":1920,"height":1080}}
+        ]
+    });
+    let mut malformed = playlist_args.clone();
+    malformed["entries"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"type":"presentation","itemId":"missing"}));
+    assert_eq!(call("create_playlist", malformed)["isError"], true);
+    assert_eq!(app.snapshot()["playlist"], workspace["playlist"]);
+    assert_eq!(app.snapshot()["library"], workspace["library"]);
+
+    let result = call("create_playlist", playlist_args);
+    assert_ne!(result["isError"], true, "{result}");
+    let saved: Value =
+        serde_json::from_str(result["content"][0]["text"].as_str().unwrap()).unwrap();
+    let id = saved["id"].as_str().unwrap();
+    assert_eq!(saved["entries"][0]["color"], color);
+    assert_eq!(saved["entries"][1]["type"], "placeholder");
+    assert!(saved["entries"][1]["linkedItemId"].is_null());
+    assert_eq!(saved["entries"][2]["linkedItemId"], created["id"]);
+    assert_eq!(
+        saved["entries"][2]["arrangementId"],
+        created["arrangementId"]
+    );
+    assert_eq!(saved["entries"][3]["itemId"], created["id"]);
+    assert_eq!(
+        saved["entries"][3]["arrangementId"],
+        created["arrangementId"]
+    );
+    let updated = app.snapshot();
+    let source = updated["library"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["id"] == created["id"])
+        .unwrap();
+    assert_eq!(source["size"], json!({"width":1920,"height":1080}));
+    assert_eq!(source["slides"][0]["presentationThemeId"], layout["id"]);
+
+    let runtime = app.runtime(cx);
+    app.wait(cx, |_, cx| {
+        cx.update(|cx| {
+            runtime
+                .content
+                .read(cx)
+                .playlists
+                .iter()
+                .any(|playlist| playlist.id == id)
+        })
+    });
+    cx.update(|cx| {
+        runtime.ui.update(cx, |ui, cx| {
+            ui.selected_playlist_id = id.to_owned();
+            cx.notify();
+        })
+    });
+    let result = delete_playlist(&saved["id"]);
+    assert_ne!(result["isError"], true, "{result}");
+    app.wait(cx, |_, cx| {
+        cx.update(|cx| {
+            runtime.ui.read(cx).selected_playlist_id.is_empty()
+                && runtime
+                    .content
+                    .read(cx)
+                    .playlists
+                    .iter()
+                    .all(|playlist| playlist.id != id)
+        })
+    });
+    assert_eq!(app.snapshot()["library"], updated["library"]);
+    assert_eq!(app.snapshot()["playlist"], workspace["playlist"]);
+    assert_eq!(delete_playlist(&saved["id"])["isError"], true);
 
     let runtime = app.runtime(cx);
     app.wait(cx, |_, cx| {
