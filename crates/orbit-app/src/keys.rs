@@ -272,7 +272,18 @@ fn command_for_keystroke(mappings: &KeyMappings, keystroke: &Keystroke) -> Optio
     if shortcut == "Ctrl+N" || shortcut == "Meta+N" {
         return Some(NEW_PRESENTATION.to_string());
     }
-    mappings.command_for(&shortcut).map(str::to_string)
+    let command = mappings
+        .command_for(&shortcut)
+        .or_else(|| match shortcut.as_str() {
+            "Meta+Z" => mappings
+                .command_for("Ctrl+Z")
+                .filter(|action| *action == "undo"),
+            "Meta+Shift+Z" => mappings
+                .command_for("Ctrl+Y")
+                .filter(|action| *action == "redo"),
+            _ => None,
+        });
+    command.map(str::to_string)
 }
 
 /// The shell's key handler. It never runs while a text field has focus, so typing is never taken for a command.

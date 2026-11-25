@@ -6,6 +6,152 @@ use gpui::{AppContext, TestAppContext};
 use serde_json::{json, Value};
 
 #[gpui::test]
+fn theme_previews_assign_to_collections_and_undo_a_whole_presentation(cx: &mut TestAppContext) {
+    let mut app = Scenario::new(cx, false, seed);
+    let snapshot = app.snapshot();
+    let library = snapshot["libraries"][0]["id"].as_str().unwrap();
+    let playlist = snapshot["playlist"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|playlist| playlist["title"] == "Sunday")
+        .unwrap();
+    let playlist = playlist["id"].as_str().unwrap();
+    let item = snapshot["library"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["title"] == "Sunday service")
+        .unwrap();
+    let item = item["id"].as_str().unwrap();
+    let slides = |app: &Scenario| {
+        app.snapshot()["library"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|candidate| candidate["id"] == item)
+            .unwrap()["slides"]
+            .clone()
+    };
+    let before = slides(&app);
+    let workspace = json!(app.workspace.0.join("workspace.json"));
+    let revision = app
+        .host
+        .invoke("readWorkspaceSnapshot", vec![workspace.clone()])
+        .unwrap()["revision"]
+        .clone();
+    let error = app
+        .host
+        .invoke(
+            "mutatePresentationLibrary",
+            vec![
+                workspace,
+                json!({
+                    "type":"mutateItem", "itemId":item,
+                    "operation":{"type":"setSlideDocument", "expectedSlides":false, "slides":before}
+                }),
+                revision,
+            ],
+        )
+        .unwrap_err();
+    assert!(error.contains("Presentation slides changed"));
+    assert_eq!(slides(&app), before);
+
+    let runtime = app.runtime(cx);
+    let (thumbnail, assignment) = cx.update(|cx| {
+        let content = runtime.content.read(cx);
+        let recent =
+            crate::theme_picker::known_recents(&content.recent_themes, &content.themes).len();
+        content
+            .themes
+            .iter()
+            .flat_map(|theme| {
+                theme
+                    .slides
+                    .iter()
+                    .map(move |(slide, _)| format!("{}::{slide}", theme.id))
+            })
+            .enumerate()
+            .find_map(|(index, assignment)| {
+                (before[0]["presentationThemeId"] != assignment)
+                    .then(|| (format!("theme-picker-all-{}", recent + index), assignment))
+            })
+            .unwrap()
+    });
+    let mut visual = app.visual(cx);
+    let open = |visual: &mut gpui::VisualTestContext, row: &str| {
+        context(visual, row);
+        if row.starts_with("document-") {
+            let resize = visual.debug_bounds("menu-item-Resize").unwrap();
+            let themes = visual.debug_bounds("menu-item-Themes").unwrap();
+            assert!(resize.bottom() <= themes.top());
+        }
+        click(visual, "menu-item-Themes");
+    };
+
+    click(&mut visual, &format!("library-{library}"));
+    open(&mut visual, "document-0");
+    assert!(visual
+        .debug_bounds(Box::leak(thumbnail.clone().into_boxed_str()))
+        .is_some());
+    click(&mut visual, "dialog-close");
+
+    click(&mut visual, &format!("playlist-{playlist}"));
+    open(&mut visual, "document-0");
+    click(&mut visual, &thumbnail);
+    app.wait(cx, |app, _| {
+        slides(app)
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|slide| slide["presentationThemeId"] == assignment)
+    });
+    let after = slides(&app);
+    let history_ready = |app: &Scenario, cx: &mut TestAppContext, undo| {
+        cx.update(|cx| {
+            app.main
+                .view
+                .read(cx)
+                .documents
+                .read(cx)
+                .can_edit_theme_history(undo, cx)
+        })
+    };
+    app.wait(cx, |app, cx| history_ready(app, cx, true));
+    support::primary_shortcut(&mut visual, "z");
+    app.wait(cx, |app, cx| {
+        slides(app) == before && history_ready(app, cx, false)
+    });
+    let redo = if cfg!(target_os = "macos") {
+        "shift-z"
+    } else {
+        "y"
+    };
+    support::primary_shortcut(&mut visual, redo);
+    app.wait(cx, |app, cx| {
+        slides(app) == after && history_ready(app, cx, true)
+    });
+
+    open(&mut visual, &format!("library-{library}"));
+    click(&mut visual, "theme-picker-recent-0");
+    app.wait(cx, |app, _| {
+        app.snapshot()["libraries"][0]["presentationThemeId"] == assignment
+    });
+
+    open(&mut visual, &format!("playlist-{playlist}"));
+    click(&mut visual, "theme-picker-recent-0");
+    app.wait(cx, |app, _| {
+        app.snapshot()["playlist"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|candidate| {
+                candidate["id"] == playlist && candidate["presentationThemeId"] == assignment
+            })
+    });
+}
+
+#[gpui::test]
 fn linked_placeholder_takes_its_own_arrangement_and_edits_slide_labels(cx: &mut TestAppContext) {
     let arrangement = "a039ef8e-b9c7-4c11-b788-3b9726a262b6";
     let mut app = Scenario::new(cx, true, |host| {

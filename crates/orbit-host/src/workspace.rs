@@ -3857,7 +3857,7 @@ fn validate_presentation_item_mutation_keys(
         ));
     }
     let allowed_operation = match operation_type {
-        "setSlideDocument" => &["type", "slides", "title"][..],
+        "setSlideDocument" => &["type", "slides", "title", "expectedSlides"][..],
         "setTitle" => &["type", "title"][..],
         "setPresentationSetting" => &["type", "field", "value"][..],
         "setSlideShortcut" => &["type", "slideId", "shortcut"][..],
@@ -3870,7 +3870,7 @@ fn validate_presentation_item_mutation_keys(
         "setSlidesEnabled" => &["type", "slideIds", "enabled"][..],
         "setSlideMedia" => &["type", "slideId", "mediaId", "backgroundOnly"][..],
         "setSlideTheme" => &["type", "slideId", "assignment"][..],
-        "setSlidesTheme" => &["type", "slideIds", "assignment"][..],
+        "setSlidesTheme" => &["type", "slideIds", "assignment", "expectedSlides"][..],
         "setSlideGroup" => &["type", "slideId", "groupId"][..],
         "setSlidesGroup" => &["type", "slideIds", "groupId"][..],
         "setSlidesLabel" => &["type", "slideIds", "label"][..],
@@ -3968,6 +3968,11 @@ fn mutate_presentation_item(
             }
         }
     }
+    if let Some(expected) = operation.get("expectedSlides") {
+        if !expected.is_array() || next_item.get("slides") != Some(expected) {
+            return Err("Presentation slides changed since the theme edit.".into());
+        }
+    }
     let mut created_slide_id = None;
     let mut selected_slide_id = None;
 
@@ -3990,7 +3995,15 @@ fn mutate_presentation_item(
         }
         "setSlideDocument" => {
             let title =
-                required_mutation_string(operation, "title", "Presentation title is required.")?;
+                if operation.contains_key("expectedSlides") && !operation.contains_key("title") {
+                    None
+                } else {
+                    Some(required_mutation_string(
+                        operation,
+                        "title",
+                        "Presentation title is required.",
+                    )?)
+                };
             let slides = operation
                 .get("slides")
                 .and_then(Value::as_array)
@@ -4044,10 +4057,12 @@ fn mutate_presentation_item(
                 }
             }
             set_presentation_item_slides(&mut next_item, slides.clone())?;
-            next_item
-                .as_object_mut()
-                .ok_or_else(|| "Presentation must be an object.".to_string())?
-                .insert("title".to_string(), json!(title));
+            if let Some(title) = title {
+                next_item
+                    .as_object_mut()
+                    .ok_or_else(|| "Presentation must be an object.".to_string())?
+                    .insert("title".to_string(), json!(title));
+            }
             normalize_presentation_item_groups(&mut next_item);
         }
         "setTransition" => {

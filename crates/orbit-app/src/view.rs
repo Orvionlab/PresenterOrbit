@@ -471,6 +471,12 @@ impl AppView {
                     if view.canvas_open {
                         view.canvas
                             .update(cx, |canvas, cx| canvas.edit_command(action, window, cx));
+                    } else if matches!(action, "undo" | "redo")
+                        && !view.cue_thumbnails.read(cx).reflow_open()
+                    {
+                        view.documents.update(cx, |documents, cx| {
+                            documents.edit_theme_history(action == "undo", cx)
+                        });
                     } else {
                         view.cue_thumbnails
                             .update(cx, |cues, cx| cues.edit_command(action, window, cx));
@@ -1544,6 +1550,11 @@ impl AppView {
                         self.canvas.read(cx).can_edit(action)
                     } else {
                         !matches!(action, "undo" | "redo")
+                            || (!self.cue_thumbnails.read(cx).reflow_open()
+                                && self
+                                    .documents
+                                    .read(cx)
+                                    .can_edit_theme_history(action == "undo", cx))
                     };
                     let mut item = MenuItem::new(t.t(&format!("appMenu.edit.{action}")))
                         .disabled(!allowed)

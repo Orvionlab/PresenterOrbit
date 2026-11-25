@@ -26,6 +26,7 @@ use super::tree_actions::{
 };
 use crate::state::runtime::Runtime;
 use crate::state::slices::{CreateMenu, CreateMenuKind, TreeMenu};
+use crate::theme_picker::ThemePicker;
 
 /// The payload of a drag in either tree.
 #[derive(Clone)]
@@ -69,6 +70,7 @@ pub struct TreesView {
     runtime: Runtime,
     rename: Option<Rename>,
     confirm_delete: Option<Vec<String>>,
+    theme_picker: Option<Entity<ThemePicker>>,
     indicator: Option<Indicator>,
     _subscriptions: Vec<Subscription>,
 }
@@ -110,6 +112,7 @@ impl TreesView {
             runtime,
             rename: None,
             confirm_delete: None,
+            theme_picker: None,
             indicator: None,
             _subscriptions: subscriptions,
         }
@@ -567,90 +570,98 @@ impl TreesView {
             .into_any_element()
     }
 
-    fn theme_entries(
+    fn theme_action(
         &self,
-        assignments: Vec<ThemeAssignment>,
-        allow_inheritance: bool,
-        on_choose: impl Fn(ThemeAssignment, &mut App) + Clone + 'static,
+        menu: &TreeMenu,
+        kind: TreeKind,
         t: Translator,
-        cx: &App,
+        cx: &mut Context<Self>,
     ) -> MenuEntry {
-        let content = self.runtime.content.read(cx);
-        let all_match = |assignment: &ThemeAssignment| {
-            !assignments.is_empty() && assignments.iter().all(|candidate| candidate == assignment)
-        };
-        let item = |label: String, assignment: ThemeAssignment| -> MenuEntry {
-            let on_choose = on_choose.clone();
-            let checked = all_match(&assignment);
-            MenuItem::new(label)
-                .checked(checked)
-                .on_click(move |_, _, cx| on_choose(assignment.clone(), cx))
-                .into()
-        };
-        let mut entries = Vec::new();
-        if allow_inheritance {
-            entries.push(item(
-                t.t("theme.assignment.inherit"),
-                ThemeAssignment::Inherit,
-            ));
-            entries.push(item(t.t("theme.assignment.none"), ThemeAssignment::NoTheme));
-            entries.push(MenuEntry::Separator);
-        }
-        for theme in &content.themes {
-            let slides = theme
-                .slides
-                .iter()
-                .enumerate()
-                .map(|(position, (slide_id, name))| {
-                    let label = if name.is_empty() {
-                        t.format(
-                            "screenSettings.themeSlide",
-                            &[("number", &(position + 1).to_string())],
-                        )
-                    } else {
-                        name.clone()
-                    };
-                    item(
-                        label,
-                        ThemeAssignment::Theme(format!("{}::{slide_id}", theme.id)),
-                    )
-                })
-                .collect();
-            entries.push(MenuEntry::Submenu {
-                label: if theme.title.is_empty() {
-                    t.t("cue.untitled")
-                } else {
-                    theme.title.clone()
-                }
-                .into(),
-                disabled: false,
-                entries: slides,
-            });
-        }
-        MenuEntry::Submenu {
-            label: t.t("cue.menu.themes").into(),
-            disabled: false,
-            entries,
-        }
-    }
-
-    fn library_menu(&self, menu: &TreeMenu, t: Translator, cx: &mut Context<Self>) -> AnyElement {
         let content = self.runtime.content.read(cx);
         let assignments = menu
             .ids
             .iter()
-            .filter_map(|id| content.library(id).map(|library| library.theme.clone()))
-            .collect();
+            .filter_map(|id| match kind {
+                TreeKind::Library => content.library(id).map(|library| &library.theme),
+                TreeKind::Playlist => content.playlist(id).map(|playlist| &playlist.theme),
+            })
+            .collect::<Vec<_>>();
+        let value = match assignments
+            .first()
+            .filter(|first| assignments.iter().all(|a| a == *first))
+        {
+            Some(ThemeAssignment::Theme(id)) => id.clone(),
+            Some(ThemeAssignment::NoTheme) => "none".into(),
+            Some(ThemeAssignment::Inherit) => "inherit".into(),
+            None => String::new(),
+        };
+        let options = if kind == TreeKind::Playlist {
+            vec![
+                (t.t("theme.assignment.inherit"), "inherit".into()),
+                (t.t("theme.assignment.none"), "none".into()),
+            ]
+        } else {
+            Vec::new()
+        };
+        let ids = menu.ids.clone();
+        let workspace = content.workspace_path.clone();
+        let runtime = self.runtime.clone();
+        // The selection is captured before the context menu closes.
+        let view = cx.weak_entity();
+        MenuItem::new(t.t("cue.menu.themes"))
+            .on_click(move |_, _, cx| {
+                let close = view.clone();
+                let (runtime, ids, workspace) = (runtime.clone(), ids.clone(), workspace.clone());
+                let picker = ThemePicker::dialog(
+                    runtime.clone(),
+                    &value,
+                    options.clone(),
+                    move |_, cx| {
+                        let _ = close.update(cx, |view, cx| {
+                            view.theme_picker = None;
+                            cx.notify();
+                        });
+                    },
+                    move |value, _, cx| {
+                        if runtime.content.read(cx).workspace_path != workspace {
+                            return;
+                        }
+                        let assignment = match value.as_str() {
+                            "inherit" => ThemeAssignment::Inherit,
+                            "none" => ThemeAssignment::NoTheme,
+                            _ => ThemeAssignment::Theme(value),
+                        };
+                        match kind {
+                            TreeKind::Library => tree_actions::assign_theme_to_libraries(
+                                &runtime,
+                                cx,
+                                ids.clone(),
+                                assignment,
+                            ),
+                            TreeKind::Playlist => tree_actions::assign_theme_to_playlists(
+                                &runtime,
+                                cx,
+                                ids.clone(),
+                                assignment,
+                            ),
+                        }
+                        .detach_task();
+                    },
+                    cx,
+                );
+                let _ = view.update(cx, |view, cx| {
+                    view.theme_picker = Some(picker);
+                    cx.notify();
+                });
+            })
+            .into()
+    }
+
+    fn library_menu(&self, menu: &TreeMenu, t: Translator, cx: &mut Context<Self>) -> AnyElement {
         let multi = menu.ids.len() > 1;
         let (runtime, id) = (self.runtime.clone(), menu.id.clone());
-        let theme_action = {
-            let (runtime, id) = (runtime.clone(), id.clone());
-            move |assignment: ThemeAssignment, cx: &mut App| {
-                handle_library_menu_action(&runtime, cx, &assignment.action(), &id);
-            }
-        };
         let mut entries = vec![
-            self.theme_entries(assignments, false, theme_action, t, cx),
+            self.theme_action(menu, TreeKind::Library, t, cx),
             MenuEntry::Separator,
         ];
         let view = cx.weak_entity();
@@ -691,22 +702,10 @@ impl TreesView {
     }
 
     fn playlist_menu(&self, menu: &TreeMenu, t: Translator, cx: &mut Context<Self>) -> AnyElement {
-        let content = self.runtime.content.read(cx);
-        let assignments = menu
-            .ids
-            .iter()
-            .filter_map(|id| content.playlist(id).map(|playlist| playlist.theme.clone()))
-            .collect();
         let multi = menu.ids.len() > 1;
         let (runtime, id) = (self.runtime.clone(), menu.id.clone());
-        let theme_action = {
-            let (runtime, id) = (runtime.clone(), id.clone());
-            move |assignment: ThemeAssignment, cx: &mut App| {
-                handle_playlist_menu_action(&runtime, cx, &assignment.action(), &id);
-            }
-        };
         let mut entries = vec![
-            self.theme_entries(assignments, true, theme_action, t, cx),
+            self.theme_action(menu, TreeKind::Playlist, t, cx),
             MenuEntry::Separator,
         ];
         let action = |label: String, action: &'static str| -> MenuEntry {
@@ -979,6 +978,7 @@ impl Render for TreesView {
             .children(playlist_menu)
             .children(create_menu)
             .children(confirm)
+            .children(self.theme_picker.clone())
             .text_color(theme.colors.text)
     }
 }

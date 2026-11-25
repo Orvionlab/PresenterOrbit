@@ -12,7 +12,7 @@ use gpui::{
     div, prelude::*, px, relative, App, Bounds, Context, Entity, FocusHandle, KeyDownEvent,
     MouseMoveEvent, Pixels, Render, Role, ScrollHandle, SharedString, Window,
 };
-use orbit_ui::controls::{NativeButton, Popover};
+use orbit_ui::controls::{ActionButton, ButtonVariant, Dialog, NativeButton, Popover};
 use orbit_ui::{ActiveTheme, FrameSize, Translator};
 
 use crate::collections::model::Theme;
@@ -74,6 +74,13 @@ struct Thumb {
 
 type Pick = Rc<dyn Fn(String, &mut Window, &mut App)>;
 
+type Close = Rc<dyn Fn(&mut Window, &mut App)>;
+
+struct PickerDialog {
+    close: Close,
+    options: Vec<(String, String)>,
+}
+
 pub struct ThemePicker {
     runtime: Runtime,
     /// Its own bitmap cache and render lane, so thumbnails never queue behind the cue grid's stills.
@@ -91,6 +98,7 @@ pub struct ThemePicker {
     scroll: ScrollHandle,
     focus: FocusHandle,
     on_pick: Option<Pick>,
+    dialog: Option<PickerDialog>,
 }
 
 impl ThemePicker {
@@ -109,6 +117,40 @@ impl ThemePicker {
             scroll: ScrollHandle::new(),
             focus: cx.focus_handle(),
             on_pick: None,
+            dialog: None,
+        }
+    }
+
+    pub fn dialog(
+        runtime: Runtime,
+        value: &str,
+        options: Vec<(String, String)>,
+        close: impl Fn(&mut Window, &mut App) + 'static,
+        on_pick: impl Fn(String, &mut Window, &mut App) + 'static,
+        cx: &mut App,
+    ) -> Entity<Self> {
+        let close: Close = Rc::new(close);
+        cx.new(|cx| {
+            let mut picker = Self::new(runtime, "assign-theme", cx);
+            picker.sync(value, false, on_pick);
+            picker.highlighted = picker
+                .cells(cx)
+                .iter()
+                .position(|cell| picker.assignment(cell, cx).as_deref() == Some(value))
+                .unwrap_or_default();
+            picker.dialog = Some(PickerDialog { close, options });
+            picker
+        })
+    }
+
+    fn choose(&mut self, assignment: String, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(dialog) = &self.dialog {
+            (dialog.close)(window, cx);
+        } else {
+            self.set_open(false, window, cx);
+        }
+        if let Some(on_pick) = self.on_pick.clone() {
+            on_pick(assignment, window, cx);
         }
     }
 
@@ -151,6 +193,18 @@ impl ThemePicker {
             .filter_map(|assignment| position(&content.themes, assignment))
             .map(|(theme, slide)| Thumb { theme, slide })
             .collect();
+        if self.dialog.is_some() {
+            cells.extend(
+                content
+                    .themes
+                    .iter()
+                    .enumerate()
+                    .flat_map(|(theme, entry)| {
+                        (0..entry.slides.len()).map(move |slide| Thumb { theme, slide })
+                    }),
+            );
+            return cells;
+        }
         let current = position(&content.themes, &self.value);
         cells.extend(
             content
@@ -200,10 +254,7 @@ impl ThemePicker {
         let Some(assignment) = self.assignment(&shown, cx) else {
             return;
         };
-        self.set_open(false, window, cx);
-        if let Some(on_pick) = self.on_pick.clone() {
-            on_pick(assignment, window, cx);
-        }
+        self.choose(assignment, window, cx);
     }
 
     fn preview(
@@ -260,9 +311,9 @@ impl ThemePicker {
         let cells = self.cells(cx);
         let key = event.keystroke.key.as_str();
         match key {
-            "escape" => self.set_open(false, window, cx),
+            "escape" if self.dialog.is_none() => self.set_open(false, window, cx),
             "enter" => self.pick(self.highlighted, window, cx),
-            "left" | "right" if event.keystroke.modifiers.shift => {
+            "left" | "right" if self.dialog.is_none() && event.keystroke.modifiers.shift => {
                 let Some(cell) = cells.get(self.highlighted) else {
                     return;
                 };
@@ -320,8 +371,9 @@ impl ThemePicker {
         let Some(entry) = content.themes.get(cell.theme).cloned() else {
             return div().into_any_element();
         };
-        let current =
-            position(&content.themes, &self.value).map(|(theme, _)| theme) == Some(cell.theme);
+        let current = position(&content.themes, &self.value).is_some_and(|(theme, slide)| {
+            theme == cell.theme && (self.dialog.is_none() || slide == cell.slide)
+        });
         let shown = self.shown(index, &cell);
         let count = entry.slides.len();
         let title = if entry.title.is_empty() {
@@ -355,6 +407,9 @@ impl ThemePicker {
             .p(theme.metrics.space_xs)
             .cursor_pointer()
             .on_mouse_move(cx.listener(move |this, event: &MouseMoveEvent, _, cx| {
+                if this.dialog.is_some() {
+                    return;
+                }
                 let area = scrubbed.get();
                 let slide = scrub_index(
                     f32::from(event.position.x - area.origin.x),
@@ -420,8 +475,74 @@ impl ThemePicker {
                             .rounded_full()
                             .bg(theme.colors.selected)
                     }))
-                    .child(div().min_w_0().truncate().child(title)),
+                    .child(div().min_w_0().truncate().child(if self.dialog.is_some() {
+                        format!("{title} / {}", entry.slides[shown].1)
+                    } else {
+                        title
+                    })),
             )
+            .into_any_element()
+    }
+
+    fn grid(&mut self, t: Translator, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let theme = *cx.theme();
+        let cells = self.cells(cx);
+        let recents = self.recent_count(cx);
+        let thumbnails = cells
+            .iter()
+            .enumerate()
+            .map(|(index, cell)| {
+                let section = if index < recents { "recent" } else { "all" };
+                (
+                    index < recents,
+                    self.thumbnail(section, index, *cell, t, cx),
+                )
+            })
+            .collect::<Vec<_>>();
+        let (recent, all): (Vec<_>, Vec<_>) =
+            thumbnails.into_iter().partition(|(recent, _)| *recent);
+        let grid = |items: Vec<(bool, gpui::AnyElement)>| {
+            div()
+                .flex()
+                .flex_wrap()
+                .w_full()
+                .children(items.into_iter().map(|(_, element)| element))
+        };
+        div()
+            .id(SharedString::from(format!("{}-scroll", self.id)))
+            .track_focus(&self.focus)
+            .key_context("ThemePicker")
+            .on_key_down(
+                cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                    this.on_key(event, window, cx)
+                }),
+            )
+            .flex_1()
+            .min_h_0()
+            .overflow_y_scroll()
+            .track_scroll(&self.scroll)
+            .when(self.dialog.is_some(), |grid| {
+                grid.max_h(theme.metrics.row_height * 21.)
+            })
+            .px(theme.metrics.space_xs)
+            .pb(theme.metrics.space_xs)
+            .when(!recent.is_empty(), |this| {
+                this.child(
+                    div()
+                        .px(theme.metrics.space_xs)
+                        .text_size(theme.metrics.font_sm)
+                        .text_color(theme.colors.text_muted)
+                        .child(t.t("themePicker.recents")),
+                )
+                .child(grid(recent))
+                .child(
+                    div()
+                        .h(px(1.))
+                        .my(theme.metrics.space_xs)
+                        .bg(theme.colors.menu_separator),
+                )
+            })
+            .child(grid(all))
             .into_any_element()
     }
 }
@@ -430,6 +551,38 @@ impl Render for ThemePicker {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = *cx.theme();
         let t = *cx.global::<Translator>();
+        if let Some(dialog) = &self.dialog {
+            let close = dialog.close.clone();
+            let options = dialog.options.clone();
+            let mut modal = Dialog::new(
+                "assign-theme-dialog",
+                t.t("cue.menu.themes"),
+                t.t("common.close"),
+                move |_, window, cx| close(window, cx),
+            )
+            .width(theme.metrics.control_height * 18.)
+            .initial_focus(self.focus.clone())
+            .flush()
+            .child(self.grid(t, cx));
+            for (label, assignment) in options {
+                let selected = self.value == assignment;
+                modal = modal.footer(
+                    ActionButton::new(
+                        SharedString::from(format!("assign-theme-{assignment}")),
+                        label,
+                    )
+                    .variant(if selected {
+                        ButtonVariant::Soft
+                    } else {
+                        ButtonVariant::Ghost
+                    })
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        this.choose(assignment.clone(), window, cx)
+                    })),
+                );
+            }
+            return div().child(modal);
+        }
         let content = self.runtime.content.read(cx);
         let selected = position(&content.themes, &self.value)
             .map(|(index, slide)| (content.themes[index].clone(), slide));
@@ -498,39 +651,12 @@ impl Render for ThemePicker {
                     .ok();
             });
         if self.open {
-            let cells = self.cells(cx);
-            let recents = self.recent_count(cx);
-            let thumbnails = cells
-                .iter()
-                .enumerate()
-                .map(|(index, cell)| {
-                    let section = if index < recents { "recent" } else { "all" };
-                    (
-                        index < recents,
-                        self.thumbnail(section, index, *cell, t, cx),
-                    )
-                })
-                .collect::<Vec<_>>();
-            let (recent, all): (Vec<_>, Vec<_>) =
-                thumbnails.into_iter().partition(|(recent, _)| *recent);
-            let grid = |items: Vec<(bool, gpui::AnyElement)>| {
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .w_full()
-                    .children(items.into_iter().map(|(_, element)| element))
-            };
             popover = popover.content(
                 div()
                     .id(SharedString::from(format!("{}-panel", self.id)))
                     .debug_selector(|| "theme-picker-panel".into())
                     .role(Role::Dialog)
                     .aria_label(t.t("cue.menu.themes"))
-                    .track_focus(&self.focus)
-                    .key_context("ThemePicker")
-                    .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
-                        this.on_key(event, window, cx)
-                    }))
                     .flex()
                     .flex_col()
                     .w(WIDTH)
@@ -550,33 +676,7 @@ impl Render for ThemePicker {
                             .text_color(theme.colors.text_strong)
                             .child(t.t("cue.menu.themes")),
                     )
-                    .child(
-                        div()
-                            .id(SharedString::from(format!("{}-scroll", self.id)))
-                            .flex_1()
-                            .min_h_0()
-                            .overflow_y_scroll()
-                            .track_scroll(&self.scroll)
-                            .px(theme.metrics.space_xs)
-                            .pb(theme.metrics.space_xs)
-                            .when(!recent.is_empty(), |this| {
-                                this.child(
-                                    div()
-                                        .px(theme.metrics.space_xs)
-                                        .text_size(theme.metrics.font_sm)
-                                        .text_color(theme.colors.text_muted)
-                                        .child(t.t("themePicker.recents")),
-                                )
-                                .child(grid(recent))
-                                .child(
-                                    div()
-                                        .h(px(1.))
-                                        .my(theme.metrics.space_xs)
-                                        .bg(theme.colors.menu_separator),
-                                )
-                            })
-                            .child(grid(all)),
-                    ),
+                    .child(self.grid(t, cx)),
             );
         }
         div().w_full().child(popover)

@@ -49,14 +49,6 @@ impl ThemeAssignment {
             id => Self::Theme(id.to_string()),
         })
     }
-
-    pub fn action(&self) -> String {
-        match self {
-            Self::Inherit => "presentation-theme:inherit".into(),
-            Self::NoTheme => "presentation-theme:none".into(),
-            Self::Theme(id) => format!("presentation-theme:{id}"),
-        }
-    }
 }
 
 #[derive(Clone, Debug, PartialEq)]

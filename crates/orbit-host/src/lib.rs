@@ -3814,7 +3814,8 @@ fn mutate_presentation_library(state: &AppState, args: &[Value]) -> Result<Value
     let path = active_workspace(state, argument(args, 0)?)?;
     let mut workspace_io = lock_workspace_io(state)?;
     workspace_io.require_revision(&path, expected_workspace_revision(args, 2)?)?;
-    let result = workspace::mutate_presentation_library(&path, &argument(args, 1)?)?;
+    let mutation = argument(args, 1)?;
+    let result = workspace::mutate_presentation_library(&path, &mutation)?;
     let revision = if result.changed {
         workspace_io.advance_revision(&path)
     } else {
@@ -3825,6 +3826,19 @@ fn mutate_presentation_library(state: &AppState, args: &[Value]) -> Result<Value
         "revision": revision,
         "changed": result.changed,
     });
+    if result.changed
+        && mutation["operation"]["type"] == "setSlidesTheme"
+        && mutation["operation"].get("expectedSlides").is_some()
+    {
+        if let Some(item) = result.workspace["library"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|item| item["id"] == mutation["itemId"])
+        {
+            response["themeSlides"] = item["slides"].clone();
+        }
+    }
     if result.changed {
         remote_controls::prime_workspace_cache(&path, revision, result.workspace)?;
     }

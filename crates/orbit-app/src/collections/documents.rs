@@ -13,6 +13,7 @@ use orbit_ui::controls::{
     MenuEntry, MenuItem, PanelHeader, Select, SelectOption, TextInput,
 };
 use orbit_ui::{icon, ActiveTheme, Translator};
+use serde_json::Value;
 
 use super::document_actions as actions;
 use super::drag::is_entry_noop_drop;
@@ -188,6 +189,13 @@ struct HeaderColor {
     color: String,
 }
 
+struct ThemeUndo {
+    workspace: String,
+    item: String,
+    before: Value,
+    after: Value,
+}
+
 pub struct DocumentsView {
     runtime: Runtime,
     rows: Vec<Row>,
@@ -199,6 +207,10 @@ pub struct DocumentsView {
     rename: Option<Rename>,
     form: Option<NewPresentationForm>,
     theme_picker: Option<Entity<ThemePicker>>,
+    assign_theme_picker: Option<Entity<ThemePicker>>,
+    theme_undo: Vec<ThemeUndo>,
+    theme_redo: Vec<ThemeUndo>,
+    saving_theme: bool,
     scroll: UniformListScrollHandle,
     focus: FocusHandle,
     /// The gap before this row index shows the insertion line while playlist rows are dragged.
@@ -274,6 +286,10 @@ impl DocumentsView {
             rename: None,
             form: None,
             theme_picker: None,
+            assign_theme_picker: None,
+            theme_undo: Vec::new(),
+            theme_redo: Vec::new(),
+            saving_theme: false,
             scroll: UniformListScrollHandle::new(),
             focus: cx.focus_handle(),
             drop_gap: None,
@@ -904,6 +920,159 @@ impl DocumentsView {
         element.into_any_element()
     }
 
+    fn open_theme_picker(&mut self, item: String, cx: &mut Context<Self>) {
+        let content = self.runtime.content.read(cx);
+        let Some(slides) = content
+            .items
+            .get(&item)
+            .and_then(|item| item.value["slides"].as_array())
+        else {
+            return;
+        };
+        let current = slides
+            .first()
+            .and_then(|slide| slide["presentationThemeId"].as_str())
+            .filter(|id| {
+                slides
+                    .iter()
+                    .all(|slide| slide["presentationThemeId"] == *id)
+            })
+            .unwrap_or_default()
+            .to_owned();
+        let workspace = content.workspace_path.clone();
+        let close = cx.weak_entity();
+        let view = close.clone();
+        self.assign_theme_picker = Some(ThemePicker::dialog(
+            self.runtime.clone(),
+            &current,
+            Vec::new(),
+            move |window, cx| {
+                let _ = close.update(cx, |view, cx| {
+                    view.assign_theme_picker = None;
+                    view.focus.focus(window, cx);
+                    cx.notify();
+                });
+            },
+            move |assignment, _, cx| {
+                let _ = view.update(cx, |view, cx| {
+                    if view.runtime.content.read(cx).workspace_path == workspace {
+                        view.apply_theme(&item, &assignment, cx);
+                    }
+                });
+            },
+            cx,
+        ));
+        cx.notify();
+    }
+
+    fn apply_theme(&mut self, item: &str, assignment: &str, cx: &mut Context<Self>) {
+        let content = self.runtime.content.read(cx);
+        let Some(slides) = content
+            .items
+            .get(item)
+            .and_then(|item| item.value["slides"].as_array())
+        else {
+            return;
+        };
+        if self.saving_theme || slides.is_empty() {
+            return;
+        }
+        let workspace = content.workspace_path.clone();
+        let item = item.to_owned();
+        let before = Value::Array(slides.clone());
+        let ids = slides.iter().map(|slide| &slide["id"]).collect::<Vec<_>>();
+        let task = crate::cues::actions::mutate_checked(
+            &self.runtime,
+            &item,
+            serde_json::json!({"type":"setSlidesTheme", "slideIds":ids, "expectedSlides":before, "assignment":assignment}),
+            cx,
+        );
+        self.saving_theme = true;
+        cx.spawn(async move |view, cx| {
+            let result = task.await;
+            let _ = view.update(cx, |view, cx| {
+                view.saving_theme = false;
+                let content = view.runtime.content.read(cx);
+                if content.workspace_path == workspace {
+                    if let Some(after) = result
+                        .filter(|result| result["changed"] == true)
+                        .and_then(|mut result| result.get_mut("themeSlides").map(Value::take))
+                        .filter(|after| *after != before)
+                    {
+                        view.theme_undo.retain(|entry| entry.workspace == workspace);
+                        view.theme_undo.push(ThemeUndo {
+                            workspace,
+                            item,
+                            before,
+                            after,
+                        });
+                        view.theme_redo.clear();
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    pub fn can_edit_theme_history(&self, undo: bool, cx: &App) -> bool {
+        let history = if undo {
+            &self.theme_undo
+        } else {
+            &self.theme_redo
+        };
+        let content = self.runtime.content.read(cx);
+        !self.saving_theme
+            && history.last().is_some_and(|entry| {
+                entry.workspace == content.workspace_path
+                    && content.items.get(&entry.item).is_some_and(|item| {
+                        let expected = if undo { &entry.after } else { &entry.before };
+                        &item.value["slides"] == expected
+                    })
+            })
+    }
+
+    pub fn edit_theme_history(&mut self, undo: bool, cx: &mut Context<Self>) {
+        if !self.can_edit_theme_history(undo, cx) {
+            return;
+        }
+        let stack = if undo {
+            &mut self.theme_undo
+        } else {
+            &mut self.theme_redo
+        };
+        let Some(entry) = stack.pop() else {
+            return;
+        };
+        let (expected, slides) = if undo {
+            (&entry.after, &entry.before)
+        } else {
+            (&entry.before, &entry.after)
+        };
+        let task = crate::cues::actions::mutate_checked(
+            &self.runtime,
+            &entry.item,
+            serde_json::json!({"type":"setSlideDocument","expectedSlides":expected,"slides":slides}),
+            cx,
+        );
+        self.saving_theme = true;
+        cx.spawn(async move |view, cx| {
+            let saved = task.await.is_some();
+            let _ = view.update(cx, |view, cx| {
+                view.saving_theme = false;
+                if entry.workspace == view.runtime.content.read(cx).workspace_path {
+                    if saved == undo {
+                        view.theme_redo.push(entry);
+                    } else {
+                        view.theme_undo.push(entry);
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     fn document_menu(
         &self,
         menu: &DocumentMenu,
@@ -1215,6 +1384,27 @@ impl DocumentsView {
                     })
                     .collect(),
             });
+            let theme_view = cx.weak_entity();
+            entries.push(
+                MenuItem::new(t.t("cue.menu.themes"))
+                    .disabled(
+                        multi
+                            || self.saving_theme
+                            || !document.is_some_and(|item| {
+                                item.value["slides"]
+                                    .as_array()
+                                    .is_some_and(|slides| !slides.is_empty())
+                            }),
+                    )
+                    .on_click({
+                        let item_id = item_id.clone();
+                        move |_, _, cx| {
+                            let _ = theme_view
+                                .update(cx, |view, cx| view.open_theme_picker(item_id.clone(), cx));
+                        }
+                    })
+                    .into(),
+            );
             entries.push(doc_action(t.t("toolbar.reflow"), None, "reflow", multi));
             entries.push(MenuEntry::Separator);
             entries.push(doc_action(
@@ -1719,5 +1909,6 @@ impl Render for DocumentsView {
             .children(document_menu)
             .children(create_menu)
             .children(dialog)
+            .children(self.assign_theme_picker.clone())
     }
 }

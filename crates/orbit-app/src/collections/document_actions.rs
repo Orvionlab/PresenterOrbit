@@ -12,7 +12,7 @@ use serde_json::{json, Value};
 
 use orbit_ui::controls::DEFAULT_HEADER_COLOR;
 
-use super::model::{unique_entry_id, unique_entry_title, Entry, EntryKind, ThemeAssignment};
+use super::model::{unique_entry_id, unique_entry_title, Entry, EntryKind};
 use super::tree_actions::{spawn_persist, translator, DetachExt};
 use crate::state::runtime::{Kind, Persist, Runtime};
 pub use crate::state::slices::NewPresentation;
@@ -585,10 +585,6 @@ pub fn handle_document_menu_action(runtime: &Runtime, cx: &mut App, action: &str
         )
     };
     if !exists && action != "paste" {
-        return close_document_menu(runtime, cx);
-    }
-    if let Some(ThemeAssignment::Theme(_)) = ThemeAssignment::parse_action(action) {
-        // Slide themes belong to the slide editor in a later phase.
         return close_document_menu(runtime, cx);
     }
     if let Some(arrangement) = action.strip_prefix("arrangement:") {
