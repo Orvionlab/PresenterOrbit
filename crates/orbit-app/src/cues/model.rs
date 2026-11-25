@@ -1,5 +1,5 @@
 use crate::{
-    collections::model::{EntryKind, Item},
+    collections::model::{Entry, EntryKind, Item},
     state::{
         runtime::Runtime,
         slices::{Content, Ui},
@@ -81,19 +81,23 @@ pub fn selected_arrangement_id(item: &Value) -> &str {
     existing_arrangement_id(item, item["selectedArrangementId"].as_str().unwrap_or(""))
 }
 
+pub fn selected_playlist_entry<'a>(content: &'a Content, ui: &Ui) -> Option<(usize, &'a Entry)> {
+    let index = ui.selected_documents.first()?.index?;
+    let entry = content
+        .playlist(&ui.selected_playlist_id)?
+        .entries
+        .get(index)?;
+    (entry.raw["hidden"] != true).then_some((index, entry))
+}
+
 pub fn seed(content: &Content, ui: &Ui) -> Option<DocumentSeed> {
-    let item = content.items.get(&ui.selected_library_item_id).cloned()?;
-    let entry = ui
-        .selected_documents
-        .first()
-        .and_then(|selected| selected.index)
-        .and_then(|index| {
-            content
-                .playlist(&ui.selected_playlist_id)?
-                .entries
-                .get(index)
-        })
-        .filter(|entry| entry.item_id == item.id || entry.linked_item_id == item.id);
+    let entry = selected_playlist_entry(content, ui).map(|(_, entry)| entry);
+    let id = match entry {
+        Some(entry) if entry.kind != EntryKind::Presentation => entry.linked_document()?,
+        _ => &ui.selected_library_item_id,
+    };
+    let item = content.items.get(id).cloned()?;
+    let entry = entry.filter(|entry| entry.item_id == item.id || entry.linked_item_id == item.id);
     let (playlist, occurrence, arrangement) = match entry {
         Some(entry) => (
             ui.selected_playlist_id.clone(),
@@ -157,7 +161,15 @@ pub fn selected_indices(
     }
 }
 
-pub fn is_live(live: &Value, document: &Document, cue: &Value) -> bool {
+pub fn is_announcement_live(live: &Value, document: &Document, cue: &Value) -> bool {
+    let player = &live["announcements"];
+    player["item"]["id"] == document.item.id
+        && player["playlistId"].as_str().unwrap_or("") == document.playlist
+        && player["slide"]["id"] == cue["id"]
+        && player["slide"]["arrangementInstanceId"] == cue["arrangementInstanceId"]
+}
+
+pub fn is_presentation_live(live: &Value, document: &Document, cue: &Value) -> bool {
     live["liveItemId"] == document.item.id
         && live["liveSlideId"] == cue["id"]
         && live["liveCueInstanceId"].as_str().unwrap_or("")

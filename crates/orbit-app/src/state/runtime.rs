@@ -121,6 +121,7 @@ pub fn replay_safe_library_mutation(mutation: &Value) -> bool {
         "setSlideMedia",
     ];
     match mutation["type"].as_str() {
+        Some("createPresentation") if is_set(mutation, "placeholderId") => false,
         Some("mutateItem") if mutation["operation"]["type"] == "insertMediaSlides" => {
             non_empty_array(&mutation["operation"], "newSlideIds")
         }

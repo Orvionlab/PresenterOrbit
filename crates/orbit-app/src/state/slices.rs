@@ -142,6 +142,28 @@ impl Content {
         self.libraries.iter().find(|library| library.id == id)
     }
 
+    pub fn destination_pending(&self, id: &str) -> bool {
+        let Some((current, canonical)) = self.items.get(id).zip(self.canonical_items.get(id))
+        else {
+            return false;
+        };
+        current.value["destination"] != canonical.value["destination"]
+            && current
+                .value
+                .as_object()
+                .zip(canonical.value.as_object())
+                .is_some_and(|(current, canonical)| {
+                    current
+                        .iter()
+                        .filter(|(key, _)| *key != "destination")
+                        .all(|(key, value)| canonical.get(key) == Some(value))
+                        && canonical
+                            .keys()
+                            .filter(|key| *key != "destination")
+                            .all(|key| current.contains_key(key))
+                })
+    }
+
     pub fn playlist(&self, id: &str) -> Option<&Playlist> {
         self.playlists.iter().find(|playlist| playlist.id == id)
     }
@@ -241,6 +263,7 @@ pub struct NewPresentation {
     pub title: String,
     pub library_id: String,
     pub playlist_id: String,
+    pub placeholder_id: Option<String>,
     pub theme_id: String,
     pub size: (u32, u32),
 }

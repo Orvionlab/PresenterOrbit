@@ -26,7 +26,12 @@ pub fn take(runtime: &Runtime, document: &Document, index: usize, cx: &mut App) 
     if runtime.output.read(cx).committed_revision == 0 {
         return;
     }
-    if super::flow::announces(&document.item.value) {
+    let content = runtime.content.read(cx);
+    let announcing = content
+        .items
+        .get(&document.item.id)
+        .is_some_and(|item| super::flow::announces(&item.value));
+    if announcing {
         announce(runtime, document, index, cx);
         return;
     }
@@ -60,7 +65,16 @@ fn announce(runtime: &Runtime, document: &Document, index: usize, cx: &mut App) 
         Ok(mut started) => {
             started["player"]["intervalSeconds"] = json!(interval);
             started["player"]["loop"] = json!(looped);
+            started["playlistId"] = json!(document.playlist);
             runtime.output.update(cx, |output, cx| {
+                if let Some((id, _)) = output.snapshot.as_ref().and_then(|snapshot| {
+                    let screens = crate::output::view::screens(snapshot);
+                    crate::output::view::selected_screen(&screens, &output.selected_screen)
+                        .filter(|(_, config)| config["type"] != "stage")
+                        .cloned()
+                }) {
+                    started["visibleScreenId"] = json!(id);
+                }
                 output.edit_live(|live| live["announcements"] = started);
                 cx.notify();
             });
@@ -111,6 +125,12 @@ pub(crate) fn run_native(
     latest: bool,
 ) {
     let path = runtime.content.read(cx).workspace_path.clone();
+    let before_save = latest
+        && matches!(command, "playlistCue" | "libraryCue")
+        && payload["presentationId"]
+            .as_str()
+            .is_some_and(|item| runtime.content.read(cx).destination_pending(item));
+    let workspace_revision = runtime.lanes.revisions().workspace(&path);
     let host = runtime.host.clone();
     let selection = runtime.ui.read(cx).selected_library_item_id.clone();
     let occurrence = selected_occurrence(runtime, cx);
@@ -133,11 +153,16 @@ pub(crate) fn run_native(
         .is_some_and(|s| s.0);
     let mut live = (*runtime.output.read(cx).live).clone();
     let workspace = runtime.content.read(cx).workspace.clone();
+    let lanes = runtime.lanes.clone();
     let execute = move || {
         // Workspace lanes serialize takes with edits; the host validates the active workspace again.
         let mut payload = payload;
         payload["workspacePath"] = json!(expected);
-        let response = host.execute_cue_command(command, &payload)?;
+        let response = if before_save {
+            host.execute_operator_cue_before_save(command, &payload, workspace_revision)?
+        } else {
+            host.execute_cue_command(command, &payload)?
+        };
         if cross_documents && response["status"] == "not-ready" {
             let Some(seed) = fallback else {
                 return Err("Select a presentation to navigate.".into());
@@ -163,13 +188,18 @@ pub(crate) fn run_native(
                     .extend(patch.clone());
             }
             if let Some(cue) = crate::automation::link::cue(&workspace, &live)? {
-                host.invoke("sendNetworkLinkCue", vec![json!(expected), cue])?;
+                let args = vec![json!(expected), cue];
+                if before_save {
+                    drop(lanes.command(&expected, move || host.invoke("sendNetworkLinkCue", args)));
+                } else {
+                    host.invoke("sendNetworkLinkCue", args)?;
+                }
             }
         }
         Ok(response)
     };
     let answer = if latest {
-        runtime.lanes.latest_cue(&path, execute)
+        runtime.lanes.latest_cue(&path, before_save, execute)
     } else {
         runtime.lanes.task(&path, move || execute().map(Some))
     };
@@ -533,7 +563,14 @@ pub(crate) fn edit_native(
 }
 
 pub fn clear(runtime: &Runtime, layer: &str, cx: &mut App) {
-    if matches!(layer, "props" | "messages" | "announcements") {
+    if layer == "announcements" {
+        edit_native(runtime, cx, |live| {
+            live["announcements"] = Value::Null;
+            Ok(())
+        });
+        return;
+    }
+    if matches!(layer, "props" | "messages") {
         crate::output::windows::mutate_config(
             runtime,
             json!({"type":"clearLookLayer","layerId":layer}),
@@ -662,6 +699,46 @@ pub fn mutate(runtime: &Runtime, item_id: &str, operation: Value, cx: &mut App) 
         }
     }
     mutate_checked(runtime, item_id, operation, cx).detach();
+}
+
+pub fn set_slide_labels(
+    runtime: &Runtime,
+    cx: &mut App,
+    item: &str,
+    slides: Vec<String>,
+    label: Option<(String, String)>,
+) {
+    let value = label
+        .as_ref()
+        .map(|(name, color)| json!({"name":name,"color":color}));
+    let mutation = json!({
+        "type":"mutateItem","itemId":item,
+        "operation":{"type":"setSlidesLabel","slideIds":slides,"label":value}
+    });
+    let item = item.to_string();
+    runtime
+        .save_preview(cx, Kind::Library, mutation, move |content| {
+            edit_item(content, &item, |item| {
+                for slide in item["slides"].as_array_mut().into_iter().flatten() {
+                    if !slide["id"]
+                        .as_str()
+                        .is_some_and(|id| slides.iter().any(|slide| slide == id))
+                    {
+                        continue;
+                    }
+                    if let Some(fields) = slide.as_object_mut() {
+                        if let Some((name, color)) = &label {
+                            fields.insert("label".into(), json!(name));
+                            fields.insert("labelColor".into(), json!(color));
+                        } else {
+                            fields.remove("label");
+                            fields.remove("labelColor");
+                        }
+                    }
+                }
+            });
+        })
+        .detach();
 }
 
 pub fn delete_selected(runtime: &Runtime, item: &str, ids: Vec<String>, cx: &mut App) {

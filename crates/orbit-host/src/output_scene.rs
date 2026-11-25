@@ -106,6 +106,8 @@ pub struct OutputScene {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub presentation_theme_slide: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub announcement_overlay: Option<Box<OutputScene>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ccli_slide: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub video_input_slide: Option<Value>,
@@ -1135,6 +1137,10 @@ fn announcements_input<'a>(
         .live_slide
         .as_ref()
         .and_then(|slide| string_field(slide, "id"));
+    routed.live_cue_instance_id = routed
+        .live_slide
+        .as_ref()
+        .and_then(|slide| string_field(slide, "arrangementInstanceId"));
     routed.live_playlist_id = None;
     routed.live_playlist_entry_id = None;
     routed.live_build_step = 0.0;
@@ -1165,6 +1171,54 @@ fn build_screen_scene(
     config: &OutputScreenConfigInput,
     live_prop_slides: Option<&[&Value]>,
 ) -> Result<OutputScene, String> {
+    let mut scene = build_screen_scene_base(input, screen_id, config, live_prop_slides)?;
+    if config.screen_type.as_deref() != Some("stage")
+        && scene.content_destination.as_deref() != Some("announcements")
+        && announcements_visible(input, screen_id, config)
+        && input
+            .announcements
+            .as_ref()
+            .is_some_and(|player| player["slide"].is_object())
+    {
+        let mut config = config.clone();
+        config._other = Map::from_iter([("contentDestination".into(), json!("announcements"))]);
+        config.look_layers = json!({
+            "slide":true, "media":scene.look_layers.media, "props":false,
+            "videoInput":false, "messages":false, "music":false,
+        })
+        .as_object()
+        .cloned();
+        if let Some(themes) = &mut config.look_themes {
+            themes.remove("maskId");
+        }
+        let mut overlay = build_screen_scene_base(input, screen_id, &config, None)?;
+        overlay.background_css = Some("transparent".into());
+        if let Some(slide) = overlay.presentation_theme_slide.as_mut() {
+            slide["backgroundEnabled"] = json!(false);
+        }
+        scene.announcement_overlay = Some(Box::new(overlay));
+    }
+    Ok(scene)
+}
+
+fn announcements_visible(
+    input: &OutputSceneStateInput,
+    screen_id: &str,
+    config: &OutputScreenConfigInput,
+) -> bool {
+    read_look_layer(config.look_layers.as_ref(), "announcements")
+        || input
+            .announcements
+            .as_ref()
+            .is_some_and(|player| player["visibleScreenId"] == screen_id)
+}
+
+fn build_screen_scene_base(
+    input: &OutputSceneStateInput,
+    screen_id: &str,
+    config: &OutputScreenConfigInput,
+    live_prop_slides: Option<&[&Value]>,
+) -> Result<OutputScene, String> {
     let test_pattern = config
         ._other
         .get("testPattern")
@@ -1190,10 +1244,7 @@ fn build_screen_scene(
             .and_then(Value::as_str)
             == Some("announcements")
     {
-        routed = announcements_input(
-            input,
-            read_look_layer(config.look_layers.as_ref(), "announcements"),
-        );
+        routed = announcements_input(input, announcements_visible(input, screen_id, config));
         &routed
     } else {
         input
@@ -1531,6 +1582,7 @@ fn build_screen_scene(
         look_layers,
         look_themes,
         presentation_theme_slide,
+        announcement_overlay: None,
         video_input_slide,
         prop_slides: Some(prop_slides),
         mask_slide,
@@ -2663,6 +2715,12 @@ fn string_field(value: &Value, key: &str) -> Option<String> {
 }
 
 fn validate_scene(scene: &OutputScene, source_screen_id: &str) -> Result<(), String> {
+    if let Some(overlay) = &scene.announcement_overlay {
+        if overlay.announcement_overlay.is_some() {
+            return Err("An announcement overlay cannot contain another overlay.".into());
+        }
+        validate_scene(overlay, source_screen_id)?;
+    }
     if scene
         .music_crossfade_seconds
         .is_some_and(|seconds| !seconds.is_finite() || !(0.0..=10.0).contains(&seconds))

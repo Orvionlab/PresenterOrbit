@@ -18,7 +18,8 @@ use orbit_ui::controls::{
 use orbit_ui::{icon, ActiveTheme, Translator};
 use serde_json::{json, Value};
 
-use super::document_actions::add_entries;
+use super::document_actions::{add_entries, link_placeholder};
+use super::model::EntryKind;
 use super::model::{natural_cmp, Item};
 use super::selection::{select_document_item, Modifiers};
 use crate::state::runtime::Runtime;
@@ -39,6 +40,7 @@ pub struct NativeResult {
 #[derive(Default)]
 pub struct Search {
     pub open: bool,
+    placeholder: Option<(String, String)>,
     pub query: String,
     pub selected_item_id: String,
     pub selected_item_ids: Vec<String>,
@@ -386,41 +388,47 @@ pub fn open_result(runtime: &Runtime, cx: &mut App, item_id: &str) {
 }
 
 /// Whether the results can be added to the selected playlist.
-pub fn can_add_to_playlist(content: &Content, ui: &Ui, item_ids: &[String]) -> bool {
-    content
-        .playlist(&ui.selected_playlist_id)
-        .is_some_and(|playlist| !playlist.is_folder())
-        && !item_ids.is_empty()
+fn playlist_target<'a>(content: &Content, ui: &'a Ui, search: &'a Search) -> Option<&'a str> {
+    let id = search
+        .placeholder
+        .as_ref()
+        .map_or(ui.selected_playlist_id.as_str(), |(playlist, _)| playlist);
+    let playlist = content
+        .playlist(id)
+        .filter(|playlist| !playlist.is_folder())?;
+    if let Some((_, entry_id)) = &search.placeholder {
+        playlist
+            .entries
+            .iter()
+            .any(|entry| entry.id == *entry_id && entry.kind == EntryKind::Placeholder)
+            .then_some(id)
+    } else {
+        Some(id)
+    }
 }
 
-/// `addSearchSelectionToSelectedPlaylist`.
-pub fn add_selection_to_playlist(runtime: &Runtime, cx: &mut App, fallback_item: &str) {
-    let (playlist, ids) = {
-        let (content, ui, search) = (
-            runtime.content.read(cx),
-            runtime.ui.read(cx),
-            runtime.search.read(cx),
-        );
-        let results = search_results(content, search);
-        let selected = selected_result_ids(search, &results);
-        let ids: Vec<String> = if selected.is_empty() {
-            vec![fallback_item.to_string()]
-        } else {
-            selected
-        }
-        .into_iter()
-        .filter(|id| content.items.contains(id))
-        .collect();
-        (
-            content
-                .playlist(&ui.selected_playlist_id)
-                .filter(|playlist| !playlist.is_folder())
-                .map(|playlist| playlist.id.clone()),
-            ids,
-        )
+fn add_selection_to_playlist(runtime: &Runtime, cx: &mut App, item: &str) {
+    let content = runtime.content.read(cx);
+    let search = runtime.search.read(cx);
+    let Some(playlist) = playlist_target(content, runtime.ui.read(cx), search).map(str::to_string)
+    else {
+        return;
     };
-    if let (Some(playlist), false) = (playlist, ids.is_empty()) {
-        add_entries(runtime, cx, &playlist, ids, false).detach();
+    if let Some((_, entry)) = &search.placeholder {
+        if !content.items.contains(item) {
+            return;
+        }
+        let entry = entry.clone();
+        link_placeholder(runtime, cx, &playlist, &entry, item).detach();
+        runtime.search.update(cx, |search, cx| {
+            search.open = false;
+            cx.notify();
+        });
+    } else {
+        let ids = selected_result_ids(search, &search_results(content, search));
+        if !ids.is_empty() {
+            add_entries(runtime, cx, &playlist, ids, false).detach();
+        }
     }
 }
 
@@ -520,7 +528,7 @@ impl SearchView {
         let results = search_results(runtime.content.read(cx), runtime.search.read(cx));
         let focused = focused_result(runtime.search.read(cx), &results).map(|item| item.id.clone());
         let Some(id) = focused else { return };
-        if add_to_playlist {
+        if add_to_playlist || runtime.search.read(cx).placeholder.is_some() {
             add_selection_to_playlist(&runtime, cx, &id);
         } else {
             open_result(&runtime, cx, &id);
@@ -540,7 +548,8 @@ impl SearchView {
             }
             key @ ("up" | "down") => {
                 let direction = if key == "down" { 1 } else { -1 };
-                let extend = event.keystroke.modifiers.shift;
+                let extend = event.keystroke.modifiers.shift
+                    && runtime.search.read(cx).placeholder.is_none();
                 runtime.search.update(cx, |search, cx| {
                     move_selection(search, &results, direction, extend);
                     cx.notify();
@@ -620,10 +629,9 @@ impl Render for SearchView {
         let results = search_results(content, search);
         let selected_ids = selected_result_ids(search, &results);
         let focused = focused_result(search, &results).cloned();
-        let can_add = can_add_to_playlist(content, ui, &selected_ids);
-        let in_playlist = content
-            .playlist(&ui.selected_playlist_id)
-            .is_some_and(|playlist| !playlist.is_folder());
+        let linking = search.placeholder.is_some();
+        let in_playlist = playlist_target(content, ui, search).is_some();
+        let can_add = in_playlist && !selected_ids.is_empty();
         let rows: Vec<AnyElement> = results
             .iter()
             .enumerate()
@@ -652,7 +660,11 @@ impl Render for SearchView {
                         let runtime = this.runtime.clone();
                         let results =
                             search_results(runtime.content.read(cx), runtime.search.read(cx));
-                        let modifiers: Modifiers = event.modifiers().into();
+                        let modifiers = if runtime.search.read(cx).placeholder.is_some() {
+                            Modifiers::default()
+                        } else {
+                            event.modifiers().into()
+                        };
                         runtime.search.update(cx, |search, cx| {
                             select_result(search, &results, &id, index, modifiers);
                             cx.notify();
@@ -683,7 +695,9 @@ impl Render for SearchView {
                     Self::source_detail(content, item, t)
                 );
                 let count = selected_ids.len();
-                let add_label = if !can_add {
+                let add_label = if linking {
+                    t.t("placeholderLink.link")
+                } else if !can_add {
                     if count > 1 {
                         t.t("search.selectedInPlaylist")
                     } else {
@@ -721,16 +735,20 @@ impl Render for SearchView {
                         div()
                             .flex()
                             .gap(theme.metrics.control_gap)
-                            .child(
+                            .children((!linking).then(|| {
                                 ActionButton::new("search-open", t.t("common.open"))
                                     .variant(ButtonVariant::Secondary)
                                     .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                                         open_result(&this.runtime.clone(), cx, &open_id)
-                                    })),
-                            )
-                            .children(in_playlist.then(|| {
+                                    }))
+                            }))
+                            .children((linking || in_playlist).then(|| {
                                 ActionButton::new("search-add", add_label)
-                                    .variant(ButtonVariant::Secondary)
+                                    .variant(if linking {
+                                        ButtonVariant::Primary
+                                    } else {
+                                        ButtonVariant::Secondary
+                                    })
                                     .disabled(!can_add)
                                     .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                                         add_selection_to_playlist(
@@ -812,7 +830,16 @@ impl Render for SearchView {
 
 /// `search` command: opens the popover.
 pub fn open_search(runtime: &Runtime, cx: &mut App) {
+    open(runtime, cx, None);
+}
+
+pub fn open_placeholder_search(runtime: &Runtime, cx: &mut App, playlist: String, entry: String) {
+    open(runtime, cx, Some((playlist, entry)));
+}
+
+fn open(runtime: &Runtime, cx: &mut App, placeholder: Option<(String, String)>) {
     runtime.search.update(cx, |search, cx| {
+        search.placeholder = placeholder;
         search.open = true;
         cx.notify();
     });

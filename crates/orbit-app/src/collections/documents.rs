@@ -114,7 +114,7 @@ pub fn build_rows(content: &Content, ui: &Ui, t: Translator) -> Vec<Row> {
                                         entry.title.clone()
                                     }
                                 },
-                                |item| item.title.clone(),
+                                |item| item.display_title(&entry.arrangement_id),
                             )
                             .into(),
                         color: String::new(),
@@ -210,6 +210,24 @@ pub struct DocumentsView {
 
 /// `openNewPresentation`: the dialog opens with the selected library and the last used theme layout.
 pub fn open_new_presentation(runtime: &Runtime, cx: &mut App) {
+    open_presentation_form(runtime, cx, String::new(), None);
+}
+
+pub fn open_presentation_for_placeholder(
+    runtime: &Runtime,
+    cx: &mut App,
+    playlist_id: String,
+    entry_id: String,
+) {
+    open_presentation_form(runtime, cx, playlist_id, Some(entry_id));
+}
+
+fn open_presentation_form(
+    runtime: &Runtime,
+    cx: &mut App,
+    playlist_id: String,
+    placeholder_id: Option<String>,
+) {
     let title = translator(cx).t("collections.default.newPresentation");
     runtime.edit_ui(cx, |content, ui| {
         if ui.new_presentation.is_some() {
@@ -224,7 +242,8 @@ pub fn open_new_presentation(runtime: &Runtime, cx: &mut App) {
             draft: NewPresentation {
                 title,
                 library_id: library,
-                playlist_id: String::new(),
+                playlist_id,
+                placeholder_id,
                 theme_id: content.last_used_theme.clone().unwrap_or_default(),
                 size: PRESENTATION_SIZES[0],
             },
@@ -663,13 +682,10 @@ impl DocumentsView {
         if self.rename.is_some() {
             return;
         }
-        if !self.query.trim().is_empty() {
-            let rows: Vec<_> = self
-                .visible
-                .iter()
-                .copied()
-                .filter(|index| self.rows[*index].kind == RowKind::Document)
-                .collect();
+        if !self.runtime.ui.read(cx).selected_playlist_id.is_empty()
+            || !self.query.trim().is_empty()
+        {
+            let rows = &self.visible;
             if rows.is_empty() {
                 return;
             }
@@ -820,6 +836,11 @@ impl DocumentsView {
             label: label.clone(),
         };
         let strong = matches!(row.kind, RowKind::Header);
+        let row_icon = if row.kind == RowKind::Placeholder && row.document.is_empty() {
+            "square-dashed"
+        } else {
+            "library"
+        };
         let id = ("document", index);
         let element = match background {
             Some(color) => list_row_without_hover(id, selected, cx).bg(color),
@@ -832,12 +853,13 @@ impl DocumentsView {
                 div()
                     .flex_none()
                     .w(theme.metrics.space_lg)
-                    .when(!strong, |row| {
-                        row.child(
-                            icon("library")
-                                .size(theme.metrics.space_lg)
-                                .text_color(theme.colors.text),
-                        )
+                    .when(!strong, |slot| {
+                        slot.debug_selector(move || format!("document-icon-{index}-{row_icon}"))
+                            .child(
+                                icon(row_icon)
+                                    .size(theme.metrics.space_lg)
+                                    .text_color(theme.colors.text),
+                            )
                     }),
             )
             .child(match renaming {
@@ -1457,7 +1479,7 @@ impl DocumentsView {
                     )
                     .label(t.t("collections.menu.playlist"))
                     .compact()
-                    .disabled(state.saving)
+                    .disabled(state.saving || draft.placeholder_id.is_some())
                     .on_change(change(|draft, value| draft.playlist_id = value)),
                 )
                 .inline()

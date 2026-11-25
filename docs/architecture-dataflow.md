@@ -49,6 +49,12 @@ is the host's `OutputRole::Controller` and is the only writer of workspace and s
   that same coordinator and sends revisioned patches back to a connected
   authoring store. Document/playlist item navigation remains UI-owned;
   the UI does not construct or push a second remote-status projection.
+  Audience scenes composite active announcements over the main slide when
+  the look enables announcements. A manual announcement also enables its
+  layer on the previewed audience screen for that take. Clearing the player
+  leaves saved looks intact. Announcement-only screens use the same player
+  as their base scene. Direct takes during a destination-only save resolve
+  against the committed workspace cache and the active output snapshot.
 - RSS fetch completion rebuilds effective scenes from the latest accepted raw
   snapshot. It does not advance the UI session, client sequence,
   canonical snapshot hash, or native snapshot revision.

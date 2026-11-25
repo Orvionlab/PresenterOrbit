@@ -14,7 +14,7 @@ pub fn layer_rail(runtime: &Runtime, cx: &mut App) -> AnyElement {
             &crate::output::view::screens(snapshot),
             &output.selected_screen,
         )
-        .map(|(_, config)| config.clone())
+        .cloned()
     });
     let mut rail = div()
         .debug_selector(|| "output-layer-rail".into())
@@ -51,9 +51,15 @@ pub fn layer_rail(runtime: &Runtime, cx: &mut App) -> AnyElement {
             _ => false,
         };
         let active = content
-            && screen
-                .as_ref()
-                .is_some_and(|config| config["lookLayers"][layer] != false);
+            && screen.as_ref().is_some_and(|(id, config)| {
+                if layer == "announcements" {
+                    config["type"] != "stage"
+                        && (config["lookLayers"][layer] != false
+                            || live["announcements"]["visibleScreenId"] == *id)
+                } else {
+                    config["lookLayers"][layer] != false
+                }
+            });
         let label = t.t(&format!("output.layer.{key}"));
         let accessible = t
             .t(if active {
@@ -90,11 +96,17 @@ pub fn layer_rail(runtime: &Runtime, cx: &mut App) -> AnyElement {
                         theme.colors.control_bg_hover
                     })
                 })
-                .child(icon(glyph).text_color(if active {
-                    theme.colors.text_strong
-                } else {
-                    theme.colors.text_muted
-                }))
+                .child(
+                    div()
+                        .when(active && layer == "announcements", |el| {
+                            el.debug_selector(|| "look-layer-announcements-live".into())
+                        })
+                        .child(icon(glyph).text_color(if active {
+                            theme.colors.text_strong
+                        } else {
+                            theme.colors.text_muted
+                        })),
+                )
                 .on_click(move |_, _, cx| actions::clear(&runtime, layer, cx)),
         );
     }

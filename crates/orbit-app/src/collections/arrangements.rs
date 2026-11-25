@@ -8,7 +8,7 @@ use gpui::{App, Task};
 use serde_json::{json, Value};
 
 use super::document_actions::set_entry_arrangement;
-use super::model::{EntryKind, Item};
+use super::model::Item;
 use crate::state::runtime::{Kind, Runtime};
 use crate::state::slices::{ArrangementEditor, Content};
 
@@ -299,13 +299,15 @@ pub fn select_arrangement(
             .read(cx)
             .playlist(playlist_id)
             .is_some_and(|p| {
-                p.entries.iter().any(|e| {
-                    e.id == entry_id && e.kind == EntryKind::Presentation && e.item_id == item_id
-                })
+                p.entries
+                    .iter()
+                    .any(|e| e.id == entry_id && e.linked_document() == Some(item_id))
             });
-        if entry_exists {
-            return set_entry_arrangement(runtime, cx, playlist_id, entry_id, None, arrangement_id);
-        }
+        return entry_exists
+            .then(|| {
+                set_entry_arrangement(runtime, cx, playlist_id, entry_id, None, arrangement_id)
+            })
+            .flatten();
     }
     runtime.content.read(cx).items.get(item_id)?;
     let mutation = json!({ "type": "setSelectedArrangement", "itemId": item_id, "arrangementId": arrangement_id });
@@ -347,11 +349,9 @@ pub fn delete_arrangement(
                 }
             });
             for playlist in &mut content.playlists {
-                for entry in playlist
-                    .entries
-                    .iter_mut()
-                    .filter(|e| e.item_id == target && e.arrangement_id == id)
-                {
+                for entry in playlist.entries.iter_mut().filter(|e| {
+                    e.linked_document() == Some(target.as_str()) && e.arrangement_id == id
+                }) {
                     entry.arrangement_id.clear();
                     entry
                         .raw

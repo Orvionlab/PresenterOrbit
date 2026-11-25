@@ -15,8 +15,9 @@ pub fn cue(workspace: &Value, live: &Value) -> Result<Option<Value>, String> {
             .enumerate()
             .find(|(_, e)| e["id"] == live["livePlaylistEntryId"])
             .ok_or("Network Link playlist occurrence is unavailable.")?;
-        let arrangement = entry["arrangementId"]
+        let arrangement = live["liveItem"]["selectedArrangementId"]
             .as_str()
+            .or_else(|| entry["arrangementId"].as_str())
             .unwrap_or_else(|| crate::cues::model::selected_arrangement_id(item));
         let cues = orbit_host::Host::presentation_cues(item, arrangement, entry["id"].as_str())?;
         let index = index(&cues, live)?;

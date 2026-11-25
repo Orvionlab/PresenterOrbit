@@ -255,7 +255,7 @@ fn select_playlist_entry(
     snapshot: &Value,
     workspace: &Value,
     payload: &Value,
-    linked_placeholders: bool,
+    operator: bool,
 ) -> Result<(Value, Value), String> {
     let playlist = workspace["playlist"]
         .as_array()
@@ -271,7 +271,7 @@ fn select_playlist_entry(
             items.iter().find(|entry| {
                 entry["id"] == payload["playlistEntryId"]
                     && (entry["type"] == "presentation"
-                        || (linked_placeholders
+                        || (operator
                             && entry["type"] == "placeholder"
                             && entry["linkedItemId"]
                                 .as_str()
@@ -292,7 +292,9 @@ fn select_playlist_entry(
         .and_then(|items| items.iter().find(|item| &item["id"] == item_id))
         .ok_or("Presentation is unavailable.")?;
     let mut selected = snapshot.clone();
-    selected["liveItem"] = playlist_entry_item(item, entry["arrangementId"].as_str());
+    // The operator shows Master for playlist entries without an explicit arrangement.
+    let arrangement = entry["arrangementId"].as_str().or(operator.then_some(""));
+    selected["liveItem"] = playlist_entry_item(item, arrangement);
     selected["livePlaylistId"] = playlist["id"].clone();
     selected["livePlaylistEntryId"] = entry["id"].clone();
     selected["liveCueInstanceId"] = Value::Null;

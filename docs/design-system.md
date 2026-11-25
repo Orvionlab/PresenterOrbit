@@ -43,6 +43,7 @@ Each state has exactly one color and is never reused for another meaning.
 | State | Field | Treatment |
 | --- | --- | --- |
 | Live / on air | `colors.live` | 2px inset frame or solid fill; program preview carries a 2px tally frame |
+| Live announcement | `colors.live_announcement` | Green frame around the active announcement cue |
 | Selected | `colors.selected` | background fill for rows, 2px inset frame for thumbnails |
 | Drop target / insertion | `colors.accent` | 2px line, no glow |
 | Warning | `colors.warning` | real warnings only |

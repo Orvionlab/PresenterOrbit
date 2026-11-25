@@ -944,15 +944,16 @@ pub fn set_entry_arrangement(
         let playlist = runtime.content.read(cx).playlist(playlist_id)?;
         let index = requested_index
             .filter(|index| {
-                playlist.entries.get(*index).is_some_and(|entry| {
-                    entry.id == entry_id && entry.kind == EntryKind::Presentation
-                })
+                playlist
+                    .entries
+                    .get(*index)
+                    .is_some_and(|entry| entry.id == entry_id && entry.linked_document().is_some())
             })
             .or_else(|| {
                 playlist
                     .entries
                     .iter()
-                    .position(|entry| entry.id == entry_id && entry.kind == EntryKind::Presentation)
+                    .position(|entry| entry.id == entry_id && entry.linked_document().is_some())
             })?;
         (index, playlist.entries[index].raw.clone())
     };
@@ -1376,7 +1377,15 @@ pub fn new_presentation_error(content: &Content, draft: &NewPresentation) -> Opt
     if !draft.playlist_id.is_empty()
         && !content
             .playlist(&draft.playlist_id)
-            .is_some_and(|playlist| !playlist.is_folder())
+            .is_some_and(|playlist| {
+                !playlist.is_folder()
+                    && draft.placeholder_id.as_ref().is_none_or(|id| {
+                        playlist
+                            .entries
+                            .iter()
+                            .any(|entry| &entry.id == id && entry.kind == EntryKind::Placeholder)
+                    })
+            })
     {
         return Some("newPresentation.playlistInvalid");
     }
@@ -1384,6 +1393,47 @@ pub fn new_presentation_error(content: &Content, draft: &NewPresentation) -> Opt
         return Some("newPresentation.themeInvalid");
     }
     None
+}
+
+pub fn link_placeholder(
+    runtime: &Runtime,
+    cx: &mut App,
+    playlist: &str,
+    entry: &str,
+    item: &str,
+) -> Task<()> {
+    let request = Persist::new(
+        Kind::Playlist,
+        json!({
+            "type":"setPlaceholderLink", "playlistId":playlist, "entryId":entry, "linkedItemId":item
+        }),
+        |_, _| {},
+    );
+    let (playlist, entry) = (playlist.to_string(), entry.to_string());
+    spawn_persist(runtime, cx, request, move |runtime, result, cx| {
+        if result.is_none() {
+            return;
+        }
+        runtime.edit_ui(cx, |content, ui| {
+            if ui.selected_playlist_id != playlist
+                || !ui
+                    .selected_documents
+                    .first()
+                    .is_some_and(|row| row.item_id == entry)
+            {
+                return;
+            }
+            if let Some(linked) = content.playlist(&playlist).and_then(|playlist| {
+                playlist
+                    .entries
+                    .iter()
+                    .find(|candidate| candidate.id == entry)
+                    .and_then(Entry::linked_document)
+            }) {
+                ui.selected_library_item_id = linked.to_string();
+            }
+        });
+    })
 }
 
 /// `createNewPresentation`: one native lifecycle mutation that returns the allocated identities.
@@ -1409,6 +1459,9 @@ pub fn create_presentation(
     if draft.playlist_id.is_empty() {
         mutation.as_object_mut().map(|o| o.remove("playlistId"));
     }
+    if let Some(id) = &draft.placeholder_id {
+        mutation["placeholderId"] = json!(id);
+    }
     let library_id = draft.library_id.clone();
     let request = Persist::new(
         Kind::Library,
@@ -1427,13 +1480,21 @@ pub fn create_presentation(
             let index = runtime.content.read(cx).playlist(&playlist).and_then(|p| {
                 p.entries
                     .iter()
-                    .position(|e| e.kind == EntryKind::Presentation && &e.item_id == created)
+                    .position(|entry| match &draft.placeholder_id {
+                        Some(id) => &entry.id == id && &entry.linked_item_id == created,
+                        None => entry.kind == EntryKind::Presentation && &entry.item_id == created,
+                    })
             });
+            let selected_id = if index.is_some() {
+                draft.placeholder_id.unwrap_or_else(|| created.clone())
+            } else {
+                created.clone()
+            };
             runtime.ui.update(cx, |ui, cx| {
                 ui.selected_library_item_id = created.clone();
                 ui.selected_playlist_id = playlist.clone();
                 ui.selected_documents = vec![Selected {
-                    item_id: created.clone(),
+                    item_id: selected_id,
                     index,
                 }];
                 ui.selected_document_source = Some(if index.is_some() {

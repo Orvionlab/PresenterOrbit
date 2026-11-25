@@ -6,6 +6,430 @@ use gpui::{AppContext, TestAppContext};
 use serde_json::{json, Value};
 
 #[gpui::test]
+fn linked_placeholder_takes_its_own_arrangement_and_edits_slide_labels(cx: &mut TestAppContext) {
+    let arrangement = "a039ef8e-b9c7-4c11-b788-3b9726a262b6";
+    let mut app = Scenario::new(cx, true, |host| {
+        seed(host);
+        let settings = host.invoke("getSettings", vec![]).unwrap();
+        let path = settings["presenterOrbitWorkspacePath"].clone();
+        let mut labels = settings["generalSettings"]["slideLabels"]
+            .as_array()
+            .unwrap()
+            .clone();
+        labels.push(json!({"id":"plain","name":"Plain","color":"transparent"}));
+        let payload =
+            crate::settings::persist::general_payload(&settings, &json!({"slideLabels":labels}));
+        host.invoke(
+            "saveSettings",
+            vec![payload, settings["settingsRevision"].clone()],
+        )
+        .unwrap();
+        let settings = host.invoke("getSettings", vec![]).unwrap();
+        let screen = settings["screenConfig"]
+            .as_object()
+            .unwrap()
+            .iter()
+            .find(|(_, config)| config["type"] == "audience")
+            .unwrap()
+            .0;
+        let loaded = host
+            .invoke("readWorkspaceSnapshot", vec![path.clone()])
+            .unwrap();
+        host.invoke(
+            "mutateScreenConfig",
+            vec![
+                path.clone(),
+                json!({"type":"update","screenId":screen,
+            "patch":{"contentDestination":"announcements","lookLayers":{"announcements":true}}}),
+                settings["settingsRevision"].clone(),
+                loaded["revision"].clone(),
+            ],
+        )
+        .unwrap();
+        let settings = host.invoke("getSettings", vec![]).unwrap();
+        let loaded = host
+            .invoke("readWorkspaceSnapshot", vec![path.clone()])
+            .unwrap();
+        let added = host
+            .invoke(
+                "mutateScreenConfig",
+                vec![
+                    path.clone(),
+                    json!({"type":"add","screenType":"audience","baseLabel":"Main preview"}),
+                    settings["settingsRevision"].clone(),
+                    loaded["revision"].clone(),
+                ],
+            )
+            .unwrap();
+        let current = host
+            .invoke("readWorkspaceSnapshot", vec![path.clone()])
+            .unwrap();
+        host.invoke(
+            "mutateScreenConfig",
+            vec![
+                path.clone(),
+                json!({"type":"update","screenId":added["createdScreenId"],
+                "patch":{"lookLayers":{"announcements":false}}}),
+                added["settingsRevision"].clone(),
+                current["revision"].clone(),
+            ],
+        )
+        .unwrap();
+        let snapshot = host
+            .invoke("readWorkspaceSnapshot", vec![path.clone()])
+            .unwrap();
+        let playlist = snapshot["workspace"]["playlist"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|playlist| playlist["title"] == "Sunday")
+            .unwrap();
+        let item = &playlist["items"][0]["itemId"];
+        let created = host
+            .invoke(
+                "mutatePresentationLibrary",
+                vec![
+                    path.clone(),
+                    json!({"type":"createArrangement","itemId":item,"name":"Closing only",
+                "newArrangementId":arrangement,"sectionIds":["section-2"]}),
+                    snapshot["revision"].clone(),
+                ],
+            )
+            .unwrap();
+        let selected = host.invoke("mutatePresentationLibrary", vec![
+            path.clone(),
+            json!({"type":"setSelectedArrangement","itemId":item,"arrangementId":arrangement}),
+            created["revision"].clone(),
+        ]).unwrap();
+        host.invoke("mutatePresentationPlaylist", vec![
+            path,
+            json!({"type":"createEntry","playlistId":playlist["id"],"entryType":"placeholder","title":"Linked item"}),
+            selected["revision"].clone(),
+        ]).unwrap();
+    });
+    let snapshot = app.snapshot();
+    let playlist = snapshot["playlist"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|playlist| playlist["title"] == "Sunday")
+        .unwrap();
+    let playlist_id = playlist["id"].as_str().unwrap();
+    let entry = playlist["items"][1]["id"].as_str().unwrap();
+    let item_id = &playlist["items"][0]["itemId"];
+    let runtime = app.runtime(cx);
+    app.wait(cx, |_, cx| {
+        cx.update(|cx| runtime.output.read(cx).committed_revision > 0)
+    });
+    let mut visual = app.visual(cx);
+    click(&mut visual, &format!("playlist-{playlist_id}"));
+    click(&mut visual, "document-1");
+    click(&mut visual, &format!("button-cue-link-{entry}"));
+    visual.simulate_input("Opening line");
+    app.wait(cx, |app, cx| {
+        app.visual(cx).debug_bounds("search-result-0").is_some()
+    });
+    visual.simulate_keystrokes("enter");
+    app.wait(cx, |app, cx| {
+        app.visual(cx).debug_bounds("cue-thumbnail-1").is_some()
+    });
+
+    click(&mut visual, "cue-thumbnail-0");
+    app.wait(cx, |_, cx| {
+        cx.update(|cx| {
+            let live = &runtime.output.read(cx).live;
+            live["livePlaylistEntryId"] == entry && live["liveSlide"]["content"] == "Opening line"
+        })
+    });
+    context(&mut visual, "cue-thumbnail-0");
+    click(&mut visual, "menu-item-Label");
+    click(&mut visual, "menu-item-Repeat");
+    app.wait(cx, |app, cx| {
+        app.snapshot()["library"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["id"] == *item_id && item["slides"][0]["label"] == "Repeat")
+            && cx.update(|cx| runtime.output.read(cx).live["liveSlide"]["label"] == "Repeat")
+    });
+
+    click(&mut visual, &format!("button-cue-arrangement-{entry}"));
+    click(&mut visual, "button-cue-arrangement");
+    click(&mut visual, "menu-item-Closing only");
+    app.wait(cx, |app, cx| {
+        let mut visual = app.visual(cx);
+        visual.debug_bounds("cue-thumbnail-0").is_some()
+            && visual.debug_bounds("cue-thumbnail-1").is_none()
+    });
+    click(&mut visual, "cue-thumbnail-0");
+    app.wait(cx, |_, cx| {
+        cx.update(|cx| {
+            let live = &runtime.output.read(cx).live;
+            live["livePlaylistEntryId"] == entry && live["liveSlide"]["content"] == "Closing line"
+        })
+    });
+    let release = support::hold_workspace_writes(&app, cx);
+    context(&mut visual, "cue-thumbnail-0");
+    click(&mut visual, "menu-item-Label");
+    click(&mut visual, "menu-item-Plain");
+    app.wait(cx, |app, cx| {
+        app.visual(cx).debug_bounds("cue-label-0").is_some()
+    });
+    assert!(app.snapshot()["library"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| item["id"] == *item_id && item["slides"][1]["label"].is_null()));
+    release.send(()).unwrap();
+    app.wait(cx, |app, _| {
+        app.snapshot()["library"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| {
+                item["id"] == *item_id
+                    && item["slides"][1]["label"] == "Plain"
+                    && item["slides"][1]["labelColor"] == "transparent"
+            })
+    });
+
+    click(&mut visual, "button-cue-arrangement");
+    click(&mut visual, "menu-item-Master");
+    app.wait(cx, |app, cx| {
+        app.visual(cx).debug_bounds("cue-thumbnail-1").is_some()
+    });
+    click(&mut visual, "cue-thumbnail-0");
+    app.wait(cx, |app, cx| {
+        app.visual(cx).debug_bounds("cue-live-0").is_some()
+    });
+    click(&mut visual, "button-cue-destination");
+    click(&mut visual, "menu-item-Announcements");
+    app.wait(cx, |app, _| {
+        app.snapshot()["library"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["id"] == *item_id && item["destination"] == "announcements")
+    });
+    let (screen, main_screen) = cx.update(|cx| {
+        let screens =
+            crate::output::view::screens(runtime.output.read(cx).snapshot.as_ref().unwrap());
+        let main = screens
+            .iter()
+            .find(|(_, config)| {
+                config["type"] == "audience" && config["contentDestination"] != "announcements"
+            })
+            .unwrap()
+            .0
+            .clone();
+        runtime.output.update(cx, |output, cx| {
+            output.selected_screen = main.clone();
+            cx.notify();
+        });
+        let announcement = screens
+            .into_iter()
+            .find(|(_, config)| config["contentDestination"] == "announcements")
+            .unwrap()
+            .0;
+        (announcement, main)
+    });
+    for (index, text) in [(1, "Closing line"), (0, "Opening line")] {
+        click(&mut visual, &format!("cue-thumbnail-{index}"));
+        let live_cue = Box::leak(format!("cue-announcement-live-{index}").into_boxed_str());
+        app.wait(cx, |app, cx| {
+            cx.update(|cx| {
+                runtime.output.read(cx).live["announcements"]["slide"]["content"] == text
+            }) && app.visual(cx).debug_bounds(live_cue).is_some()
+                && crate::state::runtime::output_call(
+                    &app.host,
+                    "getOutputContent",
+                    vec![json!(screen)],
+                )
+                .is_ok_and(|scene| scene["text"] == text)
+                && crate::state::runtime::output_call(
+                    &app.host,
+                    "getOutputContent",
+                    vec![json!(main_screen)],
+                )
+                .is_ok_and(|scene| {
+                    scene["text"] == "Opening line" && scene["announcementOverlay"]["text"] == text
+                })
+        });
+        assert!(visual.debug_bounds("cue-live-0").is_some());
+        assert!(visual
+            .debug_bounds("look-layer-announcements-live")
+            .is_some());
+        assert!(visual.debug_bounds("program-preview").is_some());
+        assert!(visual.debug_bounds("announcement-preview").is_none());
+        let scene = crate::state::runtime::output_call(
+            &app.host,
+            "getOutputContent",
+            vec![json!(main_screen)],
+        )
+        .unwrap();
+        let frame = orbit_host::native_compositor::NativeCompositor::new()
+            .try_render_layered_for("announcement-overlay", &scene, 320, 180)
+            .unwrap();
+        let announcement = frame
+            .layers
+            .iter()
+            .position(|layer| layer.id.starts_with("announcement-") && layer.bounds.is_some())
+            .unwrap();
+        assert!(!frame.layers[announcement].replace);
+        assert!(frame.layers[..announcement].iter().any(|layer| {
+            (layer.id.starts_with("theme-layer-") || layer.id == "fallback-text")
+                && layer.bounds.is_some()
+        }));
+    }
+    click(&mut visual, "look-layer-announcements");
+    app.wait(cx, |app, cx| {
+        app.visual(cx)
+            .debug_bounds("look-layer-announcements-live")
+            .is_none()
+            && crate::state::runtime::output_call(
+                &app.host,
+                "getOutputContent",
+                vec![json!(main_screen)],
+            )
+            .is_ok_and(|scene| {
+                scene["announcementOverlay"].is_null() && scene["text"] == "Opening line"
+            })
+    });
+    let release = support::hold_workspace_writes(&app, cx);
+    click(&mut visual, "button-cue-destination");
+    click(&mut visual, "menu-item-Presentation");
+    click(&mut visual, "cue-thumbnail-1");
+    app.wait(cx, |_, cx| {
+        cx.update(|cx| runtime.output.read(cx).live["liveSlide"]["content"] == "Closing line")
+    });
+    assert!(app.snapshot()["library"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| item["id"] == *item_id && item["destination"] == "announcements"));
+    release.send(()).unwrap();
+    app.wait(cx, |app, _| {
+        app.snapshot()["library"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["id"] == *item_id && item["destination"].is_null())
+    });
+}
+
+#[gpui::test]
+fn single_presentation_mode_shows_playlist_markers_and_links_placeholder(cx: &mut TestAppContext) {
+    let mut app = Scenario::new(cx, false, seed);
+    let snapshot = app.snapshot();
+    let playlist = snapshot["playlist"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|playlist| playlist["title"] == "Sunday")
+        .unwrap();
+    let playlist_id = snapshot["playlist"][playlist]["id"].as_str().unwrap();
+    let original = snapshot["playlist"][playlist]["items"][0]["itemId"].clone();
+    let items = |app: &Scenario| app.snapshot()["playlist"][playlist]["items"].clone();
+    let mut visual = app.visual(cx);
+    click(&mut visual, &format!("playlist-{playlist_id}"));
+    click(&mut visual, "button-document-add");
+    click(&mut visual, "menu-item-New header");
+    app.wait(cx, |app, _| items(app)[1]["type"] == "header");
+    click(&mut visual, "button-document-add");
+    click(&mut visual, "menu-item-New placeholder");
+    app.wait(cx, |app, _| items(app)[2]["type"] == "placeholder");
+    let header = Box::leak(
+        format!(
+            "cue-playlist-heading-{}",
+            items(&app)[1]["id"].as_str().unwrap()
+        )
+        .into_boxed_str(),
+    );
+    let entry = items(&app)[2]["id"].as_str().unwrap().to_string();
+    let search = Box::leak(format!("button-cue-link-{entry}").into_boxed_str());
+    let create = Box::leak(format!("button-cue-create-{entry}").into_boxed_str());
+    let unlink = Box::leak(format!("button-cue-unlink-{entry}").into_boxed_str());
+    click(&mut visual, "document-0");
+    visual.simulate_keystrokes("down");
+    visual.run_until_parked();
+    assert!(visual.debug_bounds(header).is_some());
+    assert!(visual.debug_bounds("cue-thumbnail-0").is_none());
+    visual.simulate_keystrokes("down");
+    visual.run_until_parked();
+    assert!(visual.debug_bounds(search).is_some());
+    assert!(visual.debug_bounds(create).is_some());
+    assert!(visual.debug_bounds(unlink).is_none());
+    assert!(visual
+        .debug_bounds("document-icon-2-square-dashed")
+        .is_some());
+    assert!(visual.debug_bounds("cue-thumbnail-0").is_none());
+
+    click(&mut visual, search);
+    visual.simulate_input("Opening line");
+    app.wait(cx, |app, cx| {
+        app.visual(cx).debug_bounds("search-result-0").is_some()
+    });
+    visual.simulate_keystrokes("enter");
+    app.wait(cx, |app, cx| {
+        items(app)[2]["linkedItemId"] == original
+            && app.visual(cx).debug_bounds("cue-thumbnail-0").is_some()
+    });
+    assert!(visual.debug_bounds(unlink).is_some());
+    assert!(visual.debug_bounds(search).is_none());
+    assert!(visual.debug_bounds(create).is_none());
+    assert!(visual.debug_bounds("document-icon-2-library").is_some());
+    click(&mut visual, &format!("button-cue-arrangement-{entry}"));
+    click(&mut visual, "button-cue-arrangement");
+    click(&mut visual, "menu-item-New Arrangement");
+    visual.simulate_input("Linked arrangement");
+    click(&mut visual, "button-cue-form-save");
+    app.wait(cx, |app, _| items(app)[2]["arrangementId"].is_string());
+    click(&mut visual, "button-cue-arrangement");
+    click(&mut visual, "menu-item-Master");
+    app.wait(cx, |app, _| items(app)[2]["arrangementId"].is_null());
+    click(&mut visual, unlink);
+    app.wait(cx, |app, cx| {
+        items(app)[2]["linkedItemId"].is_null() && app.visual(cx).debug_bounds(create).is_some()
+    });
+    assert!(visual.debug_bounds(search).is_some());
+    assert!(visual.debug_bounds(unlink).is_none());
+    assert!(visual
+        .debug_bounds("document-icon-2-square-dashed")
+        .is_some());
+    click(&mut visual, create);
+    visual.simulate_input("Placeholder presentation");
+    click(&mut visual, "button-new-presentation-create");
+    app.wait(cx, |app, _| {
+        let items = items(app);
+        let snapshot = app.snapshot();
+        items.as_array().unwrap().len() == 3
+            && snapshot["library"].as_array().unwrap().iter().any(|item| {
+                item["title"] == "Placeholder presentation"
+                    && item["id"] == items[2]["linkedItemId"]
+            })
+    });
+
+    let path = json!(app.workspace.0.join("workspace.json"));
+    let snapshot = app
+        .host
+        .invoke("readWorkspaceSnapshot", vec![path.clone()])
+        .unwrap();
+    let workspace = &snapshot["workspace"];
+    let rejected = app.host.invoke(
+        "mutatePresentationLibrary",
+        vec![
+            path,
+            json!({"type":"createPresentation","title":"Invalid placeholder",
+            "libraryId":workspace["libraries"][0]["id"],"content":"","splitMode":"paragraph",
+            "splitMarker":"//","splitUnits":1,"playlistId":playlist_id,
+            "placeholderId":items(&app)[1]["id"]}),
+            snapshot["revision"].clone(),
+        ],
+    );
+    assert!(rejected.unwrap_err().contains("placeholder was not found"));
+}
+
+#[gpui::test]
 fn selected_slides_move_and_use_the_context_menu_in_a_continuous_playlist(cx: &mut TestAppContext) {
     let mut app = Scenario::new(cx, false, |host| {
         seed(host);
@@ -557,7 +981,7 @@ fn continuous_playlist_follows_settings_toolbar_menu_and_restart(cx: &mut TestAp
     ]).unwrap_err();
     assert!(error.contains("Arrangement id must be a UUID"), "{error}");
     let error = app.host.invoke("mutatePresentationLibrary", vec![
-        path, json!({"type":"removeArrangementSection", "itemId":item_id, "arrangementId":arrangement_id,
+        path.clone(), json!({"type":"removeArrangementSection", "itemId":item_id, "arrangementId":arrangement_id,
             "index":0, "expectedSectionIds":[]}),
         revision,
     ]).unwrap_err();
@@ -652,16 +1076,48 @@ fn continuous_playlist_follows_settings_toolbar_menu_and_restart(cx: &mut TestAp
     app.wait(cx, |app, _| entries(app)[2]["type"] == "placeholder");
     let placeholder = entries(&app)[2]["id"].as_str().unwrap().to_string();
     click(&mut visual, "document-2");
-    let link = Box::leak(format!("cue-link-{placeholder}").into_boxed_str());
+    let link = Box::leak(format!("button-cue-link-{placeholder}").into_boxed_str());
     app.wait(cx, |app, cx| app.visual(cx).debug_bounds(link).is_some());
     click(&mut visual, link);
-    click(&mut visual, "select-option-1");
+    visual.simulate_input("Other presentation");
+    app.wait(cx, |app, cx| {
+        app.visual(cx).debug_bounds("search-result-0").is_some()
+    });
+    click(&mut visual, "button-search-add");
     let unlink = Box::leak(format!("button-cue-unlink-{placeholder}").into_boxed_str());
     app.wait(cx, |app, cx| {
-        entries(app)[2]["linkedItemId"].is_string() && app.visual(cx).debug_bounds(unlink).is_some()
+        entries(app)[2]["linkedItemId"] == *second_item
+            && app.visual(cx).debug_bounds(unlink).is_some()
     });
+    click(
+        &mut visual,
+        &format!("button-cue-arrangement-{placeholder}"),
+    );
+    click(&mut visual, "button-cue-arrangement");
+    click(&mut visual, "menu-item-Second arrangement");
+    app.wait(cx, |app, _| {
+        let entries = entries(app);
+        entries[2]["arrangementId"] == second && entries[1]["arrangementId"] == arrangement_id
+    });
+    let revision = app
+        .host
+        .invoke("readWorkspaceSnapshot", vec![path.clone()])
+        .unwrap()["revision"]
+        .clone();
+    let rejected = app.host.invoke(
+        "mutatePresentationPlaylist",
+        vec![
+            path,
+            json!({"type":"setEntryArrangement","playlistId":playlist["id"],"entryId":placeholder,"arrangementId":"missing"}),
+            revision,
+        ],
+    );
+    assert!(rejected.unwrap_err().contains("arrangement was not found"));
     click(&mut visual, unlink);
-    app.wait(cx, |app, _| entries(app)[2]["linkedItemId"].is_null());
+    app.wait(cx, |app, _| {
+        let entry = &entries(app)[2];
+        entry["linkedItemId"].is_null() && entry["arrangementId"].is_null()
+    });
     let library_row = Box::leak(
         format!(
             "library-{}",

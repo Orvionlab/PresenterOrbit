@@ -3,7 +3,7 @@
 
 use super::actions;
 use crate::keys::{format_shortcut_label, KeyMappings};
-use crate::state::runtime::Runtime;
+use crate::state::runtime::{Kind as MutationKind, Runtime};
 use gpui::{div, prelude::*, App, Bounds, ClickEvent, Context, Entity, Pixels, Point, Window};
 use orbit_ui::controls::{
     input_state, ActionButton, ButtonVariant, ContextMenu, Dialog, Field, IconButton, InputEvent,
@@ -192,13 +192,15 @@ impl Destination {
     fn choose(&mut self, destination: &str, cx: &mut Context<Self>) {
         self.menu = None;
         let destination = destination.to_string();
-        actions::mutate_optimistic(
-            &self.runtime,
-            &self.item_id.clone(),
-            set_destination(&destination),
-            move |item| with_destination(item, &destination),
+        let item = self.item_id.clone();
+        self.runtime.save_preview(
             cx,
-        );
+            MutationKind::Library,
+            json!({"type":"mutateItem","itemId":item,"operation":set_destination(&destination)}),
+            move |content| crate::collections::arrangements::edit_item(content, &item, |item| {
+                with_destination(item, &destination)
+            }),
+        ).detach();
         cx.notify();
     }
 

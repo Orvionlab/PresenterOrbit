@@ -222,7 +222,7 @@ pub struct CueView {
     loading: bool,
     clipboard: Vec<Value>,
     viewport: Rc<RefCell<Option<gpui::Bounds<Pixels>>>>,
-    live_key: (Value, Value, Value),
+    live_key: (Value, Value, Value, Value),
     workspace: String,
     playlist_rows: Vec<PlaylistRow>,
     playlist_scroll: ListState,
@@ -333,7 +333,7 @@ impl CueView {
             loading: false,
             clipboard: Vec::new(),
             viewport: Rc::new(RefCell::new(None)),
-            live_key: (Value::Null, Value::Null, Value::Null),
+            live_key: Default::default(),
             workspace: String::new(),
             playlist_rows: Vec::new(),
             playlist_scroll,
@@ -380,7 +380,7 @@ impl CueView {
             if changed_columns {
                 self.rebuild_rows(cx);
                 self.visible.clear();
-                self.live_key = (Value::Null, Value::Null, Value::Null);
+                self.live_key = Default::default();
             }
             return;
         }
@@ -470,7 +470,8 @@ impl CueView {
             });
         if self.workspace != workspace
             || self.key.2 != key.2
-            || (!self.continuous && (self.key.1 != key.1 || self.key.3 != key.3))
+            || (!self.continuous
+                && (self.key.1 != key.1 || self.key.3 != key.3 || self.key.4 != key.4))
         {
             self.selected.clear();
             self.anchor = None;
@@ -512,7 +513,7 @@ impl CueView {
                 if !in_place {
                     view.press = None;
                     view.visible.clear();
-                    view.live_key = (Value::Null, Value::Null, Value::Null);
+                    view.live_key = Default::default();
                 }
                 if !order_only {
                     view.loaded_generation = key.0;
@@ -1218,7 +1219,9 @@ impl CueView {
         let cue = item.cues[index].clone();
         let theme = *cx.theme();
         let t = *cx.global::<Translator>();
-        let live = model::is_live(&self.runtime.output.read(cx).live, &item, &cue);
+        let output = &self.runtime.output.read(cx).live;
+        let live = model::is_presentation_live(output, &item, &cue);
+        let announcement_live = model::is_announcement_live(output, &item, &cue);
         let selected = self.selection_item == item.item.id
             && self.selection_entry == item.entry
             && self.selected.iter().any(|id| cue["id"] == *id);
@@ -1305,9 +1308,13 @@ impl CueView {
         };
         let label = if first_in_group { label } else { String::new() };
         // `.cue-card-label`: the slide's own label, in its own color.
-        let label_chip = (!table)
-            .then(|| (cue["label"].as_str(), cue["labelColor"].as_str()))
-            .and_then(|(name, color)| Some((name?.to_string(), parse_hex_color(color?)?)));
+        let label_chip = cue["label"]
+            .as_str()
+            .filter(|name| !name.is_empty())
+            .map(|name| {
+                let color = cue["labelColor"].as_str().and_then(parse_hex_color);
+                (name.to_string(), color)
+            });
         let mut footer = Some(
             div()
                 .debug_selector(move || format!("cue-footer-{index}"))
@@ -1329,13 +1336,14 @@ impl CueView {
                 .when_some(label_chip, |el, (name, color)| {
                     el.child(
                         div()
+                            .debug_selector(move || format!("cue-label-{index}"))
                             .flex_none()
                             .max_w(gpui::relative(0.5))
                             .ml_auto()
                             .px(theme.metrics.space_xs)
                             .truncate()
                             .rounded(theme.metrics.radius_sm)
-                            .bg(color)
+                            .when_some(color, |el, color| el.bg(color))
                             .text_color(theme.colors.text_strong)
                             .text_size(theme.metrics.font_xs)
                             .child(name),
@@ -1614,8 +1622,23 @@ impl CueView {
                     div()
                         .absolute()
                         .inset_0()
+                        .debug_selector(move || format!("cue-live-{index}"))
                         .border_2()
                         .border_color(theme.colors.live),
+                )
+            })
+            .when(announcement_live, |el| {
+                el.child(
+                    div()
+                        .absolute()
+                        .inset_0()
+                        .when(live, |frame| {
+                            let inset = theme.metrics.space_2xs;
+                            frame.top(inset).right(inset).bottom(inset).left(inset)
+                        })
+                        .debug_selector(move || format!("cue-announcement-live-{index}"))
+                        .border_2()
+                        .border_color(theme.colors.live_announcement),
                 )
             })
             .when(
@@ -1865,45 +1888,11 @@ impl CueView {
         cx: &App,
     ) -> PanelHeader {
         let t = *cx.global::<Translator>();
-        let linked = !entry.linked_item_id.is_empty();
-        let label = t.t(if linked {
-            "cue.placeholder.changeLinked"
-        } else {
-            "cue.placeholder.linkPresentation"
-        });
-        let mut items: Vec<_> = self.runtime.content.read(cx).items.iter().collect();
-        items.sort_by_key(|item| item.title.to_lowercase());
-        let mut options = vec![SelectOption::new(String::new(), label.clone())
-            .preview_icon("search")
-            .disabled(true)];
-        options.extend(
-            items
-                .into_iter()
-                .map(|item| SelectOption::new(item.id.clone(), item.title.clone())),
-        );
-        let (runtime, playlist, entry_id) =
-            (self.runtime.clone(), playlist.to_string(), entry.id.clone());
-        let selector = format!("cue-link-{entry_id}");
-        let link = {
-            let (runtime, playlist, entry_id) =
-                (runtime.clone(), playlist.clone(), entry_id.clone());
-            Select::new(format!("cue-link-{entry_id}"), options, Some(String::new()))
-                .label(label)
-                .compact()
-                .on_change(move |item, _, cx| {
-                    if !item.is_empty() {
-                        Self::link_placeholder(&runtime, &playlist, &entry_id, item, cx);
-                    }
-                })
-        };
-        let header = header.action(
-            div()
-                .w(cx.theme().metrics.control_height * 2.)
-                .debug_selector(move || selector.clone())
-                .child(link),
-        );
-        if linked {
-            header.action(
+        let runtime = self.runtime.clone();
+        let entry_id = entry.id.clone();
+        let playlist = playlist.to_string();
+        if entry.linked_document().is_some() {
+            return header.action(
                 IconButton::new(
                     format!("cue-unlink-{entry_id}"),
                     "x",
@@ -1911,30 +1900,47 @@ impl CueView {
                 )
                 .on_click(move |_, _, cx| {
                     cx.stop_propagation();
-                    Self::link_placeholder(&runtime, &playlist, &entry_id, String::new(), cx);
+                    crate::collections::document_actions::link_placeholder(
+                        &runtime, cx, &playlist, &entry_id, "",
+                    )
+                    .detach();
+                }),
+            );
+        }
+        let create = (runtime.clone(), playlist.clone(), entry_id.clone());
+        header
+            .action(
+                IconButton::new(
+                    format!("cue-create-{entry_id}"),
+                    "plus",
+                    t.t("collections.menu.newPresentation"),
+                )
+                .on_click(move |_, _, cx| {
+                    cx.stop_propagation();
+                    crate::collections::documents::open_presentation_for_placeholder(
+                        &create.0,
+                        cx,
+                        create.1.clone(),
+                        create.2.clone(),
+                    );
                 }),
             )
-        } else {
-            header
-        }
-    }
-
-    fn link_placeholder(
-        runtime: &Runtime,
-        playlist: &str,
-        entry: &str,
-        item: String,
-        cx: &mut App,
-    ) {
-        let request = Persist::new(
-            Kind::Playlist,
-            json!({
-                "type":"setPlaceholderLink", "playlistId":playlist, "entryId":entry, "linkedItemId":item
-            }),
-            |_, _| {},
-        );
-        crate::collections::tree_actions::spawn_persist(runtime, cx, request, |_, _, _| {})
-            .detach();
+            .action(
+                IconButton::new(
+                    format!("cue-link-{entry_id}"),
+                    "search",
+                    t.t("cue.placeholder.linkPresentation"),
+                )
+                .on_click(move |_, _, cx| {
+                    cx.stop_propagation();
+                    crate::collections::search::open_placeholder_search(
+                        &runtime,
+                        cx,
+                        playlist.clone(),
+                        entry_id.clone(),
+                    );
+                }),
+            )
     }
 
     fn presentation_header_actions(
@@ -2034,6 +2040,150 @@ impl CueView {
             .action(arrangement)
     }
 
+    fn playlist_heading(
+        &mut self,
+        entry: Entry,
+        index: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let t = *cx.global::<Translator>();
+        let runtime = self.runtime.clone();
+        let document = self
+            .documents
+            .iter()
+            .find(|doc| doc.entry == entry.id)
+            .cloned();
+        let title = document.as_ref().map_or_else(
+            || {
+                if entry.title.is_empty() {
+                    t.t(if entry.kind == EntryKind::Header {
+                        "cue.playlist.header"
+                    } else {
+                        "cue.playlist.placeholder"
+                    })
+                } else {
+                    entry.title.clone()
+                }
+            },
+            |doc| doc.item.display_title(&doc.arrangement),
+        );
+        let mut header = PanelHeader::new(title);
+        let ui = runtime.ui.read(cx);
+        let playlist = ui.selected_playlist_id.clone();
+        let selected = ui.selected_documents.first().and_then(|row| row.index) == Some(index);
+        let mut notes = None;
+        let mut arrangement = None;
+        if let Some(doc) = &document {
+            header = self.presentation_header_actions(header, doc, Some(index), window, cx);
+            if selected {
+                arrangement = self.arrangement_panel(doc, cx);
+            }
+            if self
+                .notes
+                .as_ref()
+                .is_some_and(|notes| notes.entry == entry.id)
+            {
+                notes = self.notes_element(cx);
+            }
+        }
+        if entry.kind == EntryKind::Header {
+            let actions = headers::actions(&entry);
+            let trigger = runtime.clone();
+            let settings = runtime.clone();
+            let id = entry.id.clone();
+            let request = headers::Request {
+                playlist: playlist.clone(),
+                entry: id.clone(),
+            };
+            let editor = self
+                .header_editor
+                .as_ref()
+                .filter(|editor| editor.read(cx).request == request)
+                .cloned();
+            let toggle_request = request.clone();
+            let settings_button = IconButton::new(
+                format!("cue-header-settings-{id}"),
+                "settings",
+                t.t("playlistHeader.settings"),
+            )
+            .selected(editor.is_some())
+            .on_click(move |_, _, cx| {
+                cx.stop_propagation();
+                headers::toggle(&settings, cx, toggle_request.clone());
+            });
+            let dismiss_runtime = runtime.clone();
+            let popover = Popover::new(format!("cue-header-popover-{id}"), settings_button)
+                .anchor(gpui::Anchor::TopRight)
+                .on_dismiss(move |_, _, cx| headers::close(&dismiss_runtime, cx, &request))
+                .when_some(editor, Popover::content);
+            header = header
+                .prominent()
+                .action(
+                    ActionButton::new(
+                        format!("cue-header-trigger-{id}"),
+                        t.t("playlistHeader.trigger"),
+                    )
+                    .compact()
+                    .disabled(actions.is_empty())
+                    .on_click(move |_, _, cx| {
+                        cx.stop_propagation();
+                        crate::automation::run_operator(&trigger, actions.clone(), cx);
+                    }),
+                )
+                .action(popover);
+        }
+        if entry.kind == EntryKind::Placeholder {
+            header = self.placeholder_actions(header, &playlist, &entry, cx);
+        }
+        let theme = *cx.theme();
+        let header_color = if entry.kind == EntryKind::Header {
+            orbit_ui::controls::data_color(if entry.color.is_empty() {
+                orbit_ui::controls::DEFAULT_HEADER_COLOR
+            } else {
+                &entry.color
+            })
+        } else {
+            theme.colors.border
+        };
+        let stripe = if selected {
+            theme.colors.selected
+        } else {
+            header_color
+        };
+        if entry.kind != EntryKind::Presentation && document.is_none() {
+            header = header.contrast();
+        }
+        if entry.kind == EntryKind::Header
+            && !entry.color.is_empty()
+            && entry.color != "transparent"
+        {
+            header = header.section_tint(header_color);
+        }
+        div()
+            .id(SharedString::from(format!(
+                "cue-playlist-heading-{}",
+                entry.id
+            )))
+            .debug_selector({
+                let id = entry.id.clone();
+                move || format!("cue-playlist-heading-{id}")
+            })
+            .child(
+                div()
+                    .id("playlist-heading-select")
+                    .on_click(cx.listener(move |view, event, window, cx| {
+                        view.select_playlist_area(&playlist, &entry.id, index, event, window, cx);
+                    }))
+                    .border_l(theme.metrics.space_xs)
+                    .border_color(stripe)
+                    .child(header),
+            )
+            .children(arrangement)
+            .children(notes)
+            .into_any_element()
+    }
+
     fn playlist_row(
         &mut self,
         index: usize,
@@ -2050,146 +2200,7 @@ impl CueView {
                 self.cue_row(row, before_heading, cx)
             }
             Some(PlaylistRow::Marker(entry, index)) => {
-                let entry = entry.clone();
-                let index = *index;
-                let t = *cx.global::<Translator>();
-                let runtime = self.runtime.clone();
-                let document = self
-                    .documents
-                    .iter()
-                    .find(|doc| doc.entry == entry.id)
-                    .cloned();
-                let title = document.as_ref().map_or_else(
-                    || {
-                        if entry.title.is_empty() {
-                            t.t(if entry.kind == EntryKind::Header {
-                                "cue.playlist.header"
-                            } else {
-                                "cue.playlist.placeholder"
-                            })
-                        } else {
-                            entry.title.clone()
-                        }
-                    },
-                    |doc| doc.item.display_title(&doc.arrangement),
-                );
-                let mut header = PanelHeader::new(title);
-                let ui = runtime.ui.read(cx);
-                let playlist = ui.selected_playlist_id.clone();
-                let selected =
-                    ui.selected_documents.first().and_then(|row| row.index) == Some(index);
-                let mut notes = None;
-                let mut arrangement = None;
-                if let Some(doc) = &document {
-                    header = self.presentation_header_actions(header, doc, Some(index), window, cx);
-                    if selected {
-                        arrangement = self.arrangement_panel(doc, cx);
-                    }
-                    if self
-                        .notes
-                        .as_ref()
-                        .is_some_and(|notes| notes.entry == entry.id)
-                    {
-                        notes = self.notes_element(cx);
-                    }
-                }
-                if entry.kind == EntryKind::Header {
-                    let actions = headers::actions(&entry);
-                    let trigger = runtime.clone();
-                    let settings = runtime.clone();
-                    let id = entry.id.clone();
-                    let request = headers::Request {
-                        playlist: playlist.clone(),
-                        entry: id.clone(),
-                    };
-                    let editor = self
-                        .header_editor
-                        .as_ref()
-                        .filter(|editor| editor.read(cx).request == request)
-                        .cloned();
-                    let toggle_request = request.clone();
-                    let settings_button = IconButton::new(
-                        format!("cue-header-settings-{id}"),
-                        "settings",
-                        t.t("playlistHeader.settings"),
-                    )
-                    .selected(editor.is_some())
-                    .on_click(move |_, _, cx| {
-                        cx.stop_propagation();
-                        headers::toggle(&settings, cx, toggle_request.clone());
-                    });
-                    let dismiss_runtime = runtime.clone();
-                    let popover = Popover::new(format!("cue-header-popover-{id}"), settings_button)
-                        .anchor(gpui::Anchor::TopRight)
-                        .on_dismiss(move |_, _, cx| headers::close(&dismiss_runtime, cx, &request))
-                        .when_some(editor, Popover::content);
-                    header = header
-                        .prominent()
-                        .action(
-                            ActionButton::new(
-                                format!("cue-header-trigger-{id}"),
-                                t.t("playlistHeader.trigger"),
-                            )
-                            .compact()
-                            .disabled(actions.is_empty())
-                            .on_click(move |_, _, cx| {
-                                cx.stop_propagation();
-                                crate::automation::run_operator(&trigger, actions.clone(), cx);
-                            }),
-                        )
-                        .action(popover);
-                }
-                if entry.kind == EntryKind::Placeholder {
-                    header = self.placeholder_actions(header, &playlist, &entry, cx);
-                }
-                let theme = *cx.theme();
-                let header_color = if entry.kind == EntryKind::Header {
-                    orbit_ui::controls::data_color(if entry.color.is_empty() {
-                        orbit_ui::controls::DEFAULT_HEADER_COLOR
-                    } else {
-                        &entry.color
-                    })
-                } else {
-                    theme.colors.border
-                };
-                let stripe = if selected {
-                    theme.colors.selected
-                } else {
-                    header_color
-                };
-                if entry.kind != EntryKind::Presentation && document.is_none() {
-                    header = header.contrast();
-                }
-                if entry.kind == EntryKind::Header
-                    && !entry.color.is_empty()
-                    && entry.color != "transparent"
-                {
-                    header = header.section_tint(header_color);
-                }
-                div()
-                    .id(SharedString::from(format!(
-                        "cue-playlist-heading-{}",
-                        entry.id
-                    )))
-                    .debug_selector({
-                        let id = entry.id.clone();
-                        move || format!("cue-playlist-heading-{id}")
-                    })
-                    .child(
-                        div()
-                            .id("playlist-heading-select")
-                            .on_click(cx.listener(move |view, event, window, cx| {
-                                view.select_playlist_area(
-                                    &playlist, &entry.id, index, event, window, cx,
-                                );
-                            }))
-                            .border_l(theme.metrics.space_xs)
-                            .border_color(stripe)
-                            .child(header),
-                    )
-                    .children(arrangement)
-                    .children(notes)
-                    .into_any_element()
+                self.playlist_heading(entry.as_ref().clone(), *index, window, cx)
             }
             Some(PlaylistRow::EndSpace) => {
                 let viewport = self
@@ -3422,15 +3433,7 @@ impl CueView {
             let (runtime, item) = (self.runtime.clone(), document.item.id.clone());
             let slides = selected.clone();
             move |_: (), _: &mut gpui::Window, cx: &mut gpui::App| {
-                let label = name_color
-                    .as_ref()
-                    .map(|(name, color)| json!({"name":name,"color":color}));
-                actions::mutate(
-                    &runtime,
-                    &item,
-                    json!({"type":"setSlidesLabel","slideIds":slides,"label":label}),
-                    cx,
-                );
+                actions::set_slide_labels(&runtime, cx, &item, slides.clone(), name_color.clone());
             }
         };
         let mut label_entries: Vec<MenuEntry> = vec![MenuItem::new(t.t("cue.menu.noLabel"))
@@ -4048,13 +4051,22 @@ impl Render for CueView {
             live["liveItemId"].clone(),
             live["liveSlideId"].clone(),
             live["liveCueInstanceId"].clone(),
+            live["announcements"]["selectionId"].clone(),
         );
         if live_key != self.live_key {
+            let announced = live_key.3 != self.live_key.3 && !live_key.3.is_null();
             self.live_key = live_key;
             if let Some(row) = self.rows.iter().position(|(document, start, end)| {
                 self.documents[*document].cues[*start..*end]
                     .iter()
-                    .any(|cue| model::is_live(&live, &self.documents[*document], cue))
+                    .any(|cue| {
+                        let document = &self.documents[*document];
+                        if announced {
+                            model::is_announcement_live(&live, document, cue)
+                        } else {
+                            model::is_presentation_live(&live, document, cue)
+                        }
+                    })
             }) {
                 if self.continuous {
                     if let Some(index) = self.playlist_rows.iter().position(
@@ -4080,6 +4092,16 @@ impl Render for CueView {
         }) {
             self.close_notes(cx);
         }
+        let marker = if self.continuous {
+            None
+        } else {
+            let content = self.runtime.content.read(cx);
+            let ui = self.runtime.ui.read(cx);
+            model::selected_playlist_entry(content, ui)
+                .filter(|(_, entry)| entry.kind != EntryKind::Presentation)
+                .map(|(index, entry)| (index, entry.clone()))
+        };
+        let show_marker = marker.is_some();
         let mut header = PanelHeader::new(
             active
                 .as_ref()
@@ -4106,9 +4128,14 @@ impl Render for CueView {
                         .unwrap_or_else(|| t.t("search.preview.empty"))
                 }),
         );
-        if let Some(document) = &active {
-            header = self.presentation_header_actions(header, document, None, window, cx);
-        }
+        let header = if let Some((index, entry)) = marker {
+            self.playlist_heading(entry, index, window, cx)
+        } else {
+            if let Some(document) = &active {
+                header = self.presentation_header_actions(header, document, None, window, cx);
+            }
+            header.into_any_element()
+        };
         let body = if self.rows.is_empty() && (!self.continuous || self.playlist_rows.is_empty()) {
             self.visible.clear();
             EmptyState::new(t.t(if self.loading {
@@ -4238,10 +4265,13 @@ impl Render for CueView {
                     .child(orbit_ui::controls::RangeInput::new(&self.size).label(t.t("cue.size"))),
             );
         let menu = self.menu_element(cx);
-        let notes = (!self.continuous).then(|| self.notes_element(cx)).flatten();
+        let notes = (!self.continuous && !show_marker)
+            .then(|| self.notes_element(cx))
+            .flatten();
         let arrangement_menu = self.arrangement_menu_element(cx);
         let arrangement = active
             .as_ref()
+            .filter(|_| !show_marker)
             .and_then(|document| self.arrangement_panel(document, cx));
         div()
             .relative()

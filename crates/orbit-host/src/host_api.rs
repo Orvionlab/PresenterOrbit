@@ -182,6 +182,29 @@ impl Host {
         Ok(response)
     }
 
+    /// A direct take can use the last committed cue while a destination-only edit is being saved.
+    pub fn execute_operator_cue_before_save(
+        &self,
+        command: &str,
+        payload: &Value,
+        workspace_revision: u64,
+    ) -> Result<Value, String> {
+        let response = remote_controls::execute_operator_cue_before_save(
+            self,
+            self.state::<AppState>(),
+            command,
+            payload,
+            workspace_revision,
+        )?;
+        if response["ok"] != true {
+            return Err(response["error"]
+                .as_str()
+                .unwrap_or("The cue command was not accepted.")
+                .to_string());
+        }
+        Ok(response)
+    }
+
     /// The same occurrence identities and master/arrangement order as native program output.
     pub fn presentation_cues(
         item: &Value,

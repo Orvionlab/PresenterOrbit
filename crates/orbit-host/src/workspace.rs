@@ -3392,6 +3392,7 @@ fn create_presentation_document(
         "operatorNotes",
         "playlistTitle",
         "playlistId",
+        "placeholderId",
         "presentationThemeId",
         "size",
         "slideContents",
@@ -3473,6 +3474,20 @@ fn create_presentation_document(
                     "Presentation creation playlist was not found or is a folder.".to_string()
                 })?,
         )
+    } else {
+        None
+    };
+    let placeholder_id = if mutation.contains_key("placeholderId") {
+        if playlist_index.is_none() {
+            return Err(
+                "Presentation creation requires a playlist for the placeholder.".to_string(),
+            );
+        }
+        Some(required_mutation_string(
+            mutation,
+            "placeholderId",
+            "Presentation creation placeholder id is required.",
+        )?)
     } else {
         None
     };
@@ -3606,26 +3621,31 @@ fn create_presentation_document(
     target_library.insert("itemIds".to_string(), Value::Array(item_ids));
 
     if let Some(index) = playlist_index {
-        let playlist = &mut playlists[index];
-        let mut entries = value_array(
-            playlist
-                .as_object()
-                .ok_or_else(|| "Presentation playlist must be an object.".to_string())?,
-            "items",
-        )?;
-        let entry_id = unique_presentation_entry_id(&item_id, &entries);
-        let mut entry = json!({ "id": entry_id, "type": "presentation", "itemId": &item_id });
-        if let Some(id) = &created_arrangement_id {
-            entry["arrangementId"] = json!(id);
+        let playlist = playlists[index]
+            .as_object_mut()
+            .ok_or_else(|| "Presentation playlist must be an object.".to_string())?;
+        let mut entries = value_array(playlist, "items")?;
+        if let Some(placeholder_id) = placeholder_id {
+            let entry = entries
+                .iter_mut()
+                .find(|entry| entry["id"] == placeholder_id && entry["type"] == "placeholder")
+                .ok_or_else(|| "Presentation creation placeholder was not found.".to_string())?;
+            entry["linkedItemId"] = json!(&item_id);
+            if let Some(entry) = entry.as_object_mut() {
+                entry.remove("arrangementId");
+                if let Some(id) = &created_arrangement_id {
+                    entry.insert("arrangementId".into(), json!(id));
+                }
+            }
+        } else {
+            let entry_id = unique_presentation_entry_id(&item_id, &entries);
+            let mut entry = json!({ "id": entry_id, "type": "presentation", "itemId": &item_id });
+            if let Some(id) = &created_arrangement_id {
+                entry["arrangementId"] = json!(id);
+            }
+            entries.push(entry);
         }
-        entries.push(entry);
-        let item_ids = entries
-            .iter()
-            .filter(|entry| entry.get("type").and_then(Value::as_str) == Some("presentation"))
-            .filter_map(|entry| entry.get("itemId").cloned())
-            .collect::<Vec<_>>();
-        playlist["items"] = Value::Array(entries);
-        playlist["itemIds"] = Value::Array(item_ids);
+        set_playlist_entries(playlist, entries)?;
     }
 
     let created_playlist_id = playlist_title.map(|base_playlist_title| {
@@ -4288,11 +4308,12 @@ fn mutate_presentation_item(
                         required_mutation_string(label, "name", "Slide label name is required.")?;
                     let color =
                         required_mutation_string(label, "color", "Slide label color is required.")?;
-                    if !matches!(color.len(), 7 | 9)
-                        || !color.starts_with('#')
-                        || !color[1..].bytes().all(|byte| byte.is_ascii_hexdigit())
+                    if color != "transparent"
+                        && (!matches!(color.len(), 7 | 9)
+                            || !color.starts_with('#')
+                            || !color[1..].bytes().all(|byte| byte.is_ascii_hexdigit()))
                     {
-                        return Err("Slide label color must be a hex color.".into());
+                        return Err("Slide label color must be a hex color or transparent.".into());
                     }
                     Some((name, color))
                 }
@@ -5313,8 +5334,7 @@ fn mutate_presentation_arrangement(
                     .unwrap_or_default()
                     .into_iter()
                     .map(|entry| {
-                        if entry.get("type").and_then(Value::as_str) != Some("presentation")
-                            || entry.get("itemId").and_then(Value::as_str) != Some(item_id)
+                        if playlist_entry_document(&entry) != Some(item_id)
                             || entry.get("arrangementId").and_then(Value::as_str)
                                 != Some(arrangement_id)
                         {
@@ -6288,10 +6308,24 @@ pub fn mutate_presentation_playlist(
                     .find(|entry| entry.get("id").and_then(Value::as_str) == Some(entry_id))
                     .ok_or_else(|| "Presentation playlist entry was not found.".to_string())?
             };
-            if entry.get("type").and_then(Value::as_str) != Some("presentation") {
-                return Err(
-                    "Only presentation playlist entries can select an arrangement.".to_string(),
-                );
+            let item_id = playlist_entry_document(entry)
+                .ok_or("Only playlist entries with a presentation can select an arrangement.")?;
+            if !arrangement_id.is_empty()
+                && !document
+                    .get("library")
+                    .and_then(Value::as_array)
+                    .is_some_and(|items| {
+                        items.iter().any(|item| {
+                            item["id"] == item_id
+                                && item["arrangements"].as_array().is_some_and(|arrangements| {
+                                    arrangements
+                                        .iter()
+                                        .any(|arrangement| arrangement["id"] == arrangement_id)
+                                })
+                        })
+                    })
+            {
+                return Err("Presentation arrangement was not found.".to_string());
             }
             let entry = entry
                 .as_object_mut()
@@ -6371,6 +6405,7 @@ pub fn mutate_presentation_playlist(
             if current == linked_item_id {
                 return Ok(unchanged_presentation_playlist_result(workspace));
             }
+            entry.remove("arrangementId");
             if linked_item_id.is_empty() {
                 entry.remove("linkedItemId");
             } else {
@@ -6925,6 +6960,15 @@ fn playlist_entries(playlist: &Map<String, Value>) -> Vec<Value> {
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default()
+}
+
+fn playlist_entry_document(entry: &Value) -> Option<&str> {
+    let field = match entry["type"].as_str()? {
+        "presentation" => "itemId",
+        "placeholder" => "linkedItemId",
+        _ => return None,
+    };
+    entry[field].as_str().filter(|id| !id.is_empty())
 }
 
 fn set_playlist_entries(

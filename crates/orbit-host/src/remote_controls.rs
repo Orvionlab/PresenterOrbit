@@ -259,6 +259,40 @@ pub(crate) fn execute(
             json!({"ok":false,"status":"invalid-target","changed":false,"error":"The remote command belongs to a different workspace."}),
         );
     }
+    execute_resolved(app, state, command, payload, &workspace, None)
+}
+
+pub(crate) fn execute_operator_cue_before_save(
+    app: &Host,
+    state: &AppState,
+    command: &str,
+    payload: &Value,
+    revision: u64,
+) -> Result<Value, String> {
+    let command = match command {
+        "playlistCue" => "operatorPlaylistCue",
+        "libraryCue" => "libraryCue",
+        _ => return Err("Unsupported operator cue command.".into()),
+    };
+    let path = crate::active_workspace(state, payload["workspacePath"].clone())?;
+    let workspace = WORKSPACE_CATALOG
+        .lock()
+        .map_err(|_| "Remote catalog cache is unavailable.")?
+        .as_ref()
+        .filter(|cached| cached.path == path && cached.revision >= revision)
+        .map(|cached| cached.document.clone())
+        .ok_or("The committed workspace for this cue is unavailable.")?;
+    execute_resolved(app, state, command, payload, &workspace, path.to_str())
+}
+
+fn execute_resolved(
+    app: &Host,
+    state: &AppState,
+    command: &str,
+    payload: &Value,
+    workspace: &Value,
+    expected_workspace: Option<&str>,
+) -> Result<Value, String> {
     let rss = state
         .rss_output
         .lock()
@@ -270,12 +304,16 @@ pub(crate) fn execute(
             json!({"ok": false, "status": "not-ready", "changed": false, "error": "Native output has not accepted a snapshot yet."}),
         );
     };
+    if expected_workspace.is_some_and(|path| cached["playbackWorkspacePath"].as_str() != Some(path))
+    {
+        return Err("The output is switching workspaces.".into());
+    }
     let mut registry = state
         .native_timers
         .lock()
         .map_err(|_| "Native timer state is unavailable.")?;
     let mut staged = registry.clone();
-    let (mut next, mut patch) = match mutate(&cached, &workspace, &mut staged, command, payload) {
+    let (mut next, mut patch) = match mutate(&cached, workspace, &mut staged, command, payload) {
         Ok(value) => value,
         Err(error) => {
             return Ok(

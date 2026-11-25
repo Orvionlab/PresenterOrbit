@@ -34,16 +34,20 @@ impl Lanes {
     pub fn latest_cue(
         &self,
         path: &str,
+        before_save: bool,
         operation: impl FnOnce() -> Result<Value, String> + Send + 'static,
     ) -> oneshot::Receiver<Result<Option<Value>, String>> {
         let latest = self.latest_cue.clone();
         let request = latest.fetch_add(1, Ordering::AcqRel) + 1;
-        self.task(path, move || {
-            if latest.load(Ordering::Acquire) != request {
-                return Ok(None);
-            }
-            operation().map(Some)
-        })
+        self.task(
+            if before_save { "\0operator-cue" } else { path },
+            move || {
+                if latest.load(Ordering::Acquire) != request {
+                    return Ok(None);
+                }
+                operation().map(Some)
+            },
+        )
     }
 
     /// Serial work that must follow workspace edits but does not return a workspace revision.

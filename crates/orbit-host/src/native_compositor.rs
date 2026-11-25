@@ -1897,6 +1897,7 @@ fn layer_rank(id: &str) -> u8 {
         _ if id.starts_with("video-input-") => 1,
         _ if id.starts_with("theme-layer-") => 5,
         _ if id.starts_with("ccli-layer-") => 5,
+        _ if id.starts_with("announcement-") => 6,
         _ if id.starts_with("prop-") => 6,
         _ if id.starts_with("stage-") => 7,
         _ if id.starts_with("mask") => 8,
@@ -3076,6 +3077,30 @@ fn compose_layered_frame(
     }
 
     let look_layers = content.get("lookLayers").and_then(Value::as_object);
+    if let Some(overlay) = content
+        .get("announcementOverlay")
+        .filter(|value| value.is_object())
+    {
+        let mut announcement = compose_layered_frame(
+            &format!("{namespace}:announcement"),
+            overlay,
+            width,
+            height,
+            scroll_elapsed_seconds,
+            media_download_pending,
+            renderer,
+            background_image_cache,
+            cache,
+            None,
+            None,
+        );
+        announcement.retain(|layer| layer.id != "background-color");
+        for layer in &mut announcement {
+            layer.id = format!("announcement-{}", layer.id);
+            layer.replace = false;
+        }
+        layers.extend(announcement);
+    }
     if look_layers
         .and_then(|value| value.get("props"))
         .and_then(Value::as_bool)
@@ -3401,6 +3426,33 @@ fn compose_frame(
     }
 
     let look_layers = content.get("lookLayers").and_then(Value::as_object);
+    if let Some(overlay) = content
+        .get("announcementOverlay")
+        .filter(|value| value.is_object())
+    {
+        let mut pixels = vec![0; output.pixels.len()];
+        let mut target = RenderTarget {
+            pixels: &mut pixels,
+            width: output.width,
+            height: output.height,
+            dynamic_media: false,
+            scroll_elapsed_seconds: output.scroll_elapsed_seconds,
+        };
+        compose_frame(&mut target, overlay, renderer, background_image_cache);
+        output.dynamic_media |= target.dynamic_media;
+        for (index, &source) in pixels.as_chunks::<4>().0.iter().enumerate() {
+            if source[3] != 0 {
+                blend_pixel(
+                    output.pixels,
+                    output.width,
+                    index % output.width,
+                    index / output.width,
+                    source,
+                    1.0,
+                );
+            }
+        }
+    }
     if look_layers
         .and_then(|layers| layers.get("props"))
         .and_then(Value::as_bool)
