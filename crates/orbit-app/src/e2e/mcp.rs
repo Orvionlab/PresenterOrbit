@@ -1,6 +1,6 @@
 use super::{seed, Scenario};
 use base64::{engine::general_purpose::STANDARD, Engine};
-use gpui::TestAppContext;
+use gpui::{AppContext, TestAppContext};
 use serde_json::{json, Value};
 use std::{
     io::Write,
@@ -260,6 +260,43 @@ fn mcp_reads_the_open_workspace_over_the_remote_api(cx: &mut TestAppContext) {
     let entry = playlist["items"].as_array().unwrap().last().unwrap();
     assert_eq!(entry["itemId"], created["id"]);
     assert_eq!(entry["arrangementId"], created["arrangementId"]);
+
+    let runtime = app.runtime(cx);
+    app.wait(cx, |_, cx| {
+        cx.update(|cx| {
+            crate::settings::persist::shown(&runtime, cx)["remoteSettings"]["mcpPort"] == port
+        })
+    });
+    let window = cx.add_window(move |window, cx| {
+        let view = cx.new(|cx| crate::settings::SettingsView::new(runtime, cx));
+        view.update(cx, |view, cx| view.select("mcp", cx));
+        orbit_ui::controls::Root::new(view, window, cx)
+    });
+    let mut visual = gpui::VisualTestContext::from_window(window.into(), cx);
+    visual.run_until_parked();
+    for field in ["mcp-password-field", "mcp-port-field"] {
+        assert!(visual.debug_bounds(field).unwrap().size.width >= gpui::px(100.));
+    }
+    let mut copy = |button| {
+        super::click(&mut visual, button);
+        let contents = visual.read_from_clipboard().unwrap().text().unwrap();
+        assert!(!contents.contains("mcp-e2e-password"));
+        contents
+    };
+    let claude = copy("button-mcp-copy-claude");
+    assert_eq!(claude.lines().count(), 1);
+    assert!(
+        claude.starts_with("claude mcp add --transport stdio --scope user presenter_orbit --env ")
+    );
+    assert!(claude.contains("Read-Host -MaskInput"));
+    assert!(claude.contains(&format!("'PRESENTER_ORBIT_MCP_PORT={port}' -- ")));
+    assert!(claude.ends_with("' --mcp"));
+    let codex = copy("button-mcp-copy-codex");
+    assert_eq!(codex.lines().count(), 1);
+    assert!(codex.starts_with("codex mcp add presenter_orbit "));
+    assert!(codex.contains("Read-Host -MaskInput"));
+    assert!(codex.contains(&format!("--env 'PRESENTER_ORBIT_MCP_PORT={port}'")));
+    assert!(codex.ends_with("' --mcp"));
 }
 
 fn modern_metadata() -> Value {

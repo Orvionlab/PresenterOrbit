@@ -553,6 +553,34 @@
   "@settings.remote.mcp.createPresentations": {
     "description": "Allow MCP clients to save new presentations and append them to an existing playlist."
   },
+  "settings.remote.mcp.setup": "Connect an MCP client",
+  "@settings.remote.mcp.setup": {
+    "description": "Heading for local MCP client setup instructions."
+  },
+  "settings.remote.mcp.setupIntro": "Enable Local MCP, set a password, and keep Presenter Orbit running on the same computer as your client.",
+  "@settings.remote.mcp.setupIntro": {
+    "description": "Prerequisites for using a local MCP client."
+  },
+  "settings.remote.mcp.setupClaude": "Run the command once in PowerShell 7. Claude Code saves the password in your user configuration. Open a new Claude Code session.",
+  "@settings.remote.mcp.setupClaude": {
+    "description": "How to run the copied Claude Code installation command."
+  },
+  "settings.remote.mcp.setupCodex": "Run the command once in PowerShell 7. Codex saves the password in its local configuration. Restart Codex and open a local session.",
+  "@settings.remote.mcp.setupCodex": {
+    "description": "How to install the copied MCP configuration in Codex."
+  },
+  "settings.remote.mcp.setupVerify": "Type /mcp in your client to check the connection, then ask for your Orbit libraries. Use a local session on this computer. A hosted chat does not load this local server.",
+  "@settings.remote.mcp.setupVerify": {
+    "description": "How to check that a configured MCP client can connect."
+  },
+  "settings.remote.mcp.copyCommand": "Copy install command",
+  "@settings.remote.mcp.copyCommand": {
+    "description": "Button that copies one PowerShell command for registering Orbit in an MCP client."
+  },
+  "settings.remote.mcp.passwordPrompt": "Orbit MCP password",
+  "@settings.remote.mcp.passwordPrompt": {
+    "description": "Prompt in the copied PowerShell commands asking for the Orbit MCP password."
+  },
   "settings.remote.proPresenter.title": "ProPresenter Remote",
   "@settings.remote.proPresenter.title": {
     "description": "User-facing title text in the settings interface."

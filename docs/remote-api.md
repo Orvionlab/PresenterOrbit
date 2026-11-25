@@ -31,27 +31,36 @@ opt-in. A tool whose permission is switched off returns an access error.
 
 ### Codex
 
-Add this to your user-level `~/.codex/config.toml` and replace the example
-path with your Presenter Orbit executable:
-
-```toml
-[mcp_servers.presenter_orbit]
-command = 'C:\Path\To\orbit-app.exe'
-args = ["--mcp"]
-env_vars = ["PRESENTER_ORBIT_MCP_PASSWORD"]
-```
-
-Start Codex from PowerShell with the password in its environment. PowerShell
-asks for it without echoing the characters:
+Under **Settings → Local MCP**, copy the Codex install command and run it once
+in PowerShell 7. The command includes the current Orbit executable path and
+MCP port. For example:
 
 ```powershell
-$env:PRESENTER_ORBIT_MCP_PASSWORD = Read-Host -MaskInput 'MCP password'
-codex
+codex mcp add presenter_orbit --env ("PRESENTER_ORBIT_MCP_PASSWORD=" + (Read-Host -MaskInput 'Orbit MCP password')) --env 'PRESENTER_ORBIT_MCP_PORT=49324' -- 'C:\Path\To\orbit-app.exe' --mcp
 ```
 
-For a custom port, add `PRESENTER_ORBIT_MCP_PORT` to `env_vars` and set it
-in PowerShell before starting Codex. In the Codex terminal interface, use
-`/mcp` to check that `presenter_orbit` is connected.
+PowerShell masks the password as you enter it. Codex stores the value in its
+local configuration. Keep Orbit open, restart Codex, and open a local session
+on that computer. Use `/mcp` to check for `presenter_orbit`, then ask for your
+Orbit libraries. A hosted ChatGPT web session does not read this local
+configuration.
+
+A development build also works. Use its `target/debug/orbit-app` executable
+(`orbit-app.exe` on Windows) and enable Local MCP in that running build. Turn
+on **Create presentations** if you want Codex to save a presentation.
+
+### Claude Code
+
+Under **Settings → Local MCP**, copy the Claude Code install command and run
+it once in PowerShell 7. For example:
+
+```powershell
+claude mcp add --transport stdio --scope user presenter_orbit --env ("PRESENTER_ORBIT_MCP_PASSWORD=" + (Read-Host -MaskInput 'Orbit MCP password')) 'PRESENTER_ORBIT_MCP_PORT=49324' -- 'C:\Path\To\orbit-app.exe' --mcp
+```
+
+Claude Code saves the password in your user configuration and makes the
+server available across projects. Keep Orbit open, start a new Claude Code
+session, and use `/mcp` to check the connection.
 
 ### Available tools
 

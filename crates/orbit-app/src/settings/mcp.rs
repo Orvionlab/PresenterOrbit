@@ -1,4 +1,5 @@
-use gpui::{AnyElement, Context, IntoElement, ParentElement, Window};
+use gpui::{AnyElement, ClipboardItem, Context, IntoElement, ParentElement, Window};
+use orbit_ui::controls::{ActionButton, ButtonVariant};
 use orbit_ui::Translator;
 use serde_json::json;
 
@@ -50,8 +51,18 @@ impl SettingsView {
             .child(rows::group(
                 [
                     toggle("mcp-enabled", "settings.remote.mcp.enabled", "mcpEnabled"),
-                    rows::setting_row(t.t("settings.remote.password"), None, password, cx),
-                    rows::setting_row(t.t("settings.remote.port"), None, port, cx),
+                    rows::setting_field_row(
+                        "mcp-password-field",
+                        t.t("settings.remote.password"),
+                        password,
+                        cx,
+                    ),
+                    rows::setting_field_row(
+                        "mcp-port-field",
+                        t.t("settings.remote.port"),
+                        port,
+                        cx,
+                    ),
                 ],
                 cx,
             ))
@@ -76,6 +87,55 @@ impl SettingsView {
                 ],
                 cx,
             ))
+            .child(mcp_setup(&t, &remote["mcpPort"].to_string(), cx))
             .into_any_element()
     }
+}
+
+fn mcp_setup(t: &Translator, port: &str, cx: &gpui::App) -> gpui::Div {
+    let executable = std::env::current_exe().ok();
+    let path = executable
+        .as_ref()
+        .and_then(|path| path.to_str())
+        .unwrap_or("path/to/orbit-app");
+    let prompt = t
+        .t("settings.remote.mcp.passwordPrompt")
+        .replace('\'', "''");
+    let password =
+        format!("(\"PRESENTER_ORBIT_MCP_PASSWORD=\" + (Read-Host -MaskInput '{prompt}'))");
+    let port = format!("'PRESENTER_ORBIT_MCP_PORT={port}'");
+    let launch = format!("-- '{}' --mcp", path.replace('\'', "''"));
+    let codex = format!("codex mcp add presenter_orbit --env {password} --env {port} {launch}");
+    let claude = format!(
+        "claude mcp add --transport stdio --scope user presenter_orbit --env {password} {port} {launch}"
+    );
+    let copy = |id, value: String| {
+        ActionButton::new(id, t.t("settings.remote.mcp.copyCommand"))
+            .variant(ButtonVariant::Secondary)
+            .compact()
+            .on_click(move |_, _, cx| {
+                cx.write_to_clipboard(ClipboardItem::new_string(value.clone()))
+            })
+    };
+    ui::stack(cx)
+        .child(ui::subheading(t.t("settings.remote.mcp.setup"), cx))
+        .child(ui::muted(t.t("settings.remote.mcp.setupIntro"), cx))
+        .child(rows::group(
+            [
+                rows::setting_row(
+                    "Claude Code",
+                    Some(t.t("settings.remote.mcp.setupClaude").into()),
+                    copy("mcp-copy-claude", claude),
+                    cx,
+                ),
+                rows::setting_row(
+                    "Codex",
+                    Some(t.t("settings.remote.mcp.setupCodex").into()),
+                    copy("mcp-copy-codex", codex),
+                    cx,
+                ),
+            ],
+            cx,
+        ))
+        .child(ui::muted(t.t("settings.remote.mcp.setupVerify"), cx))
 }

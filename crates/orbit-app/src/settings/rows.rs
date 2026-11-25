@@ -83,6 +83,25 @@ pub fn setting_row(
         .into_any_element()
 }
 
+pub fn setting_field_row(
+    id: &'static str,
+    label: impl Into<SharedString>,
+    control: impl IntoElement,
+    cx: &App,
+) -> AnyElement {
+    row_frame(cx)
+        .child(label_block(label.into(), None, cx))
+        .child(
+            div()
+                .id(id)
+                .debug_selector(move || id.into())
+                .w(gpui::relative(0.5))
+                .flex_none()
+                .child(control),
+        )
+        .into_any_element()
+}
+
 /// `SettingToggle`.
 pub fn toggle_row(
     id: impl Into<SharedString>,
