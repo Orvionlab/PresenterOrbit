@@ -23,7 +23,7 @@ use tungstenite::{
     Message, WebSocket,
 };
 
-use super::{current_status, execute_command, EventHub, SharedState};
+use super::{current_status, execute_command, CommandOutcome, EventHub, SharedState};
 use crate::Host;
 
 #[path = "remote_pro7_data.rs"]
@@ -83,11 +83,12 @@ pub(super) struct AppBackend {
     pub app: Host,
     pub shared: Arc<Mutex<SharedState>>,
     pub hub: Arc<EventHub>,
+    pub mcp_only: bool,
 }
 
 impl Backend for AppBackend {
     fn serve_http(&self, stream: TcpStream) {
-        super::handle_connection(stream, &self.app, &self.shared, &self.hub);
+        super::handle_connection(stream, &self.app, &self.shared, &self.hub, self.mcp_only);
     }
     fn asset_image(&self, kind: &str, source_id: &str) -> Result<Vec<u8>, String> {
         let state = self.app.state::<crate::AppState>();
@@ -143,12 +144,14 @@ impl Backend for AppBackend {
     }
 
     fn command(&self, command: &Value) -> Result<Value, String> {
-        let (status, body) = execute_command(&self.app, &self.shared, &command.to_string());
-        if matches!(status, 200 | 202) && body.get("ok") != Some(&json!(false)) {
+        let (outcome, body) = execute_command(&self.app, &self.shared, command.clone());
+        if matches!(outcome, CommandOutcome::Applied | CommandOutcome::Queued)
+            && body.get("ok") != Some(&json!(false))
+        {
             Ok(body)
         } else {
             Err(body.get("error").and_then(Value::as_str).map_or_else(
-                || format!("The command failed with status {status}."),
+                || format!("The command failed with status {}.", outcome.http_status()),
                 str::to_string,
             ))
         }
@@ -262,19 +265,13 @@ impl Default for Pro7Settings {
     }
 }
 
-impl Pro7Settings {
-    pub(super) fn runnable(&self) -> bool {
-        self.enabled
-    }
-}
-
 struct Credentials {
     remote: String,
     stage: String,
 }
 
 /// Compares without stopping at the first difference.
-fn password_matches(supplied: &str, expected: &str) -> bool {
+pub(super) fn password_matches(supplied: &str, expected: &str) -> bool {
     supplied.len() == expected.len()
         && supplied
             .bytes()
@@ -410,22 +407,21 @@ impl Pro7Server {
         backend: Arc<dyn Backend>,
         settings: &Pro7Settings,
     ) -> Result<(), String> {
-        let listener = TcpListener::bind(("0.0.0.0", settings.port)).map_err(|error| {
-            format!("ProPresenter compatibility server could not start: {error}")
-        })?;
+        let listener = TcpListener::bind(("0.0.0.0", settings.port))
+            .map_err(|error| format!("Orbit network listener could not start: {error}"))?;
         let credentials = Credentials {
-            remote: if settings.remote_enabled {
+            remote: if settings.enabled && settings.remote_enabled {
                 settings.remote_password.clone()
             } else {
                 String::new()
             },
-            stage: if settings.stage_enabled {
+            stage: if settings.enabled && settings.stage_enabled {
                 settings.stage_password.clone()
             } else {
                 String::new()
             },
         };
-        let discovery = if settings.remote_enabled && !settings.remote_password.is_empty() {
+        let discovery = if !credentials.remote.is_empty() {
             Some(modern_discovery::Discovery::start(
                 settings.port,
                 &settings.network_name,
@@ -436,6 +432,24 @@ impl Pro7Server {
         self.serve(listener, backend, credentials)?;
         self.discovery = discovery;
         Ok(())
+    }
+
+    pub(super) fn start_local_mcp(
+        &mut self,
+        backend: Arc<dyn Backend>,
+        port: u16,
+    ) -> Result<(), String> {
+        let listener = TcpListener::bind(("127.0.0.1", port)).map_err(|error| {
+            format!("Local MCP listener could not start on port {port}: {error}")
+        })?;
+        self.serve(
+            listener,
+            backend,
+            Credentials {
+                remote: String::new(),
+                stage: String::new(),
+            },
+        )
     }
 
     fn serve(

@@ -1,4 +1,5 @@
 //! Operator workflows through the real UI, host, workspace files, and output process on GPUI's test platform.
+mod mcp;
 mod output_freeze;
 mod playlist_menu;
 mod stage_import;

@@ -22,6 +22,7 @@ mod keys;
 mod layout;
 mod locked;
 mod main_window;
+mod mcp;
 mod media;
 mod native_outputs;
 mod native_window;
@@ -234,6 +235,13 @@ fn sample_content_root(executable: &std::path::Path) -> Result<PathBuf, String> 
 }
 
 fn main() {
+    if std::env::args().nth(1).as_deref() == Some("--mcp") {
+        if let Err(error) = mcp::run() {
+            eprintln!("{error}");
+            std::process::exit(1);
+        }
+        return;
+    }
     orbit_host::initialize_sample_content(
         std::env::current_exe()
             .map_err(|error| error.to_string())

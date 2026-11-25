@@ -3395,6 +3395,9 @@ fn create_presentation_document(
         "presentationThemeId",
         "size",
         "slideContents",
+        "slideNotes",
+        "arrangement",
+        "destination",
         "ccli",
     ];
     if let Some(key) = mutation.keys().find(|key| !allowed.contains(&key.as_str())) {
@@ -3510,6 +3513,18 @@ fn create_presentation_document(
         .enumerate()
         .map(|(index, content)| json!({ "id": format!("slide-{}", index + 1), "content": content }))
         .collect();
+    if let Some(value) = mutation.get("slideNotes") {
+        let notes = value
+            .as_array()
+            .filter(|notes| notes.len() == slides.len())
+            .ok_or("Slide notes must match the presentation slide count.")?;
+        for (slide, note) in slides.iter_mut().zip(notes) {
+            if !note.is_null() {
+                let note = note.as_str().ok_or("Slide notes must be text or null.")?;
+                slide["notes"] = json!(note);
+            }
+        }
+    }
     for slide in &mut slides {
         content_themes::assign(document, slide, &theme_assignment)?;
     }
@@ -3527,6 +3542,39 @@ fn create_presentation_document(
     if let Some(size) = mutation.get("size") {
         crate::presentation_settings::patch(&mut item, "size", size)?;
     }
+    if let Some(destination) = mutation.get("destination") {
+        set_presentation_destination(&mut item, destination)?;
+    }
+    let created_arrangement_id = if let Some(arrangement) = mutation.get("arrangement") {
+        let arrangement = arrangement
+            .as_object()
+            .filter(|object| object.len() == 2)
+            .ok_or("Arrangement requires a name and slideOrder.")?;
+        let name = required_mutation_string(arrangement, "name", "Arrangement name is required.")?;
+        let sections = presentation_section_ids(&item);
+        let order = arrangement
+            .get("slideOrder")
+            .and_then(Value::as_array)
+            .filter(|order| !order.is_empty())
+            .ok_or("Arrangement slideOrder must be nonempty.")?;
+        let section_ids = order
+            .iter()
+            .map(|index| {
+                index
+                    .as_u64()
+                    .and_then(|index| index.checked_sub(1))
+                    .and_then(|index| usize::try_from(index).ok())
+                    .and_then(|index| sections.get(index))
+                    .ok_or("Arrangement slide numbers must refer to slides in the presentation.")
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let id = Uuid::new_v4().to_string();
+        item["arrangements"] = json!([{"id":id,"name":name,"sectionIds":section_ids}]);
+        item["selectedArrangementId"] = json!(id);
+        Some(id)
+    } else {
+        None
+    };
     if let Some(ccli) = mutation.get("ccli") {
         for (field, value) in ccli.as_object().ok_or("CCLI metadata must be an object.")? {
             if !matches!(
@@ -3566,7 +3614,11 @@ fn create_presentation_document(
             "items",
         )?;
         let entry_id = unique_presentation_entry_id(&item_id, &entries);
-        entries.push(json!({ "id": entry_id, "type": "presentation", "itemId": &item_id }));
+        let mut entry = json!({ "id": entry_id, "type": "presentation", "itemId": &item_id });
+        if let Some(id) = &created_arrangement_id {
+            entry["arrangementId"] = json!(id);
+        }
+        entries.push(entry);
         let item_ids = entries
             .iter()
             .filter(|entry| entry.get("type").and_then(Value::as_str) == Some("presentation"))
@@ -3608,7 +3660,7 @@ fn create_presentation_document(
         created_playlist_id,
         created_slide_id: None,
         selected_slide_id: None,
-        created_arrangement_id: None,
+        created_arrangement_id,
         copied_arrangement_id: None,
         deleted_library_ids: Vec::new(),
         deleted_item_ids: Vec::new(),
@@ -3628,6 +3680,22 @@ fn optional_trimmed_mutation_string(
         }
         Some(_) => Err(format!("Presentation creation {key} must be a string.")),
     }
+}
+
+fn set_presentation_destination(item: &mut Value, destination: &Value) -> Result<(), String> {
+    let item = item
+        .as_object_mut()
+        .ok_or("Presentation item must be an object.")?;
+    match destination.as_str() {
+        Some("announcements") => {
+            item.insert("destination".to_string(), json!("announcements"));
+        }
+        Some("presentation") => {
+            item.remove("destination");
+        }
+        _ => return Err("Presentation destination must be presentation or announcements.".into()),
+    }
+    Ok(())
 }
 
 pub fn split_presentation_text(
@@ -4047,22 +4115,7 @@ fn mutate_presentation_item(
             }
         }
         "setDestination" => {
-            let item = next_item
-                .as_object_mut()
-                .ok_or_else(|| "Presentation item must be an object.".to_string())?;
-            match operation.get("destination").and_then(Value::as_str) {
-                Some("announcements") => {
-                    item.insert("destination".to_string(), json!("announcements"));
-                }
-                Some("presentation") => {
-                    item.remove("destination");
-                }
-                _ => {
-                    return Err(
-                        "Presentation destination must be presentation or announcements.".into(),
-                    )
-                }
-            }
+            set_presentation_destination(&mut next_item, &operation["destination"])?;
         }
         "setOperatorNotes" => {
             let operator_notes = mutation_string(

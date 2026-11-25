@@ -316,6 +316,27 @@ impl Runtime {
         });
     }
 
+    pub fn accept_created_presentation(&self, payload: &Value, cx: &mut App) {
+        let runtime = self.clone();
+        let response = payload.clone();
+        cx.spawn(async move |cx| {
+            let Ok(accepted) = parse_response(cx, response).await else {
+                return;
+            };
+            let path = &accepted.snapshot.workspace_path;
+            let revisions = runtime.lanes.revisions();
+            if runtime.current_path(cx) == *path
+                && accepted.response["revision"]
+                    .as_u64()
+                    .is_some_and(|revision| revision >= revisions.workspace(path))
+            {
+                revisions.remember_workspace(path, &accepted.response);
+                runtime.apply_canonical(cx, accepted.snapshot);
+            }
+        })
+        .detach();
+    }
+
     fn set_status(&self, cx: &AsyncApp, key: &str, values: &[(&str, &str)]) {
         cx.update(|cx| {
             let message = Self::translator(cx).format(key, values);
@@ -372,7 +393,12 @@ impl Runtime {
                             .update(cx, |content, _| content.finish_content_preview(id))
                     });
                 }
-                self.apply_canonical(cx, accepted.snapshot);
+                if accepted.response["revision"]
+                    .as_u64()
+                    .is_none_or(|revision| revision >= self.lanes.revisions().workspace(&path))
+                {
+                    self.apply_canonical(cx, accepted.snapshot);
+                }
                 Some(accepted.response)
             }
             Err(error) => {

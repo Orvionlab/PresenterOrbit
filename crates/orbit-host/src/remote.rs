@@ -23,6 +23,8 @@ const CORS_HEADERS: &str = "Access-Control-Allow-Origin: *\r\nAccess-Control-All
 #[path = "remote_events.rs"]
 mod remote_events;
 use remote_events::EventHub;
+#[path = "remote_mcp.rs"]
+mod remote_mcp;
 #[path = "remote_pro7.rs"]
 mod remote_pro7;
 use remote_pro7::Pro7Settings;
@@ -40,6 +42,8 @@ struct HttpRequest {
     method: String,
     path: String,
     authorization: String,
+    host: String,
+    has_origin: bool,
     body: Vec<u8>,
 }
 
@@ -48,6 +52,8 @@ struct HttpRequestHead {
     method: String,
     path: String,
     authorization: String,
+    host: String,
+    has_origin: bool,
     content_length: usize,
 }
 
@@ -56,6 +62,7 @@ struct RemoteSettings {
     enabled: bool,
     port: u16,
     password: String,
+    mcp: remote_mcp::Settings,
     pro7: Pro7Settings,
     tcp_enabled: bool,
     tcp_port: u16,
@@ -67,6 +74,7 @@ impl Default for RemoteSettings {
             enabled: false,
             port: DEFAULT_PORT,
             password: String::new(),
+            mcp: remote_mcp::Settings::from_value(&Value::Null),
             pro7: Pro7Settings::default(),
             tcp_enabled: false,
             tcp_port: 49323,
@@ -153,13 +161,13 @@ fn uses_native_command_path(command: &str) -> bool {
     )
 }
 
-fn native_command_http_status(result: &Value) -> u16 {
+fn native_command_outcome(result: &Value) -> CommandOutcome {
     if result.get("ok").and_then(Value::as_bool) == Some(true) {
-        200
+        CommandOutcome::Applied
     } else if result.get("status").and_then(Value::as_str) == Some("invalid-target") {
-        400
+        CommandOutcome::Invalid
     } else {
-        503
+        CommandOutcome::Unavailable
     }
 }
 
@@ -167,6 +175,7 @@ pub struct RemoteServer {
     shared: Arc<Mutex<SharedState>>,
     hub: Arc<EventHub>,
     pro7: remote_pro7::Pro7Server,
+    mcp: remote_pro7::Pro7Server,
     tcp: remote_pro7::tcp::TcpServer,
 }
 
@@ -644,6 +653,7 @@ impl RemoteServer {
             })),
             hub: Arc::new(EventHub::new()),
             pro7: remote_pro7::Pro7Server::new(),
+            mcp: remote_pro7::Pro7Server::new(),
             tcp: remote_pro7::tcp::TcpServer::new(),
         }
     }
@@ -664,38 +674,66 @@ impl RemoteServer {
             .map_err(|_| "Remote server state is unavailable.".to_string())?
             .settings
             .clone();
-        if previous == next && (!next.enabled || self.pro7.is_running()) {
-            return Ok(remote_status(&next, None));
-        }
-
-        self.stop();
         self.shared
             .lock()
             .map_err(|_| "Remote server state is unavailable.")?
             .settings = next.clone();
-        if next.pro7.runnable() {
+        let backend = |mcp_only| {
+            Arc::new(remote_pro7::AppBackend {
+                app: app.clone(),
+                shared: Arc::clone(&self.shared),
+                hub: Arc::clone(&self.hub),
+                mcp_only,
+            }) as Arc<dyn remote_pro7::Backend>
+        };
+        let restart_network = previous.pro7 != next.pro7
+            || previous.tcp_enabled != next.tcp_enabled
+            || previous.tcp_port != next.tcp_port
+            || (next.enabled && !self.pro7.is_running());
+        let restart_mcp = previous.mcp.enabled != next.mcp.enabled
+            || previous.mcp.port != next.mcp.port
+            || (next.mcp.enabled && !self.mcp.is_running());
+        if restart_mcp {
+            self.mcp.stop();
+        }
+        if restart_network {
+            self.pro7.stop();
+            self.tcp.stop();
+            self.hub.stop_streams();
+        }
+        let network_result = if restart_network && next.enabled {
             if next.pro7.remote_enabled {
                 // Prepare thumbnail resources before the client starts requesting slides.
                 drop(crate::native_render::NativeRenderRuntime::new_static_preview());
             }
-            let backend: Arc<dyn remote_pro7::Backend> = Arc::new(remote_pro7::AppBackend {
-                app: app.clone(),
-                shared: Arc::clone(&self.shared),
-                hub: Arc::clone(&self.hub),
-            });
-            self.pro7.start(Arc::clone(&backend), &next.pro7)?;
-            if next.tcp_enabled {
-                if let Err(error) = self.tcp.start(backend, next.tcp_port) {
-                    self.stop();
-                    return Err(error);
-                }
-            }
-        }
+            let network = backend(false);
+            self.pro7
+                .start(Arc::clone(&network), &next.pro7)
+                .and_then(|()| {
+                    if next.tcp_enabled {
+                        if let Err(error) = self.tcp.start(network, next.tcp_port) {
+                            self.pro7.stop();
+                            return Err(error);
+                        }
+                    }
+                    Ok(())
+                })
+        } else {
+            Ok(())
+        };
+        let mcp_result = if restart_mcp && next.mcp.enabled {
+            self.mcp.start_local_mcp(backend(true), next.mcp.port)
+        } else {
+            Ok(())
+        };
+        network_result?;
+        mcp_result?;
         Ok(remote_status(&next, None))
     }
 
     pub fn stop(&mut self) {
         self.pro7.stop();
+        self.mcp.stop();
         self.tcp.stop();
         self.hub.stop_streams();
     }
@@ -746,6 +784,7 @@ fn normalize_settings(value: &Value) -> RemoteSettings {
             .and_then(Value::as_str)
             .unwrap_or_default()
             .to_string(),
+        mcp: remote_mcp::Settings::from_value(value),
         pro7: Pro7Settings {
             enabled: object
                 .and_then(|value| value.get("enabled"))
@@ -808,14 +847,37 @@ pub fn validate_settings_value(value: &Value) -> Result<(), String> {
             );
         }
     }
-    for field in ["port", "tcpPort"] {
+    for field in ["port", "tcpPort", "mcpPort"] {
         if object.contains_key(field) && port_setting(Some(object), field, 0) == 0 {
             return Err(format!("{field} must be a port between 1024 and 65535."));
         }
     }
+    for field in [
+        "mcpEnabled",
+        "mcpReadStatus",
+        "mcpReadCatalog",
+        "mcpCreatePresentations",
+    ] {
+        if object.get(field).is_some_and(|value| !value.is_boolean()) {
+            return Err(format!("{field} must be a boolean."));
+        }
+    }
+    if object
+        .get("mcpPassword")
+        .is_some_and(|value| !value.is_string())
+    {
+        return Err("MCP password must be text.".into());
+    }
     let settings = normalize_settings(value);
     if settings.enabled && settings.tcp_enabled && settings.port == settings.tcp_port {
         return Err("The network and TCP/IP ports must be different.".into());
+    }
+    if settings.enabled
+        && settings.mcp.enabled
+        && (settings.mcp.port == settings.port
+            || (settings.tcp_enabled && settings.mcp.port == settings.tcp_port))
+    {
+        return Err("The MCP port must differ from the enabled network ports.".into());
     }
     Ok(())
 }
@@ -826,6 +888,12 @@ pub fn normalize_settings_value(value: &Value) -> Value {
         "enabled": settings.enabled,
         "port": settings.port,
         "password": settings.password,
+        "mcpEnabled": settings.mcp.enabled,
+        "mcpPort": settings.mcp.port,
+        "mcpPassword": settings.mcp.password,
+        "mcpReadStatus": settings.mcp.read_status,
+        "mcpReadCatalog": settings.mcp.read_catalog,
+        "mcpCreatePresentations": settings.mcp.create_presentations,
         "networkName": settings.pro7.network_name,
         "proPresenterEnabled": settings.pro7.remote_enabled,
         "stageEnabled": settings.pro7.stage_enabled,
@@ -885,6 +953,8 @@ fn read_http_request<R: Read>(reader: &mut R) -> Result<HttpRequest, RequestRead
         method: head.method,
         path: head.path,
         authorization: head.authorization,
+        host: head.host,
+        has_origin: head.has_origin,
         body: buffer[header_end..total_length].to_vec(),
     })
 }
@@ -917,6 +987,8 @@ fn parse_request_head(head: &[u8]) -> Result<HttpRequestHead, RequestReadError> 
     }
 
     let mut authorization = String::new();
+    let mut host = String::new();
+    let mut has_origin = false;
     let mut content_length = None;
     for line in lines {
         let (name, value) = line.split_once(':').ok_or(RequestReadError::Malformed)?;
@@ -926,6 +998,10 @@ fn parse_request_head(head: &[u8]) -> Result<HttpRequestHead, RequestReadError> 
         let value = value.trim();
         if name.eq_ignore_ascii_case("authorization") {
             authorization = value.to_string();
+        } else if name.eq_ignore_ascii_case("host") {
+            host = value.to_string();
+        } else if name.eq_ignore_ascii_case("origin") {
+            has_origin = true;
         } else if name.eq_ignore_ascii_case("content-length") {
             if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
                 return Err(RequestReadError::Malformed);
@@ -947,6 +1023,8 @@ fn parse_request_head(head: &[u8]) -> Result<HttpRequestHead, RequestReadError> 
         method,
         path,
         authorization,
+        host,
+        has_origin,
         content_length: content_length.unwrap_or(0),
     })
 }
@@ -1024,11 +1102,33 @@ fn current_status(app: &Host, shared: &Arc<Mutex<SharedState>>) -> Value {
     )
 }
 
+fn command_result(app: &Host, shared: &Mutex<SharedState>, id: &str) -> Option<Value> {
+    let result = shared
+        .lock()
+        .ok()?
+        .commands
+        .iter()
+        .find(|entry| entry["requestId"].as_str() == Some(id))
+        .cloned()?;
+    let active = app
+        .state::<crate::AppState>()
+        .active_workspace
+        .lock()
+        .ok()
+        .and_then(|path| path.clone());
+    Some(resolve_command_result(
+        result,
+        active.as_ref().and_then(|path| path.to_str()),
+        Utc::now().timestamp_millis(),
+    ))
+}
+
 fn handle_connection(
     mut stream: TcpStream,
     app: &Host,
     shared: &Arc<Mutex<SharedState>>,
     hub: &Arc<EventHub>,
+    mcp_only: bool,
 ) {
     let _ = stream.set_read_timeout(Some(Duration::from_secs(3)));
     let _ = stream.set_write_timeout(Some(Duration::from_secs(3)));
@@ -1051,6 +1151,11 @@ fn handle_connection(
             return;
         }
     };
+    if mcp_only {
+        let (code, result) = remote_mcp::handle(app, shared, &request);
+        write_json_response(&mut stream, code, &result);
+        return;
+    }
     let enabled = shared.lock().is_ok_and(|state| {
         state.settings.enabled
             && state.settings.pro7.remote_enabled
@@ -1086,7 +1191,7 @@ fn handle_connection(
     if method == "POST" && path == "/api/v1/link/cue" {
         match crate::network_link::receive_and_apply(app, &request.body) {
             Ok(result) => {
-                let status = native_command_http_status(&result);
+                let status = native_command_outcome(&result).http_status();
                 write_json_response(&mut stream, status, &result);
             }
             Err(error) => write_json_response(
@@ -1109,25 +1214,7 @@ fn handle_connection(
     }
     if method == "GET" && path.starts_with("/api/v1/commands/") {
         let id = &path["/api/v1/commands/".len()..];
-        let result = shared.lock().ok().and_then(|state| {
-            state
-                .commands
-                .iter()
-                .find(|entry| entry["requestId"].as_str() == Some(id))
-                .cloned()
-        });
-        if let Some(result) = result {
-            let active = app
-                .state::<crate::AppState>()
-                .active_workspace
-                .lock()
-                .ok()
-                .and_then(|path| path.clone());
-            let result = resolve_command_result(
-                result,
-                active.as_ref().and_then(|path| path.to_str()),
-                Utc::now().timestamp_millis(),
-            );
+        if let Some(result) = command_result(app, shared, id) {
             write_json_response(&mut stream, 200, &result);
         } else {
             write_json_response(
@@ -1139,19 +1226,51 @@ fn handle_connection(
         return;
     }
     if method == "POST" && path == "/api/v1/command" {
-        let (status, result) = execute_command(app, shared, &body);
-        write_json_response(&mut stream, status, &result);
+        match serde_json::from_str(&body) {
+            Ok(payload) => {
+                let (outcome, result) = execute_command(app, shared, payload);
+                write_json_response(&mut stream, outcome.http_status(), &result);
+            }
+            Err(_) => write_json_response(
+                &mut stream,
+                400,
+                &json!({"ok":false,"error":"Invalid JSON."}),
+            ),
+        }
         return;
     }
     write_json_response(&mut stream, 404, &json!({ "error": "Not found." }));
 }
 
-/// Validates and runs one `POST /api/v1/command` body; returns the HTTP status and JSON body.
-fn execute_command(app: &Host, shared: &Arc<Mutex<SharedState>>, body: &str) -> (u16, Value) {
-    let mut payload = match parse_command(body) {
-        Ok(payload) => payload,
-        Err(error) => return (400, json!({ "ok": false, "error": error })),
-    };
+enum CommandOutcome {
+    Applied,
+    Queued,
+    Invalid,
+    Failed,
+    Unavailable,
+}
+
+impl CommandOutcome {
+    fn http_status(&self) -> u16 {
+        match self {
+            Self::Applied => 200,
+            Self::Queued => 202,
+            Self::Invalid => 400,
+            Self::Failed => 500,
+            Self::Unavailable => 503,
+        }
+    }
+}
+
+fn execute_command(
+    app: &Host,
+    shared: &Mutex<SharedState>,
+    mut payload: Value,
+) -> (CommandOutcome, Value) {
+    use CommandOutcome::*;
+    if let Err(error) = validate_command(&payload) {
+        return (Invalid, json!({ "ok": false, "error": error }));
+    }
     let command = payload["command"].as_str().expect("validated command");
     if matches!(
         command,
@@ -1161,13 +1280,13 @@ fn execute_command(app: &Host, shared: &Arc<Mutex<SharedState>>, body: &str) -> 
         let state = app.state::<crate::AppState>();
         let mut workspace_io = match crate::lock_workspace_io(&state) {
             Ok(guard) => guard,
-            Err(error) => return (500, json!({"ok":false,"error":error})),
+            Err(error) => return (Failed, json!({"ok":false,"error":error})),
         };
         if let Err(error) =
             crate::remote_controls::validate_workspace_command(&state, &mut workspace_io, &payload)
         {
             return (
-                400,
+                Invalid,
                 json!({"ok":false,"status":"invalid-target","error":error}),
             );
         }
@@ -1185,23 +1304,23 @@ fn execute_command(app: &Host, shared: &Arc<Mutex<SharedState>>, body: &str) -> 
             shared.commands.push_back(result.clone());
         } else {
             return (
-                503,
+                Unavailable,
                 json!({"ok":false,"error":"Remote state is unavailable."}),
             );
         }
         return if let Err(error) = app.emit_to("main", "remote-command", payload) {
             let report = json!({"requestId":request_id,"workspacePath":result["workspacePath"],"status":"error","error":error.to_string()});
             let _ = state.remote_status.report(&report);
-            (503, report)
+            (Unavailable, report)
         } else {
-            (202, result)
+            (Queued, result)
         };
     }
     if uses_native_command_path(command) {
         return match crate::execute_native_remote_command(app, command, &payload) {
-            Ok(result) => (native_command_http_status(&result), result),
+            Ok(result) => (native_command_outcome(&result), result),
             Err(error) => (
-                500,
+                Failed,
                 json!({
                     "ok": false,
                     "status": "error",
@@ -1212,8 +1331,11 @@ fn execute_command(app: &Host, shared: &Arc<Mutex<SharedState>>, body: &str) -> 
         };
     }
     match app.emit_to("main", "remote-command", payload) {
-        Ok(()) => (202, json!({ "ok": true, "status": "queued" })),
-        Err(error) => (503, json!({ "ok": false, "error": error.to_string() })),
+        Ok(()) => (Queued, json!({ "ok": true, "status": "queued" })),
+        Err(error) => (
+            Unavailable,
+            json!({ "ok": false, "error": error.to_string() }),
+        ),
     }
 }
 
@@ -1221,8 +1343,7 @@ fn authorized(authorization: &str, expected: &str) -> bool {
     authorization == expected
 }
 
-fn parse_command(body: &str) -> Result<Value, &'static str> {
-    let payload: Value = serde_json::from_str(body).map_err(|_| "Invalid JSON.")?;
+fn validate_command(payload: &Value) -> Result<(), &'static str> {
     let command = payload
         .get("command")
         .and_then(Value::as_str)
@@ -1244,10 +1365,10 @@ fn parse_command(body: &str) -> Result<Value, &'static str> {
         return Err("Unsupported remote command.");
     }
     if crate::remote_definitions::is_definition_command(command) {
-        crate::remote_definitions::validate_payload(&payload)?;
+        crate::remote_definitions::validate_payload(payload)?;
     }
     if command == "timelineTransport" {
-        crate::remote_timeline_commands::validate_payload(&payload)
+        crate::remote_timeline_commands::validate_payload(payload)
             .map_err(|_| "Invalid timeline transport command.")?;
     }
     if matches!(command, "cue" | "libraryCue" | "playlistCue") {
@@ -1459,7 +1580,7 @@ fn parse_command(body: &str) -> Result<Value, &'static str> {
             return Err("Unsupported prop action.");
         }
     }
-    Ok(payload)
+    Ok(())
 }
 
 fn write_json_response(stream: &mut TcpStream, status: u16, value: &Value) {
@@ -1475,10 +1596,13 @@ fn write_json_response(stream: &mut TcpStream, status: u16, value: &Value) {
 fn write_response(stream: &mut TcpStream, status: u16, body: &str, extra_headers: &str) {
     let status_text = match status {
         200 => "OK",
+        201 => "Created",
         202 => "Accepted",
         204 => "No Content",
         400 => "Bad Request",
         401 => "Unauthorized",
+        403 => "Forbidden",
+        405 => "Method Not Allowed",
         500 => "Internal Server Error",
         503 => "Service Unavailable",
         413 => "Payload Too Large",

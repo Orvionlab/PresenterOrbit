@@ -180,6 +180,7 @@ impl SettingsView {
             "appearance" => self.appearance_panel(window, cx),
             "audio" => self.audio_panel(window, cx),
             "remote" => self.remote_panel(window, cx),
+            "mcp" => self.mcp_panel(window, cx),
             "groups" => {
                 let groups = self.groups_panel(window, cx);
                 let clear = self.clear_groups_panel(window, cx);

@@ -24,6 +24,7 @@ mod general;
 mod groups;
 mod input_tab;
 mod inputs;
+mod mcp;
 mod media_settings;
 mod membership;
 mod network_link;
@@ -61,7 +62,7 @@ pub struct SharedRuntime(pub Runtime);
 impl Global for SharedRuntime {}
 
 /// `settingsPanels` of `SettingsDialog.tsx`, in its order: the ids a window request may name.
-pub const PANELS: [(&str, &str, &str); 14] = [
+pub const PANELS: [(&str, &str, &str); 15] = [
     ("general", "settings", "settings.nav.general"),
     ("appearance", "settings", "settings.nav.appearance"),
     ("import", "folder", "settings.nav.import"),
@@ -75,6 +76,7 @@ pub const PANELS: [(&str, &str, &str); 14] = [
     ("devices", "settings", "settings.nav.devices"),
     ("media", "video", "settings.nav.media"),
     ("remote", "settings", "settings.nav.remote"),
+    ("mcp", "settings", "settings.remote.mcp.title"),
     ("updates", "settings", "settings.nav.updates"),
 ];
 

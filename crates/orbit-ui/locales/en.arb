@@ -529,6 +529,30 @@
   "@settings.remote.help": {
     "description": "User-facing help text in the settings interface."
   },
+  "settings.remote.mcp.title": "Local MCP",
+  "@settings.remote.mcp.title": {
+    "description": "Label for the local Model Context Protocol settings and switch."
+  },
+  "settings.remote.mcp.enabled": "Enable local MCP",
+  "@settings.remote.mcp.enabled": {
+    "description": "Switch for the loopback-only MCP service."
+  },
+  "settings.remote.mcp.permissions": "Permissions",
+  "@settings.remote.mcp.permissions": {
+    "description": "Heading for the capabilities an MCP client may use."
+  },
+  "settings.remote.mcp.readStatus": "Read live status",
+  "@settings.remote.mcp.readStatus": {
+    "description": "Allow MCP clients to read the live presentation and output state."
+  },
+  "settings.remote.mcp.readCatalog": "Read libraries, playlists, and themes",
+  "@settings.remote.mcp.readCatalog": {
+    "description": "Allow MCP clients to list libraries, playlist entries, and available theme layouts."
+  },
+  "settings.remote.mcp.createPresentations": "Create presentations",
+  "@settings.remote.mcp.createPresentations": {
+    "description": "Allow MCP clients to save new presentations and append them to an existing playlist."
+  },
   "settings.remote.proPresenter.title": "ProPresenter Remote",
   "@settings.remote.proPresenter.title": {
     "description": "User-facing title text in the settings interface."

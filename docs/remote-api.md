@@ -1,6 +1,6 @@
 # Orbit HTTP API v1
 
-Enable Network and ProPresenter Remote in app settings, and set the network port and Remote password. The default network port is 49321 and is shared by the browser/HTTP API, current ProPresenter Remote and Stage App. Every HTTP status and command request requires HTTP Basic authentication with username `presenter-orbit` and the Remote password. Disabling Network closes all listeners and mobile/TCP sessions and suspends Network Link delivery without erasing its configuration. Remote and Stage App can be switched independently. The services use the local network; use a trusted network. This HTTP API is an Orbit API; the separate [ProPresenter Remote and Stage Display WebSocket](#propresenter-remote-and-stage-display-websocket) paths support the current mobile clients.
+Enable Network and ProPresenter Remote in app settings, and set the network port and Remote password. The default network port is 49321 and is shared by the browser/HTTP API, current ProPresenter Remote and Stage App. Every Remote HTTP status and command request requires HTTP Basic authentication with username `presenter-orbit` and the Remote password. Disabling Network closes LAN access and mobile/TCP sessions and suspends Network Link delivery without erasing its configuration. Remote and Stage App can be switched independently. The services use the local network; use a trusted network. This HTTP API is an Orbit API; the separate [ProPresenter Remote and Stage Display WebSocket](#propresenter-remote-and-stage-display-websocket) paths support the current mobile clients.
 
 The native server handles one request per TCP connection and explicitly returns
 `Connection: close`. Clients must open another connection for subsequent
@@ -10,6 +10,74 @@ target selection, live feedback and queued-command completion.
 
 The separate [Stream Deck plugin](../integrations/streamdeck-orbit/README.md)
 offers direct keypad controls and live key feedback without Companion.
+
+## Local MCP
+
+In Presenter Orbit, open **Settings → Local MCP**, enable the service, and set
+its password. The MCP port defaults to 49324 and works independently of Network
+and ProPresenter Remote. Keep Presenter Orbit running while using MCP.
+
+In your local MCP client, use the full path to the Presenter Orbit executable
+as the command and give it the single argument `--mcp`. Set
+`PRESENTER_ORBIT_MCP_PASSWORD` to the MCP password in the server process
+environment. Set `PRESENTER_ORBIT_MCP_PORT` if Orbit uses a port other than
+49324. The client communicates with the process over stdio. The process reads
+Orbit's password-protected MCP endpoints on `127.0.0.1`.
+
+The **Read live status**, **Read libraries, playlists, and themes**, and
+**Create presentations** switches apply to all MCP clients using the password.
+The read permissions are selected by default. Creation requires an explicit
+opt-in. A tool whose permission is switched off returns an access error.
+
+### Codex
+
+Add this to your user-level `~/.codex/config.toml` and replace the example
+path with your Presenter Orbit executable:
+
+```toml
+[mcp_servers.presenter_orbit]
+command = 'C:\Path\To\orbit-app.exe'
+args = ["--mcp"]
+env_vars = ["PRESENTER_ORBIT_MCP_PASSWORD"]
+```
+
+Start Codex from PowerShell with the password in its environment. PowerShell
+asks for it without echoing the characters:
+
+```powershell
+$env:PRESENTER_ORBIT_MCP_PASSWORD = Read-Host -MaskInput 'MCP password'
+codex
+```
+
+For a custom port, add `PRESENTER_ORBIT_MCP_PORT` to `env_vars` and set it
+in PowerShell before starting Codex. In the Codex terminal interface, use
+`/mcp` to check that `presenter_orbit` is connected.
+
+### Available tools
+
+| MCP tool | Result |
+| --- | --- |
+| `get_live_status` | Live presentation, current slide, outputs and layers |
+| `list_libraries` | Library and presentation titles and IDs |
+| `list_playlists` | Playlist titles and IDs, folder relationships, and ordered entries |
+| `list_themes` | Themes and layout IDs |
+| `create_presentation` | The ID and title of a saved presentation |
+
+The read tools take no arguments. To create a presentation, use the
+`workspaceId` from the library or theme catalog, choose `libraryId` and
+`themeLayoutId`, and supply a title, width, height, and a `slides` array with
+one `text` value per slide. Dimensions are whole pixels from 1 to 16384.
+
+Optional fields include `notes` on each slide, `operatorNotes` for the whole
+presentation, and `layer` with `slides` (default) or `announcements`.
+`playlistId` appends the presentation to the end of an existing playlist.
+To save a named arrangement, supply `arrangement` with a `name` and a
+one-based `slideOrder` such as `[2, 1, 2]`. The arrangement becomes the
+selected order and is assigned to the new playlist entry when requested.
+Orbit validates the options together before saving and keeps the current
+output selection.
+
+## HTTP status and commands
 
 `GET /api/v1/status` returns the accepted native output state. Existing presentation, slide, output, layer, background and audio fields remain available. `timers` and `props` contain available definitions, `timerRuns` contains timer run state, and `livePropIds` identifies active props. Timer run values use milliseconds: `end` is the epoch anchor, `paused` identifies a stopped run, `remaining` is its anchor value, and elapsed runs include `elapsed: true`. Running values evolve from the anchor; status does not poll a new run value every second.
 
