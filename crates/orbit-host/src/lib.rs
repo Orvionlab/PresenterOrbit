@@ -9108,7 +9108,12 @@ fn tick_timeline_soundtrack(app: &Host, state: &AppState) {
     }
 }
 
-fn update_video_thumbnail(state: &AppState, method: &str, args: &[Value]) -> Result<Value, String> {
+fn update_video_thumbnail(
+    state: &AppState,
+    method: &str,
+    args: &[Value],
+    preview: Option<(&Value, &native_compositor::NativeFrame)>,
+) -> Result<Value, String> {
     let path_argument = argument(args, 0)?
         .as_str()
         .ok_or("Workspace path is required.")?
@@ -9135,9 +9140,23 @@ fn update_video_thumbnail(state: &AppState, method: &str, args: &[Value]) -> Res
     };
     let frame = if reset {
         None
+    } else if let Some((asset, preview)) = preview {
+        if asset["id"] != media_id || media_thumbnail::asset_path(&path, asset)? != source {
+            return Err("The preview source changed before the thumbnail could be saved.".into());
+        }
+        if !seconds.is_finite()
+            || seconds < 0.
+            || preview.dynamic_media
+            || (preview.width, preview.height) != (480, 270)
+            || preview.pixels.len() != 480 * 270 * 4
+        {
+            return Err(
+                "Inspector thumbnail requires a complete preview frame and a valid time.".into(),
+            );
+        }
+        Some(preview.encode_png()?)
     } else {
-        let extract_source = source.clone();
-        Some(media_thumbnail::extract(&extract_source, seconds)?)
+        Some(media_thumbnail::extract(&source, seconds)?)
     };
     let mut workspace_io = lock_workspace_io(state)?;
     if active_workspace(state, json!(path_argument))? != path {

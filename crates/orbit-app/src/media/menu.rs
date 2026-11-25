@@ -158,6 +158,7 @@ impl MediaBin {
                 .on_click(move |_, _, cx| {
                     let _ = weak.update(cx, |this, cx| {
                         this.menu_position = None;
+                        this.inspector_tab = 0;
                         this.inspector_open = true;
                         cx.notify();
                     });

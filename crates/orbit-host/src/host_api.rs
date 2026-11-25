@@ -54,19 +54,13 @@ impl Host {
     pub fn render_media_asset_preview(
         &self,
         workspace: &str,
-        media_id: &str,
+        mut item: Value,
         seconds: f64,
     ) -> Result<native_compositor::NativeFrame, String> {
         if !seconds.is_finite() || seconds < 0. {
             return Err("Preview position must be finite and non-negative.".into());
         }
         let path = active_workspace(self.state::<AppState>(), json!(workspace))?;
-        let workspace = crate::workspace::read_workspace(&path)?;
-        let mut item = workspace["media"]
-            .as_array()
-            .and_then(|items| items.iter().find(|item| item["id"] == media_id))
-            .cloned()
-            .ok_or("Media asset was not found.")?;
         let source = media_thumbnail::asset_path(&path, &item)?;
         item["sourcePath"] = json!(source);
         let video = item["type"] == "video";
@@ -91,6 +85,21 @@ impl Host {
             }
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
+    }
+
+    /// Persist the inspector's already rendered frame through the ordinary thumbnail transaction.
+    pub fn save_inspector_thumbnail(
+        &self,
+        args: &[Value],
+        asset: &Value,
+        frame: &native_compositor::NativeFrame,
+    ) -> Result<Value, String> {
+        update_video_thumbnail(
+            self.state::<AppState>(),
+            "setVideoThumbnail",
+            args,
+            Some((asset, frame)),
+        )
     }
 
     /// Serialize native operator edits against cues, automation, and workspace switches.
@@ -323,7 +332,7 @@ impl Host {
         } else if method == "installAppUpdate" {
             self.updater().install(self)
         } else if method == "setVideoThumbnail" || method == "resetVideoThumbnail" {
-            update_video_thumbnail(state, method, &args)
+            update_video_thumbnail(state, method, &args, None)
         } else if method == "renderMediaEffectPreview" {
             let path = active_workspace(state, argument(&args, 0)?.clone())?;
             let media_id = argument(&args, 1)?

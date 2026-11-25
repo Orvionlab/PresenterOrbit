@@ -145,6 +145,8 @@ pub struct TransitionDefaults {
     pub item_id: Option<String>,
     pub slide_id: Option<String>,
     prop_id: Option<String>,
+    media_id: Option<String>,
+    media_value: Value,
     pub inspector: bool,
     pub preview: Option<Value>,
     preview_workspace: Option<String>,
@@ -214,6 +216,8 @@ impl TransitionDefaults {
             item_id: None,
             slide_id: None,
             prop_id: None,
+            media_id: None,
+            media_value: Value::Null,
             inspector: false,
             preview: None,
             preview_workspace: None,
@@ -227,6 +231,33 @@ impl TransitionDefaults {
         }
     }
 
+    pub fn for_media(
+        runtime: Runtime,
+        id: String,
+        on_change: InspectorChange,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let mut picker = Self::new(Kind::Media, runtime, cx);
+        picker.media_id = Some(id);
+        picker.on_change = Some(on_change);
+        picker
+    }
+
+    pub fn is_for_media(&self, id: &str) -> bool {
+        self.media_id.as_deref() == Some(id)
+    }
+
+    pub fn sync_media(&mut self, value: &str, cx: &mut Context<Self>) {
+        let next = orbit_host::native_transitions::media_transition(value)
+            .ok()
+            .flatten()
+            .unwrap_or(Value::Null);
+        if self.media_value != next {
+            self.media_value = next;
+            cx.notify();
+        }
+    }
+
     /// The transition being edited: the presentation's own (`Null` is the global default) or the default of this kind.
     fn transition(&self, cx: &App) -> Value {
         if let Some(preview) = self.preview.as_ref().filter(|_| {
@@ -235,6 +266,9 @@ impl TransitionDefaults {
                 .is_none_or(|path| *path == self.runtime.content.read(cx).workspace_path)
         }) {
             return preview.clone();
+        }
+        if self.media_id.is_some() {
+            return self.media_value.clone();
         }
         if let Some(id) = &self.prop_id {
             return self.runtime.content.read(cx).workspace["props"]
@@ -266,7 +300,11 @@ impl TransitionDefaults {
     /// (`Null` removes it).
     pub fn save(&mut self, transition: Value, cx: &mut Context<Self>) {
         if let Some(on_change) = self.on_change.clone() {
-            self.preview = self.prop_id.is_none().then(|| transition.clone());
+            self.preview =
+                (self.prop_id.is_none() && self.media_id.is_none()).then(|| transition.clone());
+            if self.media_id.is_some() {
+                self.media_value = transition.clone();
+            }
             on_change(transition, cx);
             cx.notify();
             return;
@@ -329,7 +367,7 @@ impl TransitionDefaults {
     }
 
     fn has_override(&self) -> bool {
-        self.item_id.is_some() || self.prop_id.is_some()
+        self.item_id.is_some() || self.prop_id.is_some() || self.media_id.is_some()
     }
 
     fn save_patch(&mut self, patch: Value, cx: &mut Context<Self>) {
@@ -404,6 +442,33 @@ impl Render for TransitionDefaults {
                 self.duration
                     .update(cx, |slider, cx| slider.set_value(stored as f32, window, cx));
             }
+        }
+        if self.media_id.is_some() {
+            let effect = transition["effectId"].as_str().unwrap_or_default();
+            let label = if transition.is_null() {
+                t.t("transition.presentation.defaultShort")
+            } else if active == Mode::Cut {
+                t.t("transition.default.cut")
+            } else {
+                self.effects
+                    .iter()
+                    .find(|known| known.id.eq_ignore_ascii_case(effect))
+                    .map_or_else(|| effect.to_owned(), |effect| effect.name.to_string())
+            };
+            let button = ActionButton::new("media-inspector-transition", label)
+                .compact()
+                .variant(ButtonVariant::Soft)
+                .on_click(cx.listener(|this, _, window, cx| this.toggle_picker(window, cx)));
+            let owner = cx.weak_entity();
+            let mut popover = Popover::new("media-inspector-transition-picker", button).on_dismiss(
+                move |_, _, cx| {
+                    let _ = owner.update(cx, |this, cx| this.close_picker(cx));
+                },
+            );
+            if self.picker.open {
+                popover = popover.content(self.picker_panel(active, window, cx));
+            }
+            return div().child(popover).into_any_element();
         }
         let id = match (&self.item_id, self.kind) {
             (Some(_), _) => "item",

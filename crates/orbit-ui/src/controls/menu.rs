@@ -87,6 +87,10 @@ pub enum MenuEntry {
         disabled: bool,
         entries: Vec<MenuEntry>,
     },
+    SelectableSubmenu {
+        item: MenuItem,
+        entries: Vec<MenuEntry>,
+    },
     Separator,
 }
 
@@ -363,11 +367,23 @@ fn render_entries(
                         .child(body)
                         .into_any_element()
                 }
-                MenuEntry::Submenu {
-                    label,
-                    disabled,
-                    entries,
-                } => {
+                entry @ (MenuEntry::Submenu { .. } | MenuEntry::SelectableSubmenu { .. }) => {
+                    let (item, entries) = match entry {
+                        MenuEntry::Submenu {
+                            label,
+                            disabled,
+                            entries,
+                        } => (MenuItem::new(label).disabled(disabled), entries),
+                        MenuEntry::SelectableSubmenu { item, entries } => (item, entries),
+                        _ => unreachable!(),
+                    };
+                    let MenuItem {
+                        label,
+                        disabled,
+                        checked,
+                        on_click,
+                        ..
+                    } = item;
                     let opened = path_is_open(&open, &row_path);
                     let open_path = context.open_path.clone();
                     let target = row_path.clone();
@@ -413,13 +429,19 @@ fn render_entries(
                     });
                     let click_path = open_path.clone();
                     let click_target = target.clone();
+                    let close = context.close.clone();
                     row_base(row_id, disabled, cx)
                         .debug_selector({
                             let label = label.clone();
                             move || format!("menu-item-{label}")
                         })
                         .when(!disabled, |this| {
-                            this.on_click(move |_, _, cx| {
+                            this.on_click(move |_, window, cx| {
+                                if let Some(handler) = &on_click {
+                                    close((), window, cx);
+                                    handler((), window, cx);
+                                    return;
+                                }
                                 click_path.update(cx, |open, cx| {
                                     *open = click_target.clone();
                                     cx.notify();
@@ -436,7 +458,7 @@ fn render_entries(
                                 }
                             })
                         })
-                        .child(icon_column())
+                        .child(icon_column().children(checked.then(|| icon("check"))))
                         .child(div().flex_1().min_w_0().truncate().child(label))
                         .child(icon("chevron-right").text_color(if disabled {
                             theme.colors.disabled_text

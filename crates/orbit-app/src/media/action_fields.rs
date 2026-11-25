@@ -70,7 +70,13 @@ impl MediaBin {
                 SharedString::from(format!("action-type-{marker}-{index}")),
                 markers::ACTION_TYPES
                     .iter()
-                    .map(|kind| SelectOption::new(kind.to_string(), kind.to_string()))
+                    .map(|kind| {
+                        SelectOption::new(
+                            kind.to_string(),
+                            cx.global::<Translator>()
+                                .t(&format!("media.markerAction.{kind}")),
+                        )
+                    })
                     .collect(),
                 kind.to_string(),
             )
@@ -93,8 +99,8 @@ impl MediaBin {
                             next["details"] = json!({"start":{"presetIdentification":""}});
                         }
                         *action = next;
-                        this.inputs.clear();
-                        cx.notify();
+                        this.inputs.retain(|key, _| !key.starts_with("marker-"));
+                        this.save_markers(cx);
                     }
                 });
             }),

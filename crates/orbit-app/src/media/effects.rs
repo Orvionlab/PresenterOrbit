@@ -1,5 +1,75 @@
 use super::*;
-use orbit_ui::controls::{CheckboxField, ColorPicker, Field};
+use orbit_ui::controls::{
+    CheckboxField, ColorPicker, ContextMenu, Field, InputEvent, MenuEntry, MenuItem,
+};
+
+#[derive(Clone, Copy)]
+pub(super) enum EffectMenu {
+    Presets,
+    Add,
+}
+
+pub(super) enum PresetDialog {
+    Name {
+        id: Option<String>,
+        input: Entity<InputState>,
+        _subscription: Subscription,
+    },
+    Delete(String),
+}
+
+enum EffectAction {
+    Add(String),
+    Apply(String),
+    Clear,
+    Unlink,
+    Save,
+    SaveAs,
+    Rename(String),
+    Delete(String),
+}
+
+const COLOR_FIELDS: [(&str, f64); 4] = [
+    ("mediaHue", 0.),
+    ("mediaSaturation", 1.),
+    ("mediaBrightness", 0.),
+    ("mediaContrast", 1.),
+];
+
+fn chain(item: &Value) -> &[Value] {
+    item["mediaEffects"].as_array().map_or(&[], Vec::as_slice)
+}
+
+fn preset_payload(item: &Value) -> Value {
+    let effects: serde_json::Map<_, _> = COLOR_FIELDS
+        .into_iter()
+        .map(|(key, neutral)| {
+            (
+                key.to_owned(),
+                item.get(key).cloned().unwrap_or_else(|| json!(neutral)),
+            )
+        })
+        .collect();
+    json!({"effects":effects,"mediaEffects":chain(item)})
+}
+
+fn matches_preset(item: &Value, preset: &Value) -> bool {
+    chain(item) == chain(preset)
+        && COLOR_FIELDS.into_iter().all(|(key, neutral)| {
+            item[key].as_f64().unwrap_or(neutral)
+                == preset["effects"][key].as_f64().unwrap_or(neutral)
+        })
+}
+
+fn apply_preset(item: &mut Value, preset: &Value) {
+    for (key, neutral) in COLOR_FIELDS {
+        item[key] = preset["effects"]
+            .get(key)
+            .cloned()
+            .unwrap_or_else(|| json!(neutral));
+    }
+    item["mediaEffects"] = json!(chain(preset));
+}
 
 impl MediaBin {
     pub(super) fn effect_variable(&mut self, key: &str, value: Value, cx: &mut Context<Self>) {
@@ -37,13 +107,35 @@ impl MediaBin {
     ) -> gpui::AnyElement {
         let t = *cx.global::<Translator>();
         let theme = *cx.theme();
-        let chain = item["mediaEffects"].as_array().cloned().unwrap_or_default();
-        let mut body = div()
-            .flex()
-            .flex_col()
-            .gap(theme.metrics.space_xs)
-            .child(PanelHeader::new(t.t("media.effectChain.title")));
-        for (index, effect) in chain.iter().enumerate() {
+        let effects = chain(item);
+        let preset = self.effect_preset(item);
+        let title = preset.map_or_else(
+            || t.t("media.effects.noPreset"),
+            |preset| {
+                let title = text(preset, "title");
+                if matches_preset(item, preset) {
+                    title.to_owned()
+                } else {
+                    format!("{title}*")
+                }
+            },
+        );
+        let mut body = div().flex().flex_col().gap(theme.metrics.space_xs).child(
+            Field::new(
+                t.t("media.effects.preset"),
+                ActionButton::new("media-preset", title)
+                    .compact()
+                    .variant(ButtonVariant::Soft)
+                    .disabled(self.edits_blocked())
+                    .on_click(cx.listener(|this, event: &gpui::ClickEvent, _, cx| {
+                        this.effect_menu = Some((EffectMenu::Presets, event.position()));
+                        cx.notify();
+                    })),
+            )
+            .inline()
+            .label_width(theme.metrics.space_lg * 7.),
+        );
+        for (index, effect) in effects.iter().enumerate() {
             let entry = self
                 .effect_catalog
                 .iter()
@@ -89,9 +181,9 @@ impl MediaBin {
                     ActionButton::new(SharedString::from(format!("{key}-{index}")), t.t(key))
                         .variant(ButtonVariant::Ghost)
                         .disabled(
-                            self.busy
+                            self.edits_blocked()
                                 || offset < 0 && index == 0
-                                || offset > 0 && index + 1 == chain.len(),
+                                || offset > 0 && index + 1 == effects.len(),
                         )
                         .on_click(cx.listener(move |this, _, _, cx| {
                             let mut chain = this
@@ -167,152 +259,397 @@ impl MediaBin {
                 }
             }
         }
-        let weak = cx.weak_entity();
-        let options = std::iter::once(SelectOption::new(
-            String::new(),
-            t.t("media.effectChain.choose"),
-        ))
-        .chain(self.effect_catalog.iter().map(|entry| {
-            SelectOption::new(
-                text(entry, "id").to_string(),
-                text(entry, "name").to_string(),
-            )
-        }))
-        .collect();
-        body = body.child(self.presets(item, window, cx));
         body.child(
-            Select::new("effect-add", options, String::new())
-                .compact()
-                .disabled(self.edits_blocked())
-                .on_change(move |id, _, cx| {
-                    if id.is_empty() {
-                        return;
-                    }
-                    let _ = weak.update(cx, |this, cx| {
-                        let mut chain = this
-                            .media
-                            .iter()
-                            .find(|item| item["id"] == this.selected)
-                            .and_then(|item| item["mediaEffects"].as_array())
-                            .cloned()
-                            .unwrap_or_default();
-                        chain.push(json!({"effectId":id,"enabled":true}));
-                        this.patch_asset("mediaEffects", json!(chain), cx);
-                    });
-                }),
+            div().flex().justify_center().child(
+                IconButton::new("effect-add", "plus", t.t("media.effectChain.add"))
+                    .disabled(self.edits_blocked() || self.effect_catalog.is_empty())
+                    .on_click(cx.listener(|this, event: &gpui::ClickEvent, _, cx| {
+                        this.effect_menu = Some((EffectMenu::Add, event.position()));
+                        cx.notify();
+                    })),
+            ),
         )
         .into_any_element()
     }
-}
 
-impl MediaBin {
-    fn presets(
+    fn effect_presets(&self) -> &[Value] {
+        self.source["mediaEffectPresets"]
+            .as_array()
+            .map_or(&[], Vec::as_slice)
+    }
+
+    fn effect_preset(&self, item: &Value) -> Option<&Value> {
+        self.effect_presets()
+            .iter()
+            .find(|preset| preset["id"] == item["mediaEffectPresetId"])
+    }
+
+    pub(super) fn effect_menu(&self, item: &Value, cx: &mut Context<Self>) -> Option<ContextMenu> {
+        let (menu, point) = self.effect_menu?;
+        let t = *cx.global::<Translator>();
+        let owner = cx.weak_entity();
+        let action = |label: String, command| {
+            let owner = owner.clone();
+            MenuItem::new(label).on_click(move |_, window, cx| {
+                let _ = owner.update(cx, |this, cx| this.effect_action(&command, window, cx));
+            })
+        };
+        let entries = match menu {
+            EffectMenu::Add => self
+                .effect_catalog
+                .iter()
+                .map(|entry| {
+                    action(
+                        text(entry, "name").to_owned(),
+                        EffectAction::Add(text(entry, "id").to_owned()),
+                    )
+                    .into()
+                })
+                .collect(),
+            EffectMenu::Presets => {
+                let preset = self.effect_preset(item);
+                let has_effects = !matches_preset(item, &Value::Null);
+                let mut entries = Vec::new();
+                if has_effects || preset.is_some() {
+                    entries.push(action(t.t("media.effects.clear"), EffectAction::Clear).into());
+                }
+                if let Some(preset) = preset {
+                    entries.push(
+                        action(t.t("media.effects.unlinkPreset"), EffectAction::Unlink).into(),
+                    );
+                    if !matches_preset(item, preset) {
+                        entries.push(
+                            action(t.t("common.save"), EffectAction::Save)
+                                .disabled(self.busy)
+                                .into(),
+                        );
+                    }
+                }
+                if has_effects {
+                    entries
+                        .push(action(t.t("media.effects.savePreset"), EffectAction::SaveAs).into());
+                }
+                if !entries.is_empty() && !self.effect_presets().is_empty() {
+                    entries.push(MenuEntry::Separator);
+                }
+                entries.extend(self.effect_presets().iter().map(|preset| {
+                    let id = text(preset, "id");
+                    MenuEntry::SelectableSubmenu {
+                        item: action(
+                            text(preset, "title").to_owned(),
+                            EffectAction::Apply(id.to_owned()),
+                        )
+                        .checked(item["mediaEffectPresetId"] == id),
+                        entries: vec![
+                            action(t.t("common.rename"), EffectAction::Rename(id.to_owned()))
+                                .into(),
+                            action(t.t("common.delete"), EffectAction::Delete(id.to_owned()))
+                                .into(),
+                        ],
+                    }
+                }));
+                if entries.is_empty() {
+                    entries.push(
+                        MenuItem::new(t.t("media.effects.noPreset"))
+                            .disabled(true)
+                            .into(),
+                    );
+                }
+                entries
+            }
+        };
+        Some(ContextMenu::new(
+            "media-effect-menu",
+            point,
+            entries,
+            move |_, _, cx| {
+                let _ = owner.update(cx, |this, cx| {
+                    this.effect_menu = None;
+                    cx.notify();
+                });
+            },
+        ))
+    }
+
+    fn effect_action(
         &mut self,
-        item: &Value,
+        action: &EffectAction,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) -> gpui::AnyElement {
-        let t = *cx.global::<Translator>();
-        let title = self
-            .preset_title
-            .get_or_insert_with(|| input_state(String::new(), window, cx))
-            .clone();
-        let presets = self.source["mediaEffectPresets"]
-            .as_array()
-            .cloned()
-            .unwrap_or_default();
-        let options = std::iter::once(SelectOption::new(
-            String::new(),
-            t.t("media.effects.noPreset"),
-        ))
-        .chain(presets.iter().map(|preset| {
-            SelectOption::new(
-                text(preset, "id").to_string(),
-                text(preset, "title").to_string(),
-            )
-        }))
-        .collect();
-        let weak = cx.weak_entity();
-        let mut body = div()
-            .flex()
-            .flex_col()
-            .gap(cx.theme().metrics.space_xs)
-            .child(Field::new(
-                t.t("media.effects.preset"),
-                Select::new("media-preset", options, self.preset_id.clone())
-                    .disabled(self.edits_blocked())
-                    .on_change(move |id, window, cx| {
-                        let _ = weak.update(cx, |this, cx| {
-                            this.preset_id = id.clone();
-                            let preset = this.source["mediaEffectPresets"]
-                                .as_array()
-                                .and_then(|presets| {
-                                    presets.iter().find(|preset| preset["id"] == id)
-                                })
-                                .cloned();
-                            if let Some(preset) = preset {
-                                this.preset_title = Some(input_state(
-                                    text(&preset, "title").to_string(),
-                                    window,
-                                    cx,
-                                ));
-                                let mut media = this.media.clone();
-                                if let Some(item) =
-                                    media.iter_mut().find(|item| item["id"] == this.selected)
-                                {
-                                    if let Some(effects) = preset["effects"].as_object() {
-                                        for (key, value) in effects {
-                                            item[key] = value.clone();
-                                        }
-                                    }
-                                    item["mediaEffects"] = preset
-                                        .get("mediaEffects")
-                                        .cloned()
-                                        .unwrap_or_else(|| json!([]));
-                                    this.inputs.clear();
-                                    this.mutate("saveMediaSettings", vec![json!(media)], cx);
-                                }
-                            }
-                            cx.notify();
-                        });
-                    }),
-            ))
-            .child(Field::new(
-                t.t("media.effects.presetName"),
-                TextInput::new("media-preset-title", &title).disabled(self.edits_blocked()),
-            ));
-        for (action, key) in [
-            ("create", "media.effects.savePreset"),
-            ("update", "media.effects.updatePreset"),
-            ("delete", "common.delete"),
-        ] {
-            let item = item.clone();
-            let title = title.clone();
-            body = body.child(ActionButton::new(key,t.t(key)).disabled(self.busy || action != "create" && self.preset_id.is_empty()).on_click(cx.listener(move |this,_,_,cx| {
-                let name = title.read(cx).value().to_string();
-                if action != "delete" && name.trim().is_empty() { return; }
-                let mut presets = this.source["mediaEffectPresets"].as_array().cloned().unwrap_or_default();
-                let id = if action == "create" {uuid::Uuid::new_v4().to_string()} else {this.preset_id.clone()};
-                let mut effects = json!({});
-                for (key, neutral) in [("mediaHue",0.),("mediaSaturation",1.),("mediaBrightness",0.),("mediaContrast",1.)] {
-                    effects[key] = item.get(key).cloned().unwrap_or_else(||json!(neutral));
-                }
-                if action == "delete" { presets.retain(|preset|preset["id"]!=id); }
-                else {
-                    let next = json!({"id":id,"title":name.trim(),"effects":effects,"mediaEffects":item.get("mediaEffects").cloned().unwrap_or_else(||json!([]))});
-                    if action == "create" {presets.push(next);}
-                    else if let Some(preset)=presets.iter_mut().find(|preset|preset["id"]==id) {*preset=next;} else {return;}
-                }
-                this.mutate("saveWorkspaceContent",vec![json!({"mediaEffectPresets":presets})],cx);
-            })));
+    ) {
+        if self.edits_blocked() {
+            return;
         }
-        body.into_any_element()
+        match action {
+            EffectAction::SaveAs => self.open_preset_name(None, window, cx),
+            EffectAction::Rename(id) => self.open_preset_name(Some(id.clone()), window, cx),
+            EffectAction::Delete(id) => {
+                self.effect_preset_dialog = Some(PresetDialog::Delete(id.clone()));
+                cx.notify();
+            }
+            EffectAction::Save => self.save_effect_preset(cx),
+            _ => {
+                let mut media = self.media.clone();
+                let Some(item) = media.iter_mut().find(|item| item["id"] == self.selected) else {
+                    return;
+                };
+                match action {
+                    EffectAction::Add(id) => {
+                        let mut effects = chain(item).to_vec();
+                        effects.push(json!({"effectId":id,"enabled":true}));
+                        item["mediaEffects"] = json!(effects);
+                    }
+                    EffectAction::Apply(id) => {
+                        let Some(preset) = self
+                            .effect_presets()
+                            .iter()
+                            .find(|preset| preset["id"] == *id)
+                        else {
+                            return;
+                        };
+                        apply_preset(item, preset);
+                        item["mediaEffectPresetId"] = json!(id);
+                    }
+                    EffectAction::Clear | EffectAction::Unlink => {
+                        if matches!(action, EffectAction::Clear) {
+                            apply_preset(item, &Value::Null);
+                        }
+                        if let Some(item) = item.as_object_mut() {
+                            item.remove("mediaEffectPresetId");
+                        }
+                    }
+                    _ => unreachable!(),
+                }
+                self.inputs.retain(|key, _| !key.starts_with("effect:"));
+                self.mutate("saveMediaSettings", vec![json!(media)], cx);
+            }
+        }
     }
+
+    fn open_preset_name(
+        &mut self,
+        id: Option<String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let title = id
+            .as_ref()
+            .and_then(|id| {
+                self.effect_presets()
+                    .iter()
+                    .find(|preset| preset["id"] == *id)
+            })
+            .map_or("", |preset| text(preset, "title"));
+        let input = input_state(title.to_owned(), window, cx);
+        let subscription =
+            cx.subscribe_in(
+                &input,
+                window,
+                |this, _, event: &InputEvent, _, cx| match event {
+                    InputEvent::PressEnter { .. } => this.confirm_preset_dialog(cx),
+                    InputEvent::Change => cx.notify(),
+                    _ => {}
+                },
+            );
+        self.effect_preset_dialog = Some(PresetDialog::Name {
+            id,
+            input,
+            _subscription: subscription,
+        });
+        cx.notify();
+    }
+
+    fn preset_name_taken(&self, id: Option<&str>, title: &str) -> bool {
+        self.effect_presets().iter().any(|preset| {
+            preset["id"].as_str() != id
+                && text(preset, "title").trim().to_lowercase() == title.to_lowercase()
+        })
+    }
+
+    fn confirm_preset_dialog(&mut self, cx: &mut Context<Self>) {
+        if self.busy {
+            return;
+        }
+        let mut presets = self.effect_presets().to_vec();
+        let mut patch = json!({});
+        match self.effect_preset_dialog.as_ref() {
+            Some(PresetDialog::Name { id, input, .. }) => {
+                let value = input.read(cx).value();
+                let title = value.trim();
+                if title.is_empty() || self.preset_name_taken(id.as_deref(), title) {
+                    return;
+                }
+                if let Some(id) = id {
+                    let Some(preset) = presets.iter_mut().find(|preset| preset["id"] == *id) else {
+                        return;
+                    };
+                    preset["title"] = json!(title);
+                } else {
+                    let mut media = self.media.clone();
+                    let Some(item) = media.iter_mut().find(|item| item["id"] == self.selected)
+                    else {
+                        return;
+                    };
+                    let id = uuid::Uuid::new_v4().to_string();
+                    let mut preset = preset_payload(item);
+                    preset["id"] = json!(id);
+                    preset["title"] = json!(title);
+                    presets.push(preset);
+                    item["mediaEffectPresetId"] = json!(id);
+                    patch["media"] = json!(media);
+                }
+            }
+            Some(PresetDialog::Delete(id)) => {
+                presets.retain(|preset| preset["id"] != *id);
+                let mut media = self.media.clone();
+                for item in media
+                    .iter_mut()
+                    .filter(|item| item["mediaEffectPresetId"] == *id)
+                {
+                    if let Some(item) = item.as_object_mut() {
+                        item.remove("mediaEffectPresetId");
+                    }
+                }
+                if media != self.media {
+                    patch["media"] = json!(media);
+                }
+            }
+            None => return,
+        }
+        patch["mediaEffectPresets"] = json!(presets);
+        self.effect_preset_dialog = None;
+        self.mutate("saveWorkspaceContent", vec![patch], cx);
+    }
+
+    fn save_effect_preset(&mut self, cx: &mut Context<Self>) {
+        let Some(item) = self.media.iter().find(|item| item["id"] == self.selected) else {
+            return;
+        };
+        let Some(preset) = self.effect_preset(item) else {
+            return;
+        };
+        let next = preset_payload(item);
+        let mut presets = self.effect_presets().to_vec();
+        if let Some(saved) = presets.iter_mut().find(|saved| saved["id"] == preset["id"]) {
+            saved["effects"] = next["effects"].clone();
+            saved["mediaEffects"] = next["mediaEffects"].clone();
+        }
+        let mut media = self.media.clone();
+        for linked in &mut media {
+            if linked["mediaEffectPresetId"] == preset["id"] && matches_preset(linked, preset) {
+                apply_preset(linked, &next);
+            }
+        }
+        let mut patch = json!({"mediaEffectPresets":presets});
+        if media != self.media {
+            patch["media"] = json!(media);
+        }
+        self.mutate("saveWorkspaceContent", vec![patch], cx);
+    }
+
+    pub(super) fn effect_preset_dialog(&self, cx: &mut Context<Self>) -> Option<Dialog> {
+        let t = *cx.global::<Translator>();
+        let owner = cx.weak_entity();
+        let close = move |_: &mut Window, cx: &mut gpui::App| {
+            let _ = owner.update(cx, |this, cx| {
+                this.effect_preset_dialog = None;
+                cx.notify();
+            });
+        };
+        let (title, confirm, disabled, danger) = match self.effect_preset_dialog.as_ref()? {
+            PresetDialog::Name { id, input, .. } => {
+                let value = input.read(cx).value();
+                let title = value.trim();
+                let action = t.t(if id.is_some() {
+                    "common.rename"
+                } else {
+                    "media.effects.savePreset"
+                });
+                (
+                    action.clone(),
+                    action,
+                    title.is_empty() || self.preset_name_taken(id.as_deref(), title),
+                    false,
+                )
+            }
+            PresetDialog::Delete(_) => (t.t("common.delete"), t.t("common.delete"), false, true),
+        };
+        let mut dialog = Dialog::new("media-effect-preset-dialog", title, t.t("common.cancel"), {
+            let close = close.clone();
+            move |_, window, cx| close(window, cx)
+        })
+        .width(cx.theme().metrics.control_height * 12.)
+        .close_on_enter(false)
+        .footer(
+            ActionButton::new("effect-preset-cancel", t.t("common.cancel"))
+                .variant(ButtonVariant::Secondary)
+                .on_click(move |_, window, cx| close(window, cx)),
+        )
+        .footer(
+            ActionButton::new("effect-preset-confirm", confirm)
+                .when(danger, |button| button.variant(ButtonVariant::Danger))
+                .disabled(self.busy || disabled)
+                .on_click(cx.listener(|this, _, _, cx| this.confirm_preset_dialog(cx))),
+        );
+        match self.effect_preset_dialog.as_ref()? {
+            PresetDialog::Name { id, input, .. } => {
+                dialog = dialog
+                    .initial_focus(input.read(cx).focus_handle(cx))
+                    .child(Field::new(
+                        t.t("media.effects.presetName"),
+                        div()
+                            .debug_selector(|| "effect-preset-name".into())
+                            .child(TextInput::new("effect-preset-name", input)),
+                    ));
+                if self.preset_name_taken(id.as_deref(), input.read(cx).value().trim()) {
+                    dialog = dialog.child(t.t("media.effects.duplicatePresetName"));
+                }
+            }
+            PresetDialog::Delete(id) => {
+                let preset = self
+                    .effect_presets()
+                    .iter()
+                    .find(|preset| preset["id"] == *id)?;
+                dialog = dialog.child(t.format(
+                    "media.effects.deletePresetConfirm",
+                    &[("title", text(preset, "title"))],
+                ));
+            }
+        }
+        Some(dialog)
+    }
+}
+
+#[derive(Clone)]
+pub(super) struct MediaPreviewFrame {
+    pub key: Value,
+    pub size: orbit_ui::FrameSize,
+    pub image: std::sync::Arc<gpui::RenderImage>,
+}
+
+pub(super) fn visual_asset(item: &Value) -> Value {
+    let Some(object) = item.as_object() else {
+        return Value::Null;
+    };
+    Value::Object(
+        object
+            .iter()
+            .filter(|(key, _)| {
+                key.starts_with("media") && key.as_str() != "mediaEffectPresetId"
+                    || matches!(
+                        key.as_str(),
+                        "id" | "type" | "sourcePath" | "sourceUrl" | "assetFile"
+                    )
+            })
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect(),
+    )
 }
 
 impl MediaBin {
     pub(super) fn request_effect_preview(&mut self, item: &Value, cx: &mut Context<Self>) {
-        let seconds = self.preview_position;
+        let seconds = self.preview_frame_time();
+        let item = visual_asset(item);
         let key = json!([self.workspace, item, seconds]);
         if self.asset_preview_busy || self.effect_preview_key == key {
             return;
@@ -321,11 +658,10 @@ impl MediaBin {
         self.effect_preview_key = key.clone();
         let host = self.runtime.host.clone();
         let workspace = self.workspace.clone();
-        let id = self.selected.clone();
         cx.spawn(async move |this, cx| {
             let result = cx
                 .background_spawn(async move {
-                    let image = host.render_media_asset_preview(&workspace, &id, seconds)?;
+                    let image = host.render_media_asset_preview(&workspace, item, seconds)?;
                     let size = orbit_ui::FrameSize {
                         width: image.width as u32,
                         height: image.height as u32,
@@ -341,10 +677,18 @@ impl MediaBin {
                     return;
                 }
                 match result {
-                    Ok((size, image)) => this.effect_preview.update(cx, |frame, cx| {
-                        frame.set_source(Some(size), cx);
-                        frame.set_image(image, cx);
-                    }),
+                    Ok((size, image)) => {
+                        this.rendered_media_preview = Some(MediaPreviewFrame {
+                            key,
+                            size,
+                            image: image.clone(),
+                        });
+                        this.effect_preview.update(cx, |frame, cx| {
+                            frame.set_source(Some(size), cx);
+                            frame.set_image(image, cx);
+                        });
+                        cx.notify();
+                    }
                     Err(error) => this.runtime.status.update(cx, |status, cx| {
                         status.message = error;
                         cx.notify();

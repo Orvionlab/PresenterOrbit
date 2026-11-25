@@ -10,17 +10,21 @@ pub(super) struct AssetDetails {
     pub transparent: bool,
 }
 
+pub(super) fn details_key(workspace: &str, item: &Value) -> Value {
+    json!([
+        workspace,
+        item["sourcePath"],
+        item["thumbnailFile"],
+        item["thumbnailTimeSeconds"],
+        item["thumbnailMissing"],
+        item["css"]
+    ])
+}
+
 impl MediaBin {
     pub(super) fn request_details(&mut self, item: &Value, cx: &mut Context<Self>) {
         let id = text(item, "id").to_string();
-        let key = json!([
-            self.workspace,
-            item["sourcePath"],
-            item["thumbnailFile"],
-            item["thumbnailTimeSeconds"],
-            item["thumbnailMissing"],
-            item["css"]
-        ]);
+        let key = details_key(&self.workspace, item);
         if self
             .details
             .get(&id)
@@ -29,17 +33,16 @@ impl MediaBin {
         {
             return;
         }
-        if let Some(old) = self.details.remove(&id).and_then(|details| details.image) {
-            cx.drop_image(old, None);
+        let details = self.details.entry(id.clone()).or_default();
+        if details.key[0] != key[0] || details.key[1] != key[1] || details.key[5] != key[5] {
+            if let Some(image) = details.image.take() {
+                cx.drop_image(image, None);
+            }
+            *details = AssetDetails::default();
         }
-        self.details.insert(
-            id.clone(),
-            AssetDetails {
-                key: key.clone(),
-                pending: true,
-                ..Default::default()
-            },
-        );
+        details.key = key.clone();
+        details.error.clear();
+        details.pending = true;
         crate::startup::first_page::changed(
             crate::startup::first_page::Asset::Media(cx.entity_id(), id.clone()),
             false,
@@ -112,7 +115,9 @@ impl MediaBin {
                 }
                 match image {
                     Ok(Some((image, transparent))) => {
-                        details.image = Some(image);
+                        if let Some(old) = details.image.replace(image) {
+                            cx.drop_image(old, None);
+                        }
                         details.transparent = transparent;
                     }
                     Ok(None) => {}

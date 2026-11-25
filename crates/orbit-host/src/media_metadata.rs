@@ -143,12 +143,22 @@ fn metadata(value: &Value) -> Value {
         let fps = numerator.parse::<f64>().ok()? / denominator;
         (denominator > 0.0 && fps.is_finite() && fps > 0.0).then_some(fps)
     });
+    let dynamic_range = match stream["color_transfer"].as_str() {
+        Some("smpte2084") => Some("HDR (PQ)"),
+        Some("arib-std-b67") => Some("HDR (HLG)"),
+        Some(
+            "bt709" | "gamma22" | "gamma28" | "smpte170m" | "smpte240m" | "iec61966-2-1"
+            | "bt2020-10" | "bt2020-12",
+        ) => Some("SDR"),
+        _ => None,
+    };
     json!({
         "codec": stream["codec_name"].as_str().filter(|name| !name.trim().is_empty()),
         "width": positive_number(&stream["width"]),
         "height": positive_number(&stream["height"]),
         "durationSeconds": positive_number(&stream["duration"]).or_else(|| positive_number(&value["format"]["duration"])),
         "fps": fps,
+        "dynamicRange": dynamic_range,
         "hasAudio": value["streams"].as_array().is_some_and(|streams| {
             streams.iter().any(|stream| stream["codec_type"] == "audio")
         })

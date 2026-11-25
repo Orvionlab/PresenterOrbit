@@ -17,8 +17,10 @@ pub struct Dialog {
     close_label: SharedString,
     width: Option<Pixels>,
     standalone: bool,
+    compact_header: bool,
     flush: bool,
     close_on_backdrop: bool,
+    close_on_enter: bool,
     initial_focus: Option<FocusHandle>,
     actions: Vec<AnyElement>,
     footer: Vec<AnyElement>,
@@ -39,8 +41,10 @@ impl Dialog {
             close_label: close_label.into(),
             width: None,
             standalone: false,
+            compact_header: false,
             flush: false,
             close_on_backdrop: true,
+            close_on_enter: true,
             initial_focus: None,
             actions: Vec::new(),
             footer: Vec::new(),
@@ -59,6 +63,11 @@ impl Dialog {
         self
     }
 
+    pub fn compact_header(mut self) -> Self {
+        self.compact_header = true;
+        self
+    }
+
     /// The body fills the dialog without padding, for a layout that draws its own panels.
     pub fn flush(mut self) -> Self {
         self.flush = true;
@@ -67,6 +76,12 @@ impl Dialog {
 
     pub fn close_on_backdrop(mut self, close: bool) -> Self {
         self.close_on_backdrop = close;
+        self
+    }
+
+    /// Keep the dialog open when Enter applies an inline editor.
+    pub fn close_on_enter(mut self, close: bool) -> Self {
+        self.close_on_enter = close;
         self
     }
 
@@ -98,54 +113,62 @@ impl RenderOnce for Dialog {
         let theme = *cx.theme();
         let close = self.on_close.clone();
         let standalone = self.standalone;
-        let header = div()
-            .id(child_id(&self.id, "header"))
-            .flex()
-            .flex_none()
-            .items_center()
-            .justify_between()
-            .min_w_0()
-            .gap(theme.metrics.space_sm)
-            .py(theme.metrics.space_md)
-            .px(theme.metrics.panel_padding)
-            .border_b_1()
-            .border_color(theme.colors.border)
-            .bg(theme.colors.panel_bg_strong)
-            .text_color(theme.colors.text_strong)
-            .when(standalone, |this| {
-                this.on_mouse_down(MouseButton::Left, |event, window, _| {
-                    if event.click_count == 2 {
-                        window.zoom_window();
-                    } else {
-                        window.start_window_move();
-                    }
+        let close_button =
+            IconButton::new(child_id(&self.id, "close"), "circle-x", self.close_label);
+        let close_button = if self.compact_header {
+            close_button
+        } else {
+            close_button.variant(ButtonVariant::Soft).full_height()
+        };
+        let header =
+            div()
+                .id(child_id(&self.id, "header"))
+                .flex()
+                .flex_none()
+                .items_center()
+                .justify_between()
+                .min_w_0()
+                .gap(theme.metrics.space_sm)
+                .py(if self.compact_header {
+                    theme.metrics.space_2xs
+                } else {
+                    theme.metrics.space_md
                 })
-            })
-            .child(
-                DialogTitle::new()
-                    .min_w_0()
-                    .truncate()
-                    .text_size(theme.metrics.font_lg)
-                    .font_weight(gpui::FontWeight::BOLD)
-                    .child(self.title),
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_none()
-                    .items_center()
-                    .gap(theme.metrics.space_xs)
-                    // A press on a header control must not start a window move.
-                    .debug_selector(|| "dialog-close".to_string())
-                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                    .children(self.actions)
-                    .child(
-                        IconButton::new(child_id(&self.id, "close"), "circle-x", self.close_label)
-                            .variant(ButtonVariant::Soft)
-                            .full_height()
-                            .on_click(move |_, window, cx| close((), window, cx)),
-                    ),
-            );
+                .px(theme.metrics.panel_padding)
+                .border_b_1()
+                .border_color(theme.colors.border)
+                .bg(theme.colors.panel_bg_strong)
+                .text_color(theme.colors.text_strong)
+                .when(standalone, |this| {
+                    this.on_mouse_down(MouseButton::Left, |event, window, _| {
+                        if event.click_count == 2 {
+                            window.zoom_window();
+                        } else {
+                            window.start_window_move();
+                        }
+                    })
+                })
+                .child(
+                    DialogTitle::new()
+                        .min_w_0()
+                        .truncate()
+                        .text_size(theme.metrics.font_lg)
+                        .font_weight(gpui::FontWeight::BOLD)
+                        .child(self.title),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_none()
+                        .items_center()
+                        .gap(theme.metrics.space_xs)
+                        // A press on a header control must not start a window move.
+                        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                        .children(self.actions)
+                        .child(div().debug_selector(|| "dialog-close".to_string()).child(
+                            close_button.on_click(move |_, window, cx| close((), window, cx)),
+                        )),
+                );
         let body = div()
             .id(child_id(&self.id, "body"))
             .flex_1()
@@ -193,8 +216,10 @@ impl RenderOnce for Dialog {
             .read(cx)
             .clone();
         let on_close = self.on_close;
+        let close_on_enter = self.close_on_enter;
         gpui_base::Dialog::new(cx)
             .open(true)
+            .on_ok(move |_, _, _| close_on_enter)
             .focus_handle(focus)
             .close_on_backdrop_press(self.close_on_backdrop)
             .on_open_change(move |open, _, window, cx| {

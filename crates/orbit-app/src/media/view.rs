@@ -22,6 +22,8 @@ mod markers;
 mod menu;
 #[path = "preview.rs"]
 mod preview;
+#[path = "preview_timeline.rs"]
+mod preview_timeline;
 #[path = "routing.rs"]
 mod routing;
 #[path = "tree.rs"]
@@ -76,9 +78,17 @@ pub struct MediaBin {
     marker_draft: Option<Value>,
     marker_baseline: Option<Value>,
     marker_status: String,
+    marker_menu: Option<(Option<String>, gpui::Point<gpui::Pixels>)>,
+    marker_editor: Option<(String, markers::MarkerEditor)>,
+    selected_marker: Option<String>,
+    marker_clipboard: Option<Value>,
     inspector_open: bool,
     inspector_tab: usize,
+    routing_open: bool,
+    routing_sliders: std::collections::HashMap<String, routing::GainSlider>,
+    inspector_transition: Option<Entity<crate::transitions::TransitionDefaults>>,
     preview_position: f64,
+    preview_trim_drag: Option<preview_timeline::TrimDrag>,
     details: std::collections::HashMap<String, assets::AssetDetails>,
     preparation: preload::Preparation,
     grid_columns: usize,
@@ -92,16 +102,19 @@ pub struct MediaBin {
     library_menu_id: Option<String>,
     library_drop: Option<(String, String)>,
     transport_draft: Option<Value>,
+    transport_rate_slider: Option<(Entity<orbit_ui::controls::SliderState>, Subscription)>,
     transport_baseline: Option<Value>,
     menu_position: Option<gpui::Point<gpui::Pixels>>,
     clipboard: Option<Value>,
     graphics_drop: Option<(String, bool, String)>,
     effect_preview: Entity<orbit_ui::FrameView>,
     effect_preview_key: Value,
+    rendered_media_preview: Option<effects::MediaPreviewFrame>,
+    pending_thumbnail: Option<(String, Option<std::sync::Arc<gpui::RenderImage>>)>,
     maintenance: Option<(bool, Value)>,
     maintenance_request: u64,
-    preset_id: String,
-    preset_title: Option<Entity<InputState>>,
+    effect_menu: Option<(effects::EffectMenu, gpui::Point<gpui::Pixels>)>,
+    effect_preset_dialog: Option<effects::PresetDialog>,
     effect_catalog: Vec<Value>,
     inputs: inspector::Inputs,
     preview: Arc<Mutex<orbit_host::PreviewAudio>>,
@@ -279,9 +292,17 @@ impl MediaBin {
             marker_draft: None,
             marker_baseline: None,
             marker_status: String::new(),
+            marker_menu: None,
+            marker_editor: None,
+            selected_marker: None,
+            marker_clipboard: None,
             inspector_open: false,
             inspector_tab: 0,
+            routing_open: false,
+            routing_sliders: Default::default(),
+            inspector_transition: None,
             preview_position: 0.,
+            preview_trim_drag: None,
             details: Default::default(),
             preparation: Default::default(),
             grid_columns: 7,
@@ -303,6 +324,7 @@ impl MediaBin {
             library_drop: None,
             library_menu_id: None,
             transport_draft: None,
+            transport_rate_slider: None,
             transport_baseline: None,
             menu_position: None,
             clipboard: None,
@@ -310,10 +332,12 @@ impl MediaBin {
             video_inputs: cx.new(|cx| super::VideoInputs::new(runtime.clone(), cx)),
             effect_preview: cx.new(|cx| orbit_ui::FrameView::new(|_, _| {}, cx)),
             effect_preview_key: Value::Null,
+            rendered_media_preview: None,
+            pending_thumbnail: None,
             maintenance: None,
             maintenance_request: 0,
-            preset_id: String::new(),
-            preset_title: None,
+            effect_menu: None,
+            effect_preset_dialog: None,
             effect_catalog: vec![],
             inputs: Default::default(),
             preview,
@@ -374,22 +398,28 @@ impl MediaBin {
             self.mutation_request += 1;
             self.busy = false;
             self.reorder = None;
+            self.routing_open = false;
+            self.routing_sliders.clear();
             self.inputs.clear();
             self.maintenance = None;
             self.maintenance_busy = false;
             self.maintenance_error.clear();
-            self.marker_draft = None;
-            self.marker_baseline = None;
-            self.marker_status.clear();
+            self.inspector_transition = None;
+            self.reset_marker_editor();
+            self.marker_clipboard = None;
             self.library_rename = None;
             self.library_menu = None;
             self.confirm_delete = None;
             self.preview_position = 0.;
+            self.preview_trim_drag = None;
             self.effect_preview_key = Value::Null;
+            self.rendered_media_preview = None;
+            self.pending_thumbnail = None;
             self.maintenance_request += 1;
-            self.preset_id.clear();
-            self.preset_title = None;
+            self.effect_menu = None;
+            self.effect_preset_dialog = None;
             self.transport_draft = None;
+            self.transport_rate_slider = None;
             self.transport_baseline = None;
             for (_, details) in self.details.drain() {
                 if let Some(image) = details.image {
@@ -465,15 +495,19 @@ impl MediaBin {
             return;
         }
         self.rename = None;
+        self.routing_open = false;
+        self.routing_sliders.clear();
+        self.preview_trim_drag = None;
         self.audition(false, cx);
         self.preview_position = 0.;
         self.effect_preview_key = Value::Null;
         self.inputs.clear();
         self.transport_draft = None;
+        self.transport_rate_slider = None;
         self.transport_baseline = None;
-        self.marker_draft = None;
-        self.marker_baseline = None;
-        self.marker_status.clear();
+        self.reset_marker_editor();
+        self.effect_menu = None;
+        self.effect_preset_dialog = None;
         self.thumbnail_status.clear();
         self.selected = id.to_string();
         self.preparation.hovered = id.to_string();
@@ -608,14 +642,14 @@ impl MediaBin {
     }
 
     pub(super) fn edits_blocked(&self) -> bool {
-        self.busy && self.reorder.is_none()
+        self.busy && self.reorder.is_none() && self.pending_thumbnail.is_none()
     }
 
     // The workspace lane owns revisions. Parse and merge the partial media response off the UI thread.
     pub(super) fn mutate_saved(
         &mut self,
         method: &'static str,
-        args: Vec<Value>,
+        mut args: Vec<Value>,
         cx: &mut Context<Self>,
     ) {
         if self.busy || self.workspace.is_empty() {
@@ -634,8 +668,36 @@ impl MediaBin {
             .unwrap_or_default();
         let previous_libraries = self.libraries.clone();
         self.busy = true;
-        if matches!(method, "setVideoThumbnail" | "resetVideoThumbnail") {
-            self.thumbnail_status = cx.global::<Translator>().t("media.thumbnail.extracting");
+        let thumbnail = matches!(method, "setVideoThumbnail" | "resetVideoThumbnail");
+        let captured = self
+            .rendered_media_preview
+            .as_ref()
+            .filter(|frame| {
+                method == "setVideoThumbnail"
+                    && frame.key[0] == self.workspace
+                    && args
+                        .get(1)
+                        .is_some_and(|seconds| self.preview_playing || frame.key[2] == *seconds)
+                    && self
+                        .media
+                        .iter()
+                        .find(|asset| asset["id"] == self.selected)
+                        .is_some_and(|asset| frame.key[1] == effects::visual_asset(asset))
+            })
+            .cloned();
+        if let Some(frame) = &captured {
+            args[1] = frame.key[2].clone();
+        }
+        if thumbnail {
+            self.pending_thumbnail = Some((
+                self.selected.clone(),
+                captured.as_ref().map(|frame| frame.image.clone()),
+            ));
+            if captured.is_some() {
+                self.thumbnail_status.clear();
+            } else {
+                self.thumbnail_status = cx.global::<Translator>().t("media.thumbnail.extracting");
+            }
         }
         self.mutation_request += 1;
         let request = self.mutation_request;
@@ -669,6 +731,7 @@ impl MediaBin {
         } else {
             self.media.clone()
         };
+        let original_media = (method == "saveWorkspaceContent").then(|| self.media.clone());
         let answer = runtime.lanes.workspace(&path, move |_revision| {
             let mut args = args;
             let revision = if method == "saveMediaSettings"
@@ -693,8 +756,17 @@ impl MediaBin {
                 }
                 .ok_or("Media settings must be an array.")?;
                 let merged = json!(model::merge_media(&original, requested, current)?);
-                if method == "saveWorkspaceContent" {
+                if let Some(original_media) = original_media {
                     args[0][field] = merged;
+                    if let Some(media) = args[0].get("media") {
+                        let requested =
+                            media.as_array().ok_or("Media settings must be an array.")?;
+                        let current = snapshot["workspace"]["media"]
+                            .as_array()
+                            .ok_or("Workspace media must be an array.")?;
+                        args[0]["media"] =
+                            json!(model::merge_media(&original_media, requested, current)?);
+                    }
                 } else {
                     args[0] = merged;
                 }
@@ -708,9 +780,29 @@ impl MediaBin {
             };
             args.insert(0, json!(expected));
             args.push(json!(revision));
-            let mut response = host.invoke(method, args)?;
-            // A media save answers with the keys it changed; the libraries and presentations stay as they are.
-            if !light {
+            let mut response = if let Some(frame) = captured {
+                let pixels = frame
+                    .image
+                    .as_bytes(0)
+                    .ok_or("Inspector preview has no pixels.")?
+                    .to_vec();
+                host.save_inspector_thumbnail(
+                    &args,
+                    &frame.key[1],
+                    &orbit_host::native_compositor::NativeFrame {
+                        width: frame.size.width as usize,
+                        height: frame.size.height as usize,
+                        pixels,
+                        dynamic_media: false,
+                    },
+                )?
+            } else {
+                host.invoke(method, args)?
+            };
+            // Thumbnail writes already return the new media list.
+            if thumbnail {
+                response["workspace"] = json!({"media":response["workspace"]["media"].take()});
+            } else if !light {
                 let snapshot = host.invoke("readWorkspaceSnapshot", vec![json!(expected)])?;
                 response["workspace"] = snapshot["workspace"].clone();
             }
@@ -724,7 +816,7 @@ impl MediaBin {
             let parsed = cx
                 .background_spawn(async move {
                     result.and_then(|response| {
-                        let snapshot = if light {
+                        let snapshot = if light || thumbnail {
                             None
                         } else {
                             Some(crate::collections::model::Snapshot::parse(
@@ -743,8 +835,29 @@ impl MediaBin {
                 if this.workspace != path {
                     return;
                 }
+                let pending_thumbnail = thumbnail.then(|| this.pending_thumbnail.take()).flatten();
                 match parsed {
                     Ok((response, snapshot)) => {
+                        if let Some((id, Some(image))) = pending_thumbnail {
+                            if let Some(details) = this.details.get_mut(&id) {
+                                if let Some(asset) = response["workspace"]["media"]
+                                    .as_array()
+                                    .into_iter()
+                                    .flatten()
+                                    .find(|asset| asset["id"] == id)
+                                {
+                                    if !details.pending {
+                                        details.key = assets::details_key(&this.workspace, asset);
+                                    }
+                                }
+                                if let Some(previous) = details.image.replace(image.clone()) {
+                                    if !Arc::ptr_eq(&previous, &image) {
+                                        cx.drop_image(previous, None);
+                                    }
+                                }
+                                details.transparent = false;
+                            }
+                        }
                         if method == "mutateMediaLibrary" {
                             let removed: Vec<_> = previous_libraries
                                 .iter()
@@ -779,6 +892,27 @@ impl MediaBin {
                                 });
                             }
                         }
+                        if let Some(reorder) = this.reorder.as_mut().filter(|_| thumbnail) {
+                            let merged = response["workspace"]["media"]
+                                .as_array()
+                                .ok_or_else(|| "The thumbnail save returned no media.".to_string())
+                                .and_then(|accepted| {
+                                    let merged =
+                                        model::merge_media(&reorder.media, &this.media, accepted)?;
+                                    reorder.media.clone_from(accepted);
+                                    Ok(merged)
+                                });
+                            match merged {
+                                Ok(merged) => this.media = merged,
+                                Err(error) => {
+                                    this.reorder = None;
+                                    runtime.status.update(cx, |status, cx| {
+                                        status.message = error;
+                                        cx.notify();
+                                    });
+                                }
+                            }
+                        }
                         if light && this.reorder.is_some() {
                             let (field, local) = if method == "saveMediaSettings" {
                                 ("media", &mut this.media)
@@ -807,7 +941,6 @@ impl MediaBin {
                             && matches!(method, "setVideoThumbnail" | "resetVideoThumbnail")
                         {
                             this.thumbnail_status.clear();
-                            this.inputs.remove("thumbnailTimeSeconds");
                         }
 
                         if let Some(draft) = this.marker_draft.as_ref() {
@@ -869,12 +1002,21 @@ impl MediaBin {
                         }
                     }
                     Err(error) => {
-                        if this.reorder.take().is_some() {
+                        if thumbnail {
+                            this.flush_reorder(cx);
+                        } else if this.reorder.take().is_some() {
                             this.source = Arc::new(Value::Null);
                             this.refresh(cx);
                         }
                         if owner == this.selected {
                             if markers_save {
+                                this.marker_baseline = this
+                                    .media
+                                    .iter()
+                                    .find(|item| item["id"] == owner)
+                                    .map(|item| {
+                                        item.get("markers").cloned().unwrap_or_else(|| json!([]))
+                                    });
                                 this.marker_status = "media.markers.failed".into();
                             }
                             if matches!(method, "setVideoThumbnail" | "resetVideoThumbnail") {
@@ -919,6 +1061,9 @@ impl MediaBin {
             self.preview_playing = false;
         }
         let seconds = self.preview_position;
+        let end = play
+            .then(|| self.preview_range().map(|range| range.end))
+            .flatten();
         let source = self
             .media
             .iter()
@@ -951,11 +1096,9 @@ impl MediaBin {
                         std::path::Path::new(path),
                         &settings,
                         source.get("audioRouting"),
-                    )?;
-                    if seconds > 0. {
-                        preview.seek(seconds)?;
-                    }
-                    Ok(())
+                        seconds,
+                        end,
+                    )
                 })
                 .await;
             let _ = this.update(cx, |this, cx| {
@@ -1617,11 +1760,10 @@ impl MediaBin {
                     this.select_asset(&menu_id, cx);
                     this.inputs.clear();
                     this.transport_draft = None;
+                    this.transport_rate_slider = None;
                     this.transport_baseline = None;
                     this.thumbnail_status.clear();
-                    this.marker_draft = None;
-                    this.marker_baseline = None;
-                    this.marker_status.clear();
+                    this.reset_marker_editor();
                     this.menu_position = Some(event.position);
                     cx.stop_propagation();
                     cx.notify();
@@ -1659,10 +1801,9 @@ impl MediaBin {
                 }
                 this.inputs.clear();
                 this.transport_draft = None;
+                this.transport_rate_slider = None;
                 this.transport_baseline = None;
-                this.marker_draft = None;
-                this.marker_baseline = None;
-                this.marker_status.clear();
+                this.reset_marker_editor();
                 this.audition(false, cx);
                 this.preview_position = 0.;
                 this.effect_preview_key = Value::Null;

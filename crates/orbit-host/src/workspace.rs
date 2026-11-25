@@ -9088,6 +9088,9 @@ fn store_media_background_settings(
 ) -> Result<(), String> {
     for path in [source_path, asset_path].into_iter().flatten() {
         let key = path.to_string_lossy().to_string();
+        if let Some(entry) = settings.get_mut(&key).and_then(Value::as_object_mut) {
+            entry.remove("mediaEffectPresetId");
+        }
         let has_thumbnail = media.get("thumbnailFile").is_some()
             || settings
                 .get(&key)
@@ -9109,12 +9112,14 @@ fn store_media_background_settings(
     if ![
         "mediaDesaturate",
         "mediaEffects",
+        "mediaEffectPresetId",
         "mediaBrightness",
         "mediaContrast",
         "mediaHue",
         "mediaSaturation",
         "mediaTransport",
         "audioRouting",
+        "audioPreviewTrim",
         "backgroundBehavior",
         "backgroundEndBehavior",
         "backgroundPlayback",
@@ -9138,12 +9143,14 @@ fn store_media_background_settings(
         "thumbnailTimeSeconds",
         "mediaDesaturate",
         "mediaEffects",
+        "mediaEffectPresetId",
         "mediaBrightness",
         "mediaContrast",
         "mediaHue",
         "mediaSaturation",
         "mediaTransport",
         "audioRouting",
+        "audioPreviewTrim",
     ] {
         if let Some(field) = media.get(key) {
             value[key] = field.clone();
@@ -9823,6 +9830,12 @@ fn validate_audio_marker_dependencies(document: &Map<String, Value>) -> Result<(
 }
 
 fn validate_media_runtime_settings(media: &Value) -> Result<(), String> {
+    if media
+        .get("mediaEffectPresetId")
+        .is_some_and(|id| !id.as_str().is_some_and(|id| !id.trim().is_empty()))
+    {
+        return Err("A media effect preset link requires a preset id.".into());
+    }
     if let Some(markers) = media.get("markers") {
         let mut ids = HashSet::new();
         for marker in markers
@@ -9905,6 +9918,27 @@ fn validate_media_runtime_settings(media: &Value) -> Result<(), String> {
             return Err("Media transport settings require a video asset.".into());
         }
         crate::output_playback::validate_media_transport(transport)?;
+    }
+    if let Some(trim) = media.get("audioPreviewTrim") {
+        let start = trim["inSeconds"]
+            .as_f64()
+            .filter(|time| time.is_finite() && *time >= 0.);
+        let valid_end = start.is_some_and(|start| {
+            trim.get("outSeconds").is_some_and(|end| {
+                end.is_null()
+                    || end
+                        .as_f64()
+                        .is_some_and(|end| end.is_finite() && end > start)
+            })
+        });
+        if media["type"] != "audio"
+            || !valid_end
+            || trim.as_object().is_none_or(|trim| trim.len() != 2)
+        {
+            return Err(
+                "Audio preview trim requires a valid in point and an optional out point.".into(),
+            );
+        }
     }
     if let Some(playback) = media.get("audioPlayback") {
         if media.get("type").and_then(Value::as_str) != Some("audio")

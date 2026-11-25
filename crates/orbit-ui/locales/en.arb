@@ -1735,6 +1735,10 @@
   "@media.inspector.name": {
     "description": "User-facing name text in the media interface."
   },
+  "media.inspector.actionName": "Action Name",
+  "media.inspector.thumbnail": "Thumbnail",
+  "@media.inspector.actionName": {"description": "Editable media action name shown in the inspector."},
+  "@media.inspector.thumbnail": {"description": "Label for the media asset thumbnail in the inspector."},
   "media.inspector.filePath": "File Path",
   "@media.inspector.filePath": {
     "description": "User-facing file path text in the media interface."
@@ -5096,11 +5100,59 @@
   "@media.markers.jumpFailed": {
     "description": "Playback marker seek/action rejection."
   },
+  "media.markers.new": "Marker",
+  "@media.markers.new": {"description":"Media inspector marker command, message, or action type."},
+  "media.markers.changeColor": "Change color",
+  "@media.markers.changeColor": {"description":"Media inspector marker command, message, or action type."},
+  "media.markers.moveToPlayhead": "Move to playhead",
+  "@media.markers.moveToPlayhead": {"description":"Media inspector marker command, message, or action type."},
+  "media.markers.addMediaAction": "Add media action",
+  "@media.markers.addMediaAction": {"description":"Media inspector marker command, message, or action type."},
+  "media.markers.editTime": "Edit time",
+  "@media.markers.editTime": {"description":"Marker menu command for editing the time."},
+  "media.markers.editActions": "Edit actions",
+  "@media.markers.editActions": {"description":"Media inspector marker command, message, or action type."},
+  "media.markers.incomplete": "Complete the marker or action to save your changes.",
+  "@media.markers.incomplete": {"description":"Media inspector marker command, message, or action type."},
+  "media.markerAction.clear": "Clear",
+  "@media.markerAction.clear": {"description":"Media inspector marker command, message, or action type."},
+  "media.markerAction.clear-group": "Clear group",
+  "@media.markerAction.clear-group": {"description":"Media inspector marker command, message, or action type."},
+  "media.markerAction.macro": "Macro",
+  "@media.markerAction.macro": {"description":"Media inspector marker command, message, or action type."},
+  "media.markerAction.media": "Media",
+  "@media.markerAction.media": {"description":"Media inspector marker command, message, or action type."},
+  "media.markerAction.video-input": "Video input",
+  "@media.markerAction.video-input": {"description":"Media inspector marker command, message, or action type."},
+  "media.markerAction.audio-input": "Audio input",
+  "@media.markerAction.audio-input": {"description":"Media inspector marker command, message, or action type."},
+  "media.markerAction.message": "Message",
+  "@media.markerAction.message": {"description":"Media inspector marker command, message, or action type."},
+  "media.markerAction.presentation": "Presentation",
+  "@media.markerAction.presentation": {"description":"Media inspector marker command, message, or action type."},
+  "media.markerAction.playlist": "Playlist",
+  "@media.markerAction.playlist": {"description":"Media inspector marker command, message, or action type."},
+  "media.markerAction.prop": "Prop",
+  "@media.markerAction.prop": {"description":"Media inspector marker command, message, or action type."},
+  "media.markerAction.stage": "Stage",
+  "@media.markerAction.stage": {"description":"Media inspector marker command, message, or action type."},
+  "media.markerAction.audience-look": "Audience look",
+  "@media.markerAction.audience-look": {"description":"Media inspector marker command, message, or action type."},
+  "media.markerAction.mask": "Mask",
+  "@media.markerAction.mask": {"description":"Media inspector marker command, message, or action type."},
+  "media.markerAction.timer": "Timer",
+  "@media.markerAction.timer": {"description":"Media inspector marker command, message, or action type."},
+  "media.markerAction.transport": "Transport",
+  "@media.markerAction.transport": {"description":"Media inspector marker command, message, or action type."},
+  "media.markerAction.communication": "Communication",
+  "@media.markerAction.communication": {"description":"Media inspector marker command, message, or action type."},
+  "media.markerAction.capture": "Capture",
+  "@media.markerAction.capture": {"description":"Media inspector marker command, message, or action type."},
   "media.markers.tab": "Markers",
   "media.markers.title": "Marker name",
   "media.markers.time": "Seconds",
   "media.markers.add": "Add marker",
-  "media.markers.saved": "Saved. Reselect media.",
+  "media.markers.saved": "Saved",
   "media.markers.failed": "Save failed.",
   "@media.markers.tab": {
     "description": "Media playback marker editor tab text."
@@ -5435,7 +5487,7 @@
   "@media.thumbnail.help": {
     "description": "Choose a time before the end of the video. Native extraction runs separately from live playback."
   },
-  "media.thumbnail.capture": "Capture frame",
+  "media.thumbnail.capture": "Set to Current Frame",
   "@media.thumbnail.capture": {
     "description": "Capture frame"
   },
@@ -5611,6 +5663,14 @@
   "@utilityPanels.announcements": {
     "description": "Independent announcements operator control."
   },
+  "media.audioRouting.masterVolume": "Master Volume",
+  "@media.audioRouting.masterVolume": {"description":"Label in the audio tab of the media inspector."},
+  "media.audioRouting.channels": "Channels",
+  "@media.audioRouting.channels": {"description":"Label in the audio tab of the media inspector."},
+  "media.audioRouting.configure": "Channel Routing\u2026",
+  "@media.audioRouting.configure": {"description":"Label in the audio tab of the media inspector."},
+  "media.audioRouting.outputs": "Outputs",
+  "@media.audioRouting.outputs": {"description":"Label in the audio tab of the media inspector."},
   "media.audioRouting.title": "Audio routing",
   "@media.audioRouting.title": {
     "description": "Native audio and video transport controls."
@@ -5663,6 +5723,44 @@
   "@media.audioPlaylist.repeat": {
     "description": "Native audio and video transport controls."
   },
+  "media.preview.rewind15": "Back 15 seconds",
+  "@media.preview.rewind15": {"description":"Media preview jump button tooltip."},
+  "media.preview.forward15": "Forward 15 seconds",
+  "@media.preview.forward15": {"description":"Media preview jump button tooltip."},
+  "media.preview.start": "Go to in point",
+  "@media.preview.start": {"description":"Media inspector preview transport control."},
+  "media.preview.back": "Back one second",
+  "@media.preview.back": {"description":"Media inspector preview transport control."},
+  "media.preview.forward": "Forward one second",
+  "@media.preview.forward": {"description":"Media inspector preview transport control."},
+  "media.preview.end": "Go to out point",
+  "@media.preview.end": {"description":"Media inspector preview transport control."},
+  "media.preview.trimStart": "Drag to change the in point",
+  "@media.preview.trimStart": {"description":"Media inspector preview transport control."},
+  "media.preview.trimEnd": "Drag to change the out point",
+  "@media.preview.trimEnd": {"description":"Media inspector preview transport control."},
+  "media.transport.inPoint": "In Point",
+  "@media.transport.inPoint": {"description":"Media inspector property label or option."},
+  "media.transport.outPoint": "Out Point",
+  "@media.transport.outPoint": {"description":"Media inspector property label or option."},
+  "media.transport.delayTime": "Delay Time",
+  "@media.transport.delayTime": {"description":"Media inspector property label or option."},
+  "media.transport.playRate": "Play Rate",
+  "@media.transport.playRate": {"description":"Media inspector property label or option."},
+  "media.transport.hardwareDecoding": "Hardware Decoding",
+  "@media.transport.hardwareDecoding": {"description":"Media inspector property label or option."},
+  "media.transport.hardwareDisabled": "Disabled",
+  "@media.transport.hardwareDisabled": {"description":"Media inspector property label or option."},
+  "media.transport.softLoopUnavailable": "Soft Loop (unavailable)",
+  "@media.transport.softLoopUnavailable": {"description":"Media inspector property label or option."},
+  "media.rotation.0": "0\u00b0",
+  "@media.rotation.0": {"description":"Media inspector property label or option."},
+  "media.rotation.90": "90\u00b0",
+  "@media.rotation.90": {"description":"Media inspector property label or option."},
+  "media.rotation.180": "180\u00b0",
+  "@media.rotation.180": {"description":"Media inspector property label or option."},
+  "media.rotation.270": "270\u00b0",
+  "@media.rotation.270": {"description":"Media inspector property label or option."},
   "media.transport.title": "Video transport",
   "@media.transport.title": {
     "description": "Native audio and video transport controls."
@@ -6938,7 +7036,7 @@
   "@media.effects.presetName": {
     "description": "Media color effect preset control"
   },
-  "media.effects.savePreset": "Save new preset",
+  "media.effects.savePreset": "Save as…",
   "@media.effects.savePreset": {
     "description": "Media color effect preset control"
   },
@@ -6946,7 +7044,15 @@
   "@media.effects.updatePreset": {
     "description": "Media color effect preset control"
   },
-  "media.effects.noPreset": "No preset",
+  "media.effects.clear": "Clear effects",
+  "@media.effects.clear": {"description": "Action or feedback in the media inspector effect preset menu."},
+  "media.effects.unlinkPreset": "Unlink preset",
+  "@media.effects.unlinkPreset": {"description": "Action or feedback in the media inspector effect preset menu."},
+  "media.effects.duplicatePresetName": "A preset with this name already exists.",
+  "@media.effects.duplicatePresetName": {"description": "Action or feedback in the media inspector effect preset menu."},
+  "media.effects.deletePresetConfirm": "Delete the preset “{title}”?",
+  "@media.effects.deletePresetConfirm": {"description": "Action or feedback in the media inspector effect preset menu.", "placeholders": {"title": {"type": "String"}}},
+  "media.effects.noPreset": "No selection",
   "@media.effects.noPreset": {
     "description": "Media color effect preset control"
   },
@@ -7122,6 +7228,8 @@
   "@transition.picker.categoryAll": {
     "description": "Transition category filter entry that shows every category."
   },
+  "transition.picker.favorites": "Favorites",
+  "@transition.picker.favorites": {"description":"Media transition picker section for saved transition favorites."},
   "transition.picker.recents": "Recents",
   "@transition.picker.recents": {
     "description": "Heading of the recently picked transitions."

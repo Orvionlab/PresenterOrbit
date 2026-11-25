@@ -556,6 +556,8 @@
   "media.inspector.info": "Info",
   "media.inspector.properties": "Eigenschappen",
   "media.inspector.name": "Naam",
+  "media.inspector.actionName": "Actienaam",
+  "media.inspector.thumbnail": "Miniatuur",
   "media.inspector.filePath": "Bestandspad",
   "media.inspector.details": "Kenmerken",
   "media.inspector.type": "Type",
@@ -1632,11 +1634,35 @@
   "@media.markers.jumpFailed": {
     "description": "Playback marker seek/action rejection."
   },
+  "media.markers.new": "Markering",
+  "media.markers.changeColor": "Kleur wijzigen",
+  "media.markers.moveToPlayhead": "Naar afspeelkop verplaatsen",
+  "media.markers.addMediaAction": "Media-actie toevoegen",
+  "media.markers.editTime": "Tijd bewerken",
+  "media.markers.editActions": "Acties bewerken",
+  "media.markers.incomplete": "Vul de markering of actie aan om je wijzigingen op te slaan.",
+  "media.markerAction.clear": "Wissen",
+  "media.markerAction.clear-group": "Wisgroep",
+  "media.markerAction.macro": "Macro",
+  "media.markerAction.media": "Media",
+  "media.markerAction.video-input": "Video-ingang",
+  "media.markerAction.audio-input": "Audio-ingang",
+  "media.markerAction.message": "Bericht",
+  "media.markerAction.presentation": "Presentatie",
+  "media.markerAction.playlist": "Afspeellijst",
+  "media.markerAction.prop": "Prop",
+  "media.markerAction.stage": "Podium",
+  "media.markerAction.audience-look": "Publieksweergave",
+  "media.markerAction.mask": "Masker",
+  "media.markerAction.timer": "Timer",
+  "media.markerAction.transport": "Afspeelbediening",
+  "media.markerAction.communication": "Communicatie",
+  "media.markerAction.capture": "Opname",
   "media.markers.tab": "Markers",
   "media.markers.title": "Markernaam",
   "media.markers.time": "Seconden",
   "media.markers.add": "Marker toevoegen",
-  "media.markers.saved": "Opgeslagen. Selecteer media opnieuw.",
+  "media.markers.saved": "Opgeslagen",
   "media.markers.failed": "Opslaan mislukt.",
   "@media.markers.tab": {
     "description": "Media playback marker editor tab text."
@@ -1782,7 +1808,7 @@
   "@media.thumbnail.help": {
     "description": "Choose a time before the end of the video. Native extraction runs separately from live playback."
   },
-  "media.thumbnail.capture": "Frame vastleggen",
+  "media.thumbnail.capture": "Gebruik huidig frame",
   "@media.thumbnail.capture": {
     "description": "Capture frame"
   },
@@ -1925,6 +1951,10 @@
     "description": "Independent presentation export interface."
   },
   "utilityPanels.announcements": "Aankondigingen",
+  "media.audioRouting.masterVolume": "Hoofdvolume",
+  "media.audioRouting.channels": "Kanalen",
+  "media.audioRouting.configure": "Kanaalroutering\u2026",
+  "media.audioRouting.outputs": "Uitgangen",
   "media.audioRouting.title": "Audioroutering",
   "@media.audioRouting.title": {
     "description": "Native audio and video transport controls."
@@ -1968,6 +1998,25 @@
   "@media.audioPlaylist.repeat": {
     "description": "Native audio and video transport controls."
   },
+  "media.preview.rewind15": "15 seconden terug",
+  "media.preview.forward15": "15 seconden vooruit",
+  "media.preview.start": "Ga naar beginpunt",
+  "media.preview.back": "E\u00e9n seconde terug",
+  "media.preview.forward": "E\u00e9n seconde vooruit",
+  "media.preview.end": "Ga naar eindpunt",
+  "media.preview.trimStart": "Sleep om het beginpunt te wijzigen",
+  "media.preview.trimEnd": "Sleep om het eindpunt te wijzigen",
+  "media.transport.inPoint": "Beginpunt",
+  "media.transport.outPoint": "Eindpunt",
+  "media.transport.delayTime": "Startvertraging",
+  "media.transport.playRate": "Afspeelsnelheid",
+  "media.transport.hardwareDecoding": "Hardwaredecodering",
+  "media.transport.hardwareDisabled": "Uitgeschakeld",
+  "media.transport.softLoopUnavailable": "Vloeiende lus (niet beschikbaar)",
+  "media.rotation.0": "0\u00b0",
+  "media.rotation.90": "90\u00b0",
+  "media.rotation.180": "180\u00b0",
+  "media.rotation.270": "270\u00b0",
   "media.transport.title": "Videotransport",
   "@media.transport.title": {
     "description": "Native audio and video transport controls."
@@ -2752,7 +2801,7 @@
   "@media.effects.presetName": {
     "description": "Media color effect preset control"
   },
-  "media.effects.savePreset": "Nieuwe preset opslaan",
+  "media.effects.savePreset": "Opslaan als…",
   "@media.effects.savePreset": {
     "description": "Media color effect preset control"
   },
@@ -2760,7 +2809,15 @@
   "@media.effects.updatePreset": {
     "description": "Media color effect preset control"
   },
-  "media.effects.noPreset": "Geen preset",
+  "media.effects.clear": "Effecten wissen",
+  "@media.effects.clear": {"description": "Action or feedback in the media inspector effect preset menu."},
+  "media.effects.unlinkPreset": "Preset ontkoppelen",
+  "@media.effects.unlinkPreset": {"description": "Action or feedback in the media inspector effect preset menu."},
+  "media.effects.duplicatePresetName": "Er bestaat al een preset met deze naam.",
+  "@media.effects.duplicatePresetName": {"description": "Action or feedback in the media inspector effect preset menu."},
+  "media.effects.deletePresetConfirm": "Preset ‘{title}’ verwijderen?",
+  "@media.effects.deletePresetConfirm": {"description": "Action or feedback in the media inspector effect preset menu.", "placeholders": {"title": {"type": "String"}}},
+  "media.effects.noPreset": "Geen selectie",
   "@media.effects.noPreset": {
     "description": "Media color effect preset control"
   },
@@ -2834,6 +2891,7 @@
   "transition.picker.filter": "Filter",
   "transition.picker.category": "Categorie",
   "transition.picker.categoryAll": "Alle",
+  "transition.picker.favorites": "Favorieten",
   "transition.picker.recents": "Recent",
   "transition.picker.clear": "Wissen",
   "transition.picker.all": "Alle",

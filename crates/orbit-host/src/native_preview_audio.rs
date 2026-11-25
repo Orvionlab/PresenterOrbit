@@ -19,17 +19,35 @@ impl PreviewAudio {
     }
 
     /// Runs on a worker. The caller resolves the workspace asset before passing it here.
-    pub fn play(&mut self, path: &Path, main: &Value, asset: Option<&Value>) -> Result<(), String> {
+    pub fn play(
+        &mut self,
+        path: &Path,
+        main: &Value,
+        asset: Option<&Value>,
+        start: f64,
+        end: Option<f64>,
+    ) -> Result<(), String> {
         self.stop();
         let Some((device, channels)) = main_audio_target(main) else {
             return Ok(());
         };
-        let decoder = Decoder::try_from(File::open(path).map_err(|error| error.to_string())?)
+        let mut decoder = Decoder::try_from(File::open(path).map_err(|error| error.to_string())?)
             .map_err(|error| format!("Cannot decode preview audio: {error}"))?;
         self.duration = decoder
             .total_duration()
             .map(|duration| duration.as_secs_f64());
         let sink = open_main_audio_sink(&device, channels)?;
+        if !start.is_finite()
+            || start < 0.
+            || end.is_some_and(|end| !end.is_finite() || end <= start)
+        {
+            return Err("Preview range requires a finite start and a later end.".into());
+        }
+        if start > 0. {
+            decoder
+                .try_seek(Duration::from_secs_f64(start))
+                .map_err(|error| error.to_string())?;
+        }
         let player = Player::connect_new(sink.mixer());
         let (route, gain) = match asset {
             Some(asset) => asset_audio_routing(asset)?,
@@ -44,7 +62,16 @@ impl PreviewAudio {
             sum: 0.,
             count: 0,
         };
-        player.append(meter.delay(delay_from_settings(main)));
+        let delay = delay_from_settings(main);
+        if let Some(end) = end {
+            player.append(
+                meter
+                    .take_duration(Duration::from_secs_f64(end - start))
+                    .delay(delay),
+            );
+        } else {
+            player.append(meter.delay(delay));
+        }
         self.player = Some(player);
         self.sink = Some(sink);
         Ok(())

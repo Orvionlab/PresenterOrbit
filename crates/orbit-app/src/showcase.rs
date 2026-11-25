@@ -668,7 +668,15 @@ impl ShowcaseView {
                 )
                 .into(),
             MenuItem::new("Copy").icon("copy").meta("Ctrl+C").into(),
-            MenuItem::new("Selected").checked(true).into(),
+            MenuEntry::SelectableSubmenu {
+                item: MenuItem::new("Selected")
+                    .checked(true)
+                    .on_click(|_, _, _| {}),
+                entries: vec![
+                    MenuItem::new("Rename").into(),
+                    MenuItem::new("Delete").into(),
+                ],
+            },
             MenuItem::new("Disabled").disabled(true).into(),
             MenuEntry::Control {
                 label: "Color".into(),

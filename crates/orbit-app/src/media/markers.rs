@@ -1,5 +1,33 @@
 use super::*;
-use orbit_ui::controls::{CheckboxField, ColorPicker, Field, InputEvent};
+use orbit_ui::controls::{
+    data_color, list_row, ButtonVariant, CheckboxField, ColorPicker, ContextMenu, Field,
+    InputEvent, MenuEntry, MenuItem,
+};
+
+const MARKER_COLORS: [&str; 6] = [
+    "#59bbff", "#ffb449", "#b894ff", "#66d7a4", "#ff83ab", "#54d7d7",
+];
+
+#[derive(Clone, Copy, PartialEq)]
+pub(super) enum MarkerEditor {
+    Name,
+    Color,
+    Time,
+    Actions,
+}
+
+#[derive(Clone, Copy)]
+enum MarkerCommand {
+    Edit(MarkerEditor),
+    Move,
+    Repeat,
+    Cut,
+    Copy,
+    Paste,
+    Duplicate,
+    Delete,
+    AddAction(&'static str),
+}
 
 impl MediaBin {
     pub(super) fn marker_patch(
@@ -52,8 +80,7 @@ impl MediaBin {
         } else {
             marker[field] = value;
         }
-        self.marker_status.clear();
-        cx.notify();
+        self.save_markers(cx);
     }
     pub(super) fn marker_field(
         &mut self,
@@ -65,6 +92,7 @@ impl MediaBin {
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         let key = format!("marker-{index}-{action:?}-{field}");
+        let selector = key.clone();
         let input = if let Some((input, _)) = self.inputs.get(&key) {
             input.clone()
         } else {
@@ -81,7 +109,9 @@ impl MediaBin {
                 &input,
                 window,
                 move |this, input, event: &InputEvent, _, cx| {
-                    if this.selected != owner || !matches!(event, InputEvent::Change) {
+                    if this.selected != owner
+                        || !matches!(event, InputEvent::Blur | InputEvent::PressEnter { .. })
+                    {
                         return;
                     }
                     let text = input.read(cx).value().to_string();
@@ -99,15 +129,23 @@ impl MediaBin {
                     this.marker_patch(index, action, field, value, cx);
                 },
             );
+            if action.is_none() && field == "title" {
+                input.update(cx, |state, cx| {
+                    state.focus(window, cx);
+                    state.select_all(window, cx);
+                });
+            }
             self.inputs
                 .insert(key.clone(), (input.clone(), subscription));
             input
         };
         Field::new(
             cx.global::<Translator>().t(label),
-            TextInput::new(SharedString::from(key), &input)
-                .compact()
-                .disabled(self.edits_blocked()),
+            div().debug_selector(move || selector.clone()).child(
+                TextInput::new(SharedString::from(key), &input)
+                    .compact()
+                    .disabled(self.edits_blocked()),
+            ),
         )
         .inline()
         .into_any_element()
@@ -120,16 +158,227 @@ impl MediaBin {
         let Some(draft) = self.marker_draft.clone() else {
             return;
         };
-        if self.marker_baseline.as_ref() != Some(&current)
-            || !valid_markers(&draft, item)
-            || !self.marker_actions_valid(&draft)
-        {
+        if self.marker_baseline.as_ref() != Some(&current) {
             self.marker_status = "media.markers.failed".into();
             cx.notify();
             return;
         }
-        self.patch_asset("markers", draft, cx);
+        if !valid_markers(&draft, item) || !self.marker_actions_valid(&draft) {
+            self.marker_status = "media.markers.incomplete".into();
+            cx.notify();
+            return;
+        }
+        if current != draft {
+            self.marker_baseline = Some(draft.clone());
+            self.patch_asset("markers", draft, cx);
+        }
+        self.marker_status.clear();
+        cx.notify();
     }
+
+    pub(super) fn reset_marker_editor(&mut self) {
+        self.marker_draft = None;
+        self.marker_baseline = None;
+        self.marker_status.clear();
+        self.marker_menu = None;
+        self.marker_editor = None;
+        self.selected_marker = None;
+    }
+
+    fn marker_command(&mut self, id: Option<&str>, command: MarkerCommand, cx: &mut Context<Self>) {
+        let Some(markers) = self.marker_draft.as_mut().and_then(Value::as_array_mut) else {
+            return;
+        };
+        self.marker_menu = None;
+        let index = id.and_then(|id| markers.iter().position(|marker| marker["id"] == id));
+        if matches!(command, MarkerCommand::Paste) {
+            if let Some(mut copy) = self.marker_clipboard.clone() {
+                renew_marker_ids(&mut copy);
+                copy["timeSeconds"] = json!(self.preview_position);
+                self.selected_marker = copy["id"].as_str().map(str::to_owned);
+                markers.insert(index.map_or(markers.len(), |index| index + 1), copy);
+                self.inputs.retain(|key, _| !key.starts_with("marker-"));
+                self.save_markers(cx);
+            }
+            return;
+        }
+        let Some((id, index)) = id.zip(index) else {
+            return;
+        };
+        match command {
+            MarkerCommand::Edit(editor) => {
+                self.inputs.retain(|key, _| !key.starts_with("marker-"));
+                self.marker_editor = Some((id.to_owned(), editor));
+                cx.notify();
+                return;
+            }
+            MarkerCommand::Move => markers[index]["timeSeconds"] = json!(self.preview_position),
+            MarkerCommand::Repeat => {
+                let repeat = markers[index]["repeatOnLoop"] != false;
+                markers[index]["repeatOnLoop"] = json!(!repeat);
+            }
+            MarkerCommand::Copy | MarkerCommand::Cut => {
+                self.marker_clipboard = Some(markers[index].clone());
+                if matches!(command, MarkerCommand::Copy) {
+                    cx.notify();
+                    return;
+                }
+                markers.remove(index);
+            }
+            MarkerCommand::Duplicate => {
+                let mut copy = markers[index].clone();
+                renew_marker_ids(&mut copy);
+                self.selected_marker = copy["id"].as_str().map(str::to_owned);
+                markers.insert(index + 1, copy);
+            }
+            MarkerCommand::Paste => return,
+            MarkerCommand::Delete => {
+                markers.remove(index);
+            }
+            MarkerCommand::AddAction(kind) => {
+                let Some(actions) = markers[index]["actions"].as_array_mut() else {
+                    return;
+                };
+                let mut action = json!({"id":uuid::Uuid::new_v4().to_string(),"type":kind,"enabled":true,"delaySeconds":0});
+                if kind == "clear" {
+                    action["targetLayer"] = json!("slide");
+                }
+                if kind == "capture" {
+                    action["details"] = json!({"start":{"presetIdentification":""}});
+                }
+                actions.push(action);
+                self.marker_editor = Some((id.to_owned(), MarkerEditor::Actions));
+            }
+        }
+        self.inputs.retain(|key, _| !key.starts_with("marker-"));
+        self.save_markers(cx);
+    }
+
+    fn marker_menu(
+        &self,
+        draft: &Value,
+        item: &Value,
+        cx: &mut Context<Self>,
+    ) -> Option<gpui::AnyElement> {
+        let (id, point) = self.marker_menu.as_ref()?;
+        let marker = id
+            .as_ref()
+            .and_then(|id| draft.as_array()?.iter().find(|marker| marker["id"] == *id));
+        let t = *cx.global::<Translator>();
+        let owner = cx.weak_entity();
+        let action = |label: String, command, disabled| {
+            let owner = owner.clone();
+            let id = id.clone();
+            MenuItem::new(label)
+                .disabled(disabled)
+                .on_click(move |_, _, cx| {
+                    let _ = owner.update(cx, |this, cx| {
+                        this.marker_command(id.as_deref(), command, cx)
+                    });
+                })
+        };
+        let media_kind = |kind| matches!(kind, "media" | "video-input" | "audio-input");
+        let actions = |media| {
+            ACTION_TYPES
+                .iter()
+                .copied()
+                .filter(|kind| media_kind(*kind) == media)
+                .map(|kind| {
+                    action(
+                        t.t(&format!("media.markerAction.{kind}")),
+                        MarkerCommand::AddAction(kind),
+                        false,
+                    )
+                    .into()
+                })
+                .collect()
+        };
+        let disabled = self.edits_blocked();
+        let paste = action(
+            t.t("common.paste"),
+            MarkerCommand::Paste,
+            disabled || self.marker_clipboard.is_none(),
+        );
+        let mut entries: Vec<MenuEntry> = Vec::new();
+        if let Some(marker) = marker {
+            entries.extend([
+                action(
+                    t.t("common.rename"),
+                    MarkerCommand::Edit(MarkerEditor::Name),
+                    disabled,
+                )
+                .into(),
+                action(
+                    t.t("media.markers.changeColor"),
+                    MarkerCommand::Edit(MarkerEditor::Color),
+                    disabled,
+                )
+                .into(),
+                action(
+                    t.t("media.markers.moveToPlayhead"),
+                    MarkerCommand::Move,
+                    disabled,
+                )
+                .into(),
+            ]);
+            entries.push(
+                action(
+                    t.t("media.markers.editTime"),
+                    MarkerCommand::Edit(MarkerEditor::Time),
+                    disabled,
+                )
+                .into(),
+            );
+            if allows_repeat(item) {
+                entries.push(
+                    action(
+                        t.t("media.markers.repeatOnLoop"),
+                        MarkerCommand::Repeat,
+                        disabled,
+                    )
+                    .checked(marker["repeatOnLoop"] != false)
+                    .into(),
+                );
+            }
+            entries.extend([
+                MenuEntry::Separator,
+                MenuEntry::Submenu {
+                    label: t.t("automation.macros.addAction").into(),
+                    disabled,
+                    entries: actions(false),
+                },
+                MenuEntry::Submenu {
+                    label: t.t("media.markers.addMediaAction").into(),
+                    disabled,
+                    entries: actions(true),
+                },
+                action(
+                    t.t("media.markers.editActions"),
+                    MarkerCommand::Edit(MarkerEditor::Actions),
+                    disabled || marker["actions"].as_array().is_none_or(Vec::is_empty),
+                )
+                .into(),
+                MenuEntry::Separator,
+                action(t.t("common.cut"), MarkerCommand::Cut, disabled).into(),
+                action(t.t("common.copy"), MarkerCommand::Copy, false).into(),
+                paste.into(),
+                action(t.t("common.duplicate"), MarkerCommand::Duplicate, disabled).into(),
+                action(t.t("common.delete"), MarkerCommand::Delete, disabled).into(),
+            ]);
+        } else {
+            entries.push(paste.into());
+        }
+        Some(
+            ContextMenu::new("media-marker-context", *point, entries, move |_, _, cx| {
+                let _ = owner.update(cx, |this, cx| {
+                    this.marker_menu = None;
+                    cx.notify();
+                });
+            })
+            .into_any_element(),
+        )
+    }
+
     pub(super) fn markers(
         &mut self,
         item: &Value,
@@ -141,49 +390,152 @@ impl MediaBin {
         self.marker_baseline.get_or_insert_with(|| original.clone());
         let draft = self.marker_draft.get_or_insert(original).clone();
         let allow_repeat = allows_repeat(item);
-        let mut body = div().flex().flex_col().gap(cx.theme().metrics.space_xs);
-        for (index, marker) in draft.as_array().into_iter().flatten().enumerate() {
-            for (field, label, numeric) in [
-                ("title", "media.markers.title", false),
-                ("timeSeconds", "media.markers.time", true),
-            ] {
-                body = body.child(self.marker_field(
-                    (index, None, field),
-                    label,
-                    marker[field].clone(),
-                    numeric,
-                    window,
-                    cx,
-                ));
-            }
-            let weak = cx.weak_entity();
-            body = body.child(
-                ColorPicker::new(
-                    SharedString::from(format!("marker-color-{index}")),
-                    t.t("theme.color"),
-                    marker["color"].as_str().unwrap_or("#ffaa00").to_string(),
-                )
-                .on_change(move |color, _, cx| {
-                    let _ = weak.update(cx, |this, cx| {
-                        this.marker_patch(index, None, "color", json!(color), cx)
-                    });
+        let theme = *cx.theme();
+        let mut body = div()
+            .id("media-markers-list")
+            .min_h(theme.metrics.row_height * 5.)
+            .flex()
+            .flex_col()
+            .gap(theme.metrics.space_xs)
+            .on_mouse_down(
+                gpui::MouseButton::Right,
+                cx.listener(|this, event: &gpui::MouseDownEvent, _, cx| {
+                    this.marker_menu = Some((None, event.position));
+                    cx.stop_propagation();
+                    cx.notify();
                 }),
-            );
-            if allow_repeat {
-                let weak = cx.weak_entity();
-                body = body.child(
-                    CheckboxField::new(
-                        SharedString::from(format!("marker-repeat-{index}")),
-                        t.t("media.markers.repeatOnLoop"),
-                        marker["repeatOnLoop"] != false,
-                    )
+            )
+            .child(
+                ActionButton::new("marker-add", t.t("media.markers.add"))
+                    .compact()
                     .disabled(self.edits_blocked())
-                    .on_change(move |value, _, cx| {
-                        let _ = weak.update(cx, |this, cx| {
-                            this.marker_patch(index, None, "repeatOnLoop", json!(value), cx)
-                        });
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        let mut marker = new_marker(
+                            cx.global::<Translator>().t("media.markers.new"),
+                            allow_repeat,
+                        );
+                        let position = this.preview_position;
+                        marker["timeSeconds"] = json!(position);
+                        if let Some(item) =
+                            this.media.iter().find(|item| item["id"] == this.selected)
+                        {
+                            let transport = &item["mediaTransport"];
+                            if position < transport["inSeconds"].as_f64().unwrap_or(0.)
+                                || transport["outSeconds"]
+                                    .as_f64()
+                                    .is_some_and(|end| position >= end)
+                            {
+                                marker["repeatOnLoop"] = json!(false);
+                            }
+                        }
+                        this.selected_marker = marker["id"].as_str().map(str::to_owned);
+                        if let Some(markers) =
+                            this.marker_draft.as_mut().and_then(Value::as_array_mut)
+                        {
+                            let last = markers
+                                .last()
+                                .and_then(|marker| marker["color"].as_str())
+                                .and_then(|color| {
+                                    MARKER_COLORS.iter().position(|entry| *entry == color)
+                                });
+                            let first = last.map_or(0, |index| (index + 1) % MARKER_COLORS.len());
+                            let color = MARKER_COLORS
+                                .iter()
+                                .cycle()
+                                .skip(first)
+                                .take(MARKER_COLORS.len())
+                                .find(|color| {
+                                    !markers.iter().any(|marker| marker["color"] == **color)
+                                })
+                                .copied()
+                                .unwrap_or(MARKER_COLORS[first]);
+                            marker["color"] = json!(color);
+                            markers.push(marker);
+                            this.save_markers(cx);
+                        }
+                    })),
+            );
+        for (index, marker) in draft.as_array().into_iter().flatten().enumerate() {
+            let id = text(marker, "id").to_owned();
+            let menu_id = id.clone();
+            let row_id = id.clone();
+            let label = text(marker, "title").to_owned();
+            let time = marker["timeSeconds"].as_f64().unwrap_or(0.);
+            let color = marker["color"]
+                .as_str()
+                .map(data_color)
+                .unwrap_or(theme.colors.accent);
+            let selected = self.selected_marker.as_deref() == Some(id.as_str());
+            let selector = format!("media-marker-{index}");
+            body = body.child(
+                list_row(
+                    SharedString::from(format!("media-marker-{id}")),
+                    selected,
+                    cx,
+                )
+                .debug_selector(move || selector.clone())
+                .on_mouse_down(
+                    gpui::MouseButton::Right,
+                    cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
+                        this.selected_marker = Some(menu_id.clone());
+                        this.marker_menu = Some((Some(menu_id.clone()), event.position));
+                        cx.stop_propagation();
+                        cx.notify();
                     }),
-                );
+                )
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.selected_marker = Some(row_id.clone());
+                    this.preview_seek(time, cx);
+                }))
+                .child(orbit_ui::icon("media-marker-tag").text_color(color))
+                .child(crate::automation::form::format_time(time))
+                .child(div().min_w_0().truncate().child(label)),
+            );
+            let editor = self
+                .marker_editor
+                .as_ref()
+                .and_then(|(owner, editor)| (owner == &id).then_some(*editor));
+            match editor {
+                Some(MarkerEditor::Name) => {
+                    body = body.child(self.marker_field(
+                        (index, None, "title"),
+                        "media.markers.title",
+                        marker["title"].clone(),
+                        false,
+                        window,
+                        cx,
+                    ));
+                    continue;
+                }
+                Some(MarkerEditor::Time) => {
+                    body = body.child(self.marker_field(
+                        (index, None, "timeSeconds"),
+                        "media.markers.time",
+                        marker["timeSeconds"].clone(),
+                        true,
+                        window,
+                        cx,
+                    ));
+                    continue;
+                }
+                Some(MarkerEditor::Color) => {
+                    let weak = cx.weak_entity();
+                    body = body.child(
+                        ColorPicker::new(
+                            SharedString::from(format!("marker-color-{index}")),
+                            t.t("theme.color"),
+                            marker["color"].as_str().unwrap_or("#ffaa00").to_owned(),
+                        )
+                        .on_change(move |color, _, cx| {
+                            let _ = weak.update(cx, |this, cx| {
+                                this.marker_patch(index, None, "color", json!(color), cx)
+                            });
+                        }),
+                    );
+                    continue;
+                }
+                Some(MarkerEditor::Actions) => {}
+                None => continue,
             }
             for (action_index, action) in marker["actions"]
                 .as_array()
@@ -223,6 +575,8 @@ impl MediaBin {
                             SharedString::from(format!("action-{index}-{action_index}-{offset}")),
                             t.t(key),
                         )
+                        .variant(ButtonVariant::Ghost)
+                        .compact()
                         .disabled(self.edits_blocked())
                         .on_click(cx.listener(move |this, _, _, cx| {
                             if let Some(actions) = this
@@ -239,53 +593,15 @@ impl MediaBin {
                                 {
                                     actions.swap(action_index, target);
                                 }
-                                this.inputs.clear();
-                                cx.notify();
+                                this.inputs.retain(|key, _| !key.starts_with("marker-"));
+                                this.save_markers(cx);
                             }
                         })),
                     );
                 }
             }
-            body = body.child(ActionButton::new(SharedString::from(format!("marker-add-action-{index}")), t.t("automation.macros.addAction")).disabled(self.edits_blocked()).on_click(cx.listener(move |this, _, _, cx| {
-                if let Some(actions) = this.marker_draft.as_mut().and_then(|draft| draft.get_mut(index)).and_then(|marker| marker["actions"].as_array_mut()) { actions.push(json!({"id":uuid::Uuid::new_v4().to_string(),"type":"clear","targetLayer":"slide","enabled":true,"delaySeconds":0})); cx.notify(); }
-            })));
-            body = body.child(
-                ActionButton::new(
-                    SharedString::from(format!("marker-remove-{index}")),
-                    t.t("automation.macros.remove"),
-                )
-                .disabled(self.edits_blocked())
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    if let Some(markers) = this.marker_draft.as_mut().and_then(Value::as_array_mut)
-                    {
-                        markers.remove(index);
-                        this.inputs.clear();
-                        cx.notify();
-                    }
-                })),
-            );
         }
-        body = body
-            .child(
-                ActionButton::new("marker-add", t.t("media.markers.add"))
-                    .disabled(self.edits_blocked())
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        if let Some(markers) =
-                            this.marker_draft.as_mut().and_then(Value::as_array_mut)
-                        {
-                            markers.push(new_marker(
-                                cx.global::<Translator>().t("media.markers.title"),
-                                allow_repeat,
-                            ));
-                            cx.notify();
-                        }
-                    })),
-            )
-            .child(
-                ActionButton::new("markers-save", t.t("automation.macros.save"))
-                    .disabled(self.edits_blocked())
-                    .on_click(cx.listener(|this, _, _, cx| this.save_markers(cx))),
-            );
+        body = body.children(self.marker_menu(&draft, item, cx));
         if !self.marker_status.is_empty() {
             body = body.child(
                 div()
@@ -297,6 +613,15 @@ impl MediaBin {
         body.into_any_element()
     }
 }
+fn renew_marker_ids(marker: &mut Value) {
+    marker["id"] = json!(uuid::Uuid::new_v4().to_string());
+    if let Some(actions) = marker["actions"].as_array_mut() {
+        for action in actions {
+            action["id"] = json!(uuid::Uuid::new_v4().to_string());
+        }
+    }
+}
+
 pub(super) const ACTION_TYPES: &[&str] = &[
     "clear",
     "clear-group",

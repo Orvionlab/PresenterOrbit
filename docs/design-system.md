@@ -78,7 +78,7 @@ Each state has exactly one color and is never reused for another meaning.
 | List row | `list_row`, or `list_row_without_hover` when only selection changes its background |
 | Empty region | `EmptyState` |
 | Modal | `Dialog` (the only dialog skin), `BusyDialog` while waiting (`.page()` for centered full-page loading) |
-| Menu | `ContextMenu` with `MenuItem` and `MenuEntry`; `Header` groups destinations, `Control` embeds an interactive field that keeps the menu open, and `MenuItem::content` supports rich previews while preserving the accessible label and action |
+| Menu | `ContextMenu` with `MenuItem` and `MenuEntry`. Use `Header` to group destinations, `Control` for fields that keep the menu open, `SelectableSubmenu` for a choice with secondary actions on hover, and `MenuItem::content` for rich previews |
 | Anchored overlay | `Popover` |
 | Collection selector | `CollectionPicker` with `CollectionOption` and `CollectionAction`: add, inline rename, duplicate, confirmed delete and drag insertion in one popover |
 | Slide text and notes | `RichText` (shared field colors, compact formatting controls, focus ring, IME, commit on blur; weight, style, decoration and color per run) |

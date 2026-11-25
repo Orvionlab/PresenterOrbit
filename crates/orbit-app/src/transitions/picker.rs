@@ -349,12 +349,30 @@ impl TransitionDefaults {
             } else {
                 super::effect_transition(effect, seconds)
             };
-            self.save(transition, cx);
+            if self.media_id.is_some() {
+                self.save_media_pick(transition, cx);
+            } else {
+                self.save(transition, cx);
+            }
         } else {
             let patch = super::pick_patch(&workspace, self.kind, effect, seconds);
             self.save_patch(patch, cx);
         }
         self.highlight(id.to_string(), cx);
+    }
+
+    fn save_media_pick(&mut self, transition: serde_json::Value, cx: &mut Context<Self>) {
+        if let Some(id) = transition["effectId"].as_str() {
+            let recents = orbit_host::native_transitions::remember_recent(
+                &recents(&self.runtime.content.read(cx).workspace),
+                id,
+            );
+            self.save_patch(
+                serde_json::json!({"recentTransitionEffectIds": recents}),
+                cx,
+            );
+        }
+        self.save(transition, cx);
     }
 
     pub(super) fn clear_recents(&mut self, cx: &mut Context<Self>) {
@@ -612,6 +630,48 @@ impl TransitionDefaults {
                     .on_click(cx.listener(|this, _, _, cx| this.save(serde_json::Value::Null, cx)))
                     .child(t.t("transition.presentation.default")),
             );
+        }
+        if self.media_id.is_some() {
+            let content = self.runtime.content.read(cx);
+            let favorites: Vec<_> = content.workspace["transitionPresets"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|preset| {
+                    let transition = &preset["transition"];
+                    let effect = orbit_host::native_transitions::catalog_entry(
+                        transition["effectId"].as_str()?,
+                    )?;
+                    if transition.get("variables").is_some()
+                        || transition["direction"].as_str().is_some_and(|direction| {
+                            orbit_host::native_transitions::direction_name(effect.default_direction)
+                                != Some(direction)
+                        })
+                    {
+                        return None;
+                    }
+                    Some((
+                        preset["id"].as_str()?.to_owned(),
+                        preset["name"].as_str()?.to_owned(),
+                        transition.clone(),
+                    ))
+                })
+                .collect();
+            if !favorites.is_empty() {
+                scroll = scroll
+                    .child(section(t.t("transition.picker.favorites")))
+                    .children(favorites.into_iter().map(|(id, name, transition)| {
+                        ActionButton::new(
+                            SharedString::from(format!("transition-favorite-{id}")),
+                            name,
+                        )
+                        .compact()
+                        .variant(ButtonVariant::Ghost)
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.save_media_pick(transition.clone(), cx)
+                        }))
+                    }));
+            }
         }
         if !recent_effects.is_empty() {
             scroll = scroll
