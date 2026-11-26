@@ -6,7 +6,7 @@ source_dir=$1
 output_dir=$2
 platform=$3
 architecture=$4
-command -v pkg-config >/dev/null
+command -v pkg-config meson ninja >/dev/null
 mkdir -p "$source_dir/toolchain-licenses"
 build_dir=$(mktemp -d "${TMPDIR:-/tmp}/orbit-ffmpeg.XXXXXXXX")
 cleanup() {
@@ -18,14 +18,16 @@ cleanup() {
   exit "$status"
 }
 trap cleanup EXIT
-mkdir "$build_dir/ffmpeg" "$build_dir/x264" "$build_dir/zlib" "$build_dir/install"
+mkdir "$build_dir/ffmpeg" "$build_dir/x264" "$build_dir/zlib" "$build_dir/dav1d" "$build_dir/install"
 tar -xf "$source_dir/ffmpeg-8.1.1.tar.xz" -C "$build_dir/ffmpeg" --strip-components=1
 tar -xf "$source_dir/x264.tar" -C "$build_dir/x264"
 tar -xf "$source_dir/zlib-1.3.1.tar.gz" -C "$build_dir/zlib" --strip-components=1
+tar -xf "$source_dir/dav1d-1.5.4.tar.xz" -C "$build_dir/dav1d" --strip-components=1
 prefix="$build_dir/install"
 jobs=${PRESENTER_ORBIT_FFMPEG_JOBS:-4}
-ffmpeg_flags=(--disable-autodetect --enable-gpl --enable-libx264 --enable-zlib --enable-static --disable-shared --disable-debug --disable-doc --disable-ffplay --disable-nonfree --disable-version3)
+ffmpeg_flags=(--disable-autodetect --enable-gpl --enable-libx264 --enable-libdav1d --enable-zlib --enable-static --disable-shared --disable-debug --disable-doc --disable-ffplay --disable-nonfree --disable-version3)
 x264_flags=(--enable-static --disable-cli --disable-opencl)
+dav1d_flags=(--buildtype=release --default-library=static --prefix="$prefix" --libdir=lib -Denable_tools=false -Denable_tests=false)
 if [[ "$platform" == windows ]]; then
   if [[ "$architecture" == x64 ]]; then
     cross_prefix=${PRESENTER_ORBIT_FFMPEG_MINGW_PREFIX:-x86_64-w64-mingw32-}
@@ -35,10 +37,24 @@ if [[ "$platform" == windows ]]; then
     cross_prefix=${PRESENTER_ORBIT_FFMPEG_MINGW_PREFIX:-aarch64-w64-mingw32-}
     export CC="${cross_prefix}clang"
     cpu=aarch64
+    dav1d_flags+=(-Denable_asm=false)
     x264_flags+=(--disable-asm)
   fi
   export AR="${cross_prefix}ar" RANLIB="${cross_prefix}ranlib"
   command -v "$CC" >/dev/null
+  cat > "$build_dir/dav1d-cross.ini" <<EOF
+[binaries]
+c = '$CC'
+ar = '$AR'
+strip = '${cross_prefix}strip'
+
+[host_machine]
+system = 'windows'
+cpu_family = '$cpu'
+cpu = '$cpu'
+endian = 'little'
+EOF
+  dav1d_flags+=(--cross-file "$build_dir/dav1d-cross.ini")
   if [[ -n ${PRESENTER_ORBIT_FFMPEG_TOOLCHAIN_LICENSES:-} ]]; then
     cp -R "$PRESENTER_ORBIT_FFMPEG_TOOLCHAIN_LICENSES/." "$source_dir/toolchain-licenses/"
   elif [[ "$architecture" == x64 && -f /usr/share/doc/gcc-mingw-w64-x86-64-posix/copyright ]]; then
@@ -77,6 +93,9 @@ cd "$build_dir/x264"
 ./configure --prefix="$prefix" "${x264_flags[@]}"
 make -j "$jobs"
 make install-lib-static install-lib-dev
+meson setup "$build_dir/dav1d-build" "$build_dir/dav1d" "${dav1d_flags[@]}"
+meson compile -C "$build_dir/dav1d-build" -j "$jobs"
+meson install -C "$build_dir/dav1d-build" --no-rebuild
 cd "$build_dir/ffmpeg"
 export PKG_CONFIG_PATH="$prefix/lib/pkgconfig"
 ./configure --prefix="$prefix" --pkg-config=pkg-config --pkg-config-flags=--static "${ffmpeg_flags[@]}"
@@ -88,6 +107,7 @@ cp "ffmpeg$extension" "ffprobe$extension" "$output_dir/"
 cp "$build_dir/ffmpeg/COPYING.GPLv2" "$source_dir/FFmpeg-COPYING.GPLv2"
 cp "$build_dir/ffmpeg/LICENSE.md" "$source_dir/FFmpeg-LICENSE.md"
 cp "$build_dir/x264/COPYING" "$source_dir/x264-COPYING"
+cp "$build_dir/dav1d/COPYING" "$source_dir/dav1d-COPYING"
 cp "$build_dir/zlib/LICENSE" "$source_dir/zlib-LICENSE"
 cp "$build_dir/ffmpeg/ffbuild/config.log" "$source_dir/ffmpeg-config.log"
 cp "$build_dir/x264/config.log" "$source_dir/x264-config.log"

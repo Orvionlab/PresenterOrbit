@@ -19,6 +19,11 @@ export const ffmpegSources = {
     upstream: "https://code.videolan.org/videolan/x264.git",
     sha256: "e92edc35efe3f8c3effb0c04854de0f8428cc09a218b2062ec3fe44f8ad2aa4e",
   },
+  dav1d: {
+    version: "1.5.4",
+    url: "https://downloads.videolan.org/pub/videolan/dav1d/1.5.4/dav1d-1.5.4.tar.xz",
+    sha256: "686616b7c69eb88d44459391ab25cac13b6647a3b288835c5784e71c1514a5c5",
+  },
   zlib: {
     version: "1.3.1",
     url: "https://zlib.net/fossils/zlib-1.3.1.tar.gz",
@@ -44,6 +49,7 @@ export async function verifyFfmpegSource(sourceDirectory: string) {
   for (const [name, expected] of [
     ["ffmpeg-8.1.1.tar.xz", ffmpegSources.ffmpeg.sha256],
     ["x264.tar", ffmpegSources.x264.sha256],
+    ["dav1d-1.5.4.tar.xz", ffmpegSources.dav1d.sha256],
     ["zlib-1.3.1.tar.gz", ffmpegSources.zlib.sha256],
   ] as const) {
     const actual = createHash("sha256")
@@ -114,7 +120,14 @@ export async function verifyBundledFfmpeg(
   const recipe = await readFile(join(sourceDirectory, "build-package-ffmpeg.sh"));
   if (createHash("sha256").update(recipe).digest("hex") !== manifest.recipeSha256)
     throw new Error("FFmpeg build recipe checksum is invalid.");
-  for (const license of ["FFmpeg-COPYING.GPLv2", "FFmpeg-LICENSE.md", "x264-COPYING", "zlib-LICENSE", "NOTICE.txt"]) {
+  for (const license of [
+    "FFmpeg-COPYING.GPLv2",
+    "FFmpeg-LICENSE.md",
+    "x264-COPYING",
+    "dav1d-COPYING",
+    "zlib-LICENSE",
+    "NOTICE.txt",
+  ]) {
     if (!(await readFile(join(sourceDirectory, license), "utf8")).trim())
       throw new Error(`Missing FFmpeg license: ${license}.`);
   }
@@ -137,6 +150,7 @@ export async function verifyBundledFfmpeg(
       "--disable-autodetect",
       "--enable-gpl",
       "--enable-libx264",
+      "--enable-libdav1d",
       "--enable-zlib",
       "--enable-static",
       "--disable-shared",
@@ -162,6 +176,8 @@ export async function verifyBundledFfmpeg(
           throw new Error(`FFmpeg has an unbundled/non-system dylib dependency: ${dependency}.`);
     }
     if (options.execute !== false) {
+      if (name === "ffmpeg" && !/^\s*V\S*\s+libdav1d\s/mu.test(await run(path, ["-hide_banner", "-decoders"])))
+        throw new Error("Bundled FFmpeg is missing the AV1 software decoder.");
       const version = await run(path, ["-version"]);
       if (
         !version.startsWith(`${name} version ${ffmpegSources.ffmpeg.version}`) ||
@@ -222,6 +238,9 @@ export async function preparePackageFfmpeg(
     const response = await fetch(ffmpegSources.ffmpeg.url, { signal: AbortSignal.timeout(120000) });
     if (!response.ok) throw new Error(`FFmpeg source download failed: HTTP ${response.status}.`);
     await writeFile(join(source, "ffmpeg-8.1.1.tar.xz"), Buffer.from(await response.arrayBuffer()));
+    const dav1dResponse = await fetch(ffmpegSources.dav1d.url, { signal: AbortSignal.timeout(120000) });
+    if (!dav1dResponse.ok) throw new Error(`dav1d source download failed: HTTP ${dav1dResponse.status}.`);
+    await writeFile(join(source, "dav1d-1.5.4.tar.xz"), Buffer.from(await dav1dResponse.arrayBuffer()));
     const zlibResponse = await fetch(ffmpegSources.zlib.url, { signal: AbortSignal.timeout(120000) });
     if (!zlibResponse.ok) throw new Error(`zlib source download failed: HTTP ${zlibResponse.status}.`);
     await writeFile(join(source, "zlib-1.3.1.tar.gz"), Buffer.from(await zlibResponse.arrayBuffer()));
@@ -271,7 +290,7 @@ export async function preparePackageFfmpeg(
     } else await run("bash", [join(source, "build-package-ffmpeg.sh"), source, output, platform, architecture]);
     await writeFile(
       join(source, "NOTICE.txt"),
-      "Presenter Orbit invokes FFmpeg and ffprobe as separate processes; it does not link their libraries. These executables include x264 and zlib and are distributed under GPL-2.0-or-later. Their complete corresponding unmodified sources, license texts and build recipe are included in this directory. You may modify and redistribute these separate components under their licenses. See manifest.json for exact upstream revisions and source checksums.\n",
+      "Presenter Orbit invokes FFmpeg and ffprobe as separate processes; it does not link their libraries. These executables include x264, dav1d and zlib and are distributed under GPL-2.0-or-later. Their complete corresponding unmodified sources, license texts and build recipe are included in this directory. You may modify and redistribute these separate components under their licenses. See manifest.json for exact upstream revisions and source checksums.\n",
     );
     await writeFile(
       join(source, "manifest.json"),

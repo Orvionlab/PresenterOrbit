@@ -51,6 +51,14 @@ jobs:
           command -v make
           command -v nasm
           command -v pkg-config
+      - name: Prepare Meson and Ninja
+        run: |
+          build_tools=$(mktemp -d "$RUNNER_TEMP/orbit-media-build-tools.XXXXXXXX")
+          cd "$build_tools"
+          apt-get download meson ninja-build
+          for package in *.deb; do dpkg-deb -x "$package" .; done
+          echo "$build_tools/usr/bin" >> "$GITHUB_PATH"
+          echo "PYTHONPATH=$build_tools/usr/lib/python3/dist-packages" >> "$GITHUB_ENV"
       - name: Build from pinned corresponding sources
         env:
           TARGET_ARCHITECTURE: ${{ matrix.architecture }}

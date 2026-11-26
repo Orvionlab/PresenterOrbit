@@ -48,7 +48,7 @@ jobs:
       - name: Build Windows FFmpeg and its corresponding sources
         run: |
           sudo apt-get update
-          sudo apt-get install --yes gcc-mingw-w64-x86-64-posix nasm pkg-config
+          sudo apt-get install --yes gcc-mingw-w64-x86-64-posix nasm pkg-config meson ninja-build
           node scripts/package-ffmpeg.mts --platform windows --x64
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -92,7 +92,7 @@ jobs:
           path: artifacts/package-ffmpeg/windows-x64/
       - name: Prepare macOS packaging
         if: runner.os == 'macOS'
-        run: brew install pkgconf nasm
+        run: brew install pkgconf nasm meson ninja
       - name: Prepare Linux packaging
         if: runner.os == 'Linux'
         run: |
