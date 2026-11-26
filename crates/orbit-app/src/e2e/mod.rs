@@ -3044,6 +3044,26 @@ fn media_inspector_keeps_tabs_and_close_visible_while_audio_routing_scrolls(
     visual.simulate_resize(gpui::size(gpui::px(760.), gpui::px(500.)));
     visual.run_until_parked();
     context(&mut visual, "media-item-inspector-video");
+    let menu_order = [
+        "Inspector...",
+        "Transitions...",
+        "Behaviour",
+        "Scaling",
+        "Playback Behavior",
+        "End Behavior",
+        "Cut",
+        "Copy",
+        "Paste",
+        "Duplicate",
+        "Rename",
+        "Delete",
+        "Open File Location",
+    ]
+    .map(|label| {
+        let selector = Box::leak(format!("menu-item-{label}").into_boxed_str());
+        visual.debug_bounds(selector).unwrap().top()
+    });
+    assert!(menu_order.windows(2).all(|rows| rows[0] < rows[1]));
     click(&mut visual, "menu-item-Inspector...");
 
     app.wait(cx, |app, cx| {

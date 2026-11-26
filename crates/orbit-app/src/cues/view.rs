@@ -2032,12 +2032,22 @@ impl CueView {
                     arrangements::open_arrangement_editor(&runtime, cx, &item);
                 }
             });
+        let theme = cx.theme();
+        let separator = || {
+            div()
+                .flex_none()
+                .h(theme.metrics.control_height_compact - theme.metrics.space_sm)
+                .border_l_1()
+                .border_color(theme.colors.border)
+        };
         header
-            .action(tools.destination.clone())
             .action(tools.advance.clone())
-            .action(tools.transition.clone())
+            .action(separator())
             .action(notes)
             .action(arrangement)
+            .action(separator())
+            .action(tools.destination.clone())
+            .action(tools.transition.clone())
     }
 
     fn playlist_heading(
@@ -2074,6 +2084,9 @@ impl CueView {
         let selected = ui.selected_documents.first().and_then(|row| row.index) == Some(index);
         let mut notes = None;
         let mut arrangement = None;
+        if entry.kind == EntryKind::Placeholder {
+            header = self.placeholder_actions(header, &playlist, &entry, cx);
+        }
         if let Some(doc) = &document {
             header = self.presentation_header_actions(header, doc, Some(index), window, cx);
             if selected {
@@ -2132,9 +2145,6 @@ impl CueView {
                     }),
                 )
                 .action(popover);
-        }
-        if entry.kind == EntryKind::Placeholder {
-            header = self.placeholder_actions(header, &playlist, &entry, cx);
         }
         let theme = *cx.theme();
         let header_color = if entry.kind == EntryKind::Header {
@@ -4201,7 +4211,6 @@ impl Render for CueView {
             .p(theme.metrics.space_xs)
             .border_t_1()
             .border_color(theme.colors.border)
-            .child(self.transitions.clone())
             .child(
                 IconButton::new(
                     "cue-new-slide",
@@ -4217,6 +4226,7 @@ impl Render for CueView {
                     }
                 }),
             )
+            .child(self.transitions.clone())
             .child(div().flex_1())
             .child(
                 SegmentedControl::new(

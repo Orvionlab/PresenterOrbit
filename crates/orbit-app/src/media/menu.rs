@@ -129,82 +129,67 @@ impl MediaBin {
             .iter()
             .chain(self.rows.iter())
             .find(|item| item["id"] == self.selected)?;
-        let mut entries: Vec<MenuEntry> = Vec::new();
         let weak = cx.weak_entity();
-        entries.push(
-            MenuItem::new(t.t("common.rename"))
-                .disabled(self.busy)
-                .on_click(move |_, window, cx| {
-                    let _ = weak.update(cx, |this, cx| {
-                        if let Some(item) = this
-                            .media
-                            .iter()
-                            .chain(this.rows.iter())
-                            .find(|item| item["id"] == this.selected)
-                        {
-                            this.rename =
-                                Some(input_state(text(item, "title").to_string(), window, cx));
-                        }
-                        this.menu_position = None;
-                        cx.notify();
-                    });
-                })
-                .into(),
-        );
+        let rename = MenuItem::new(t.t("common.rename"))
+            .disabled(self.busy)
+            .on_click(move |_, window, cx| {
+                let _ = weak.update(cx, |this, cx| {
+                    if let Some(item) = this
+                        .media
+                        .iter()
+                        .chain(this.rows.iter())
+                        .find(|item| item["id"] == this.selected)
+                    {
+                        this.rename =
+                            Some(input_state(text(item, "title").to_string(), window, cx));
+                    }
+                    this.menu_position = None;
+                    cx.notify();
+                });
+            })
+            .into();
         let weak = cx.weak_entity();
-        entries.push(
-            MenuItem::new(t.t("media.action.inspector"))
-                .disabled(item["type"] == "background")
-                .on_click(move |_, _, cx| {
-                    let _ = weak.update(cx, |this, cx| {
-                        this.menu_position = None;
-                        this.inspector_tab = 0;
-                        this.inspector_open = true;
-                        cx.notify();
-                    });
-                })
-                .into(),
-        );
-        for (action, key) in [
-            ("cut", "common.cut"),
-            ("copy", "common.copy"),
-            ("paste", "common.paste"),
-            ("duplicate", "common.duplicate"),
-            ("delete", "common.delete"),
-            ("open-location", "media.action.openFileLocation"),
-        ] {
-            if item["type"] == "audio" && !matches!(action, "delete" | "open-location") {
-                continue;
-            }
+        let inspector = MenuItem::new(t.t("media.action.inspector"))
+            .disabled(item["type"] == "background")
+            .on_click(move |_, _, cx| {
+                let _ = weak.update(cx, |this, cx| {
+                    this.menu_position = None;
+                    this.inspector_tab = 0;
+                    this.inspector_open = true;
+                    cx.notify();
+                });
+            })
+            .into();
+        let file_action = |action: &'static str, key| -> MenuEntry {
             let weak = cx.weak_entity();
             let mut entry = MenuItem::new(t.t(key));
             if action == "delete" {
                 entry = entry.meta("Delete");
             }
-            entries.push(
-                entry
-                    .disabled(
-                        self.busy
-                            || action == "paste" && self.paste_blocked()
-                            || action == "open-location" && item["sourcePath"].is_null(),
-                    )
-                    .on_click(move |_, _, cx| {
-                        let _ = weak.update(cx, |this, cx| this.menu_action(action, cx));
-                    })
-                    .into(),
-            );
-        }
+            entry
+                .disabled(
+                    self.busy
+                        || action == "paste" && self.paste_blocked()
+                        || action == "open-location" && item["sourcePath"].is_null(),
+                )
+                .on_click(move |_, _, cx| {
+                    let _ = weak.update(cx, |this, cx| this.menu_action(action, cx));
+                })
+                .into()
+        };
+        let delete = file_action("delete", "common.delete");
+        let location = file_action("open-location", "media.action.openFileLocation");
         let live = self.runtime.output.read(cx).live.clone();
+        let mut visual_options = Vec::new();
         if item["type"] == "image" || item["type"] == "video" {
             for (field, label, options) in [
                 (
-                    "backgroundScale",
-                    "media.scaling",
+                    "backgroundTransition",
+                    "media.transitions",
                     vec![
-                        ("fit", "media.scale.fit"),
-                        ("fill", "media.scale.fill"),
-                        ("stretch", "media.scale.stretch"),
-                        ("blur", "media.scale.blur"),
+                        ("none", "media.transition.layerDefault"),
+                        ("dissolve", "media.transition.dissolve"),
+                        ("cut", "media.transition.cut"),
                     ],
                 ),
                 (
@@ -216,12 +201,13 @@ impl MediaBin {
                     ],
                 ),
                 (
-                    "backgroundTransition",
-                    "media.transitions",
+                    "backgroundScale",
+                    "media.scaling",
                     vec![
-                        ("none", "media.transition.layerDefault"),
-                        ("dissolve", "media.transition.dissolve"),
-                        ("cut", "media.transition.cut"),
+                        ("fit", "media.scale.fit"),
+                        ("fill", "media.scale.fill"),
+                        ("stretch", "media.scale.stretch"),
+                        ("blur", "media.scale.blur"),
                     ],
                 ),
                 (
@@ -272,14 +258,17 @@ impl MediaBin {
                             .into()
                     })
                     .collect();
-                entries.push(MenuEntry::Submenu {
+                visual_options.push(MenuEntry::Submenu {
                     label: t.t(label).into(),
                     disabled: self.busy,
                     entries: choices,
                 });
+                if field == "backgroundTransition" {
+                    visual_options.push(MenuEntry::Separator);
+                }
             }
         }
-        if item["type"] == "audio" {
+        let entries = if item["type"] == "audio" {
             let current = model::audio_behavior(item, &self.libraries, &self.audio_library);
             let choices = [
                 ("stop", "media.playback.stop"),
@@ -301,23 +290,33 @@ impl MediaBin {
                     .into()
             })
             .collect();
-            let mut existing = entries.into_iter();
-            let rename = existing.next();
-            let inspector = existing.next();
-            let delete = existing.next();
-            let location = existing.next();
-            entries = location
-                .into_iter()
-                .chain([MenuEntry::Submenu {
+            vec![
+                location,
+                MenuEntry::Submenu {
                     label: t.t("media.playbackBehavior").into(),
                     disabled: self.busy,
                     entries: choices,
-                }])
-                .chain(inspector)
-                .chain(rename)
-                .chain(delete)
-                .collect();
-        }
+                },
+                inspector,
+                rename,
+                delete,
+            ]
+        } else {
+            let mut entries = vec![inspector];
+            entries.extend(visual_options);
+            entries.extend([
+                MenuEntry::Separator,
+                file_action("cut", "common.cut"),
+                file_action("copy", "common.copy"),
+                file_action("paste", "common.paste"),
+                file_action("duplicate", "common.duplicate"),
+                rename,
+                delete,
+                MenuEntry::Separator,
+                location,
+            ]);
+            entries
+        };
         let weak = cx.weak_entity();
         Some(
             ContextMenu::new("media-context", position, entries, move |_, _, cx| {

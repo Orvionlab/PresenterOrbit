@@ -494,7 +494,7 @@ fn single_presentation_mode_shows_playlist_markers_and_links_placeholder(cx: &mu
     let entry = items(&app)[2]["id"].as_str().unwrap().to_string();
     let search = Box::leak(format!("button-cue-link-{entry}").into_boxed_str());
     let create = Box::leak(format!("button-cue-create-{entry}").into_boxed_str());
-    let unlink = Box::leak(format!("button-cue-unlink-{entry}").into_boxed_str());
+    let unlink: &'static str = Box::leak(format!("button-cue-unlink-{entry}").into_boxed_str());
     click(&mut visual, "document-0");
     visual.simulate_keystrokes("down");
     visual.run_until_parked();
@@ -520,11 +520,26 @@ fn single_presentation_mode_shows_playlist_markers_and_links_placeholder(cx: &mu
         items(app)[2]["linkedItemId"] == original
             && app.visual(cx).debug_bounds("cue-thumbnail-0").is_some()
     });
-    assert!(visual.debug_bounds(unlink).is_some());
+    let arrangement = Box::leak(format!("button-cue-arrangement-{entry}").into_boxed_str());
+    let notes = Box::leak(format!("button-cue-notes-{entry}").into_boxed_str());
+    let tools = [
+        unlink,
+        "button-cue-auto-advance",
+        notes,
+        arrangement,
+        "button-cue-destination",
+        "button-cue-transition",
+    ]
+    .map(|selector| visual.debug_bounds(selector).unwrap().left());
+    assert!(tools.windows(2).all(|buttons| buttons[0] < buttons[1]));
+    assert!(
+        visual.debug_bounds("button-cue-new-slide").unwrap().left()
+            < visual.debug_bounds("transition-mode-slide").unwrap().left()
+    );
     assert!(visual.debug_bounds(search).is_none());
     assert!(visual.debug_bounds(create).is_none());
     assert!(visual.debug_bounds("document-icon-2-library").is_some());
-    click(&mut visual, &format!("button-cue-arrangement-{entry}"));
+    click(&mut visual, arrangement);
     click(&mut visual, "button-cue-arrangement");
     click(&mut visual, "menu-item-New Arrangement");
     visual.simulate_input("Linked arrangement");
