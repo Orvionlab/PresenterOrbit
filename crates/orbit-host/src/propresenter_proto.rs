@@ -5460,9 +5460,8 @@ fn parse_cue(fields: &[Field], index: usize, group: Option<&Map<String, Value>>)
         if let Some(value) = uuid(fields, 1) {
             object.insert("sourceCueId".to_string(), json!(value));
         }
-        if let Some(value) = string_field(fields, 2).filter(|value| !is_generated_cue_label(value))
-        {
-            object.insert("label".to_string(), json!(value));
+        if let Some(value) = string_field(fields, 2).filter(|value| !is_generated_cue_name(value)) {
+            object.insert("name".to_string(), json!(value));
         }
         if let Some(value) = bool_field(fields, 12) {
             object.insert("disabled".to_string(), json!(!value));
@@ -5535,13 +5534,10 @@ fn parse_cue(fields: &[Field], index: usize, group: Option<&Map<String, Value>>)
             .find(|action| action["type"] == "presentation-slide")
             .and_then(|action| action["details"].as_object())
         {
-            if let Some(color) = details.get("labelColor").and_then(Value::as_str) {
-                let label = details
-                    .get("label")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default();
-                object.insert("label".to_string(), json!(label));
-                object.insert("labelColor".to_string(), json!(color));
+            for key in ["label", "labelColor"] {
+                if let Some(value) = details.get(key) {
+                    object.insert(key.to_string(), value.clone());
+                }
             }
         }
         if !actions.is_empty() {
@@ -5760,7 +5756,7 @@ fn completion_action(value: u64) -> &'static str {
     }
 }
 
-fn is_generated_cue_label(value: &str) -> bool {
+fn is_generated_cue_name(value: &str) -> bool {
     let value = value.trim();
     !value.is_empty()
         && value
@@ -8596,20 +8592,17 @@ fn encode_slide(
             .unwrap_or("Slide"),
         &mut action,
     );
-    let slide_label = slide
-        .get("labelColor")
-        .filter(|color| color.is_string())
-        .map(|color| {
-            let mut details = Map::new();
-            details.insert(
-                "label".to_string(),
-                slide.get("label").cloned().unwrap_or(json!("")),
-            );
-            details.insert("labelColor".to_string(), color.clone());
-            details
-        });
-    if let Some(details) = slide_label
-        .as_ref()
+    let slide_label: Map<_, _> = ["label", "labelColor"]
+        .into_iter()
+        .filter_map(|key| {
+            slide
+                .get(key)
+                .filter(|value| value.is_string())
+                .map(|value| (key.to_string(), value.clone()))
+        })
+        .collect();
+    if let Some(details) = (!slide_label.is_empty())
+        .then_some(&slide_label)
         .or_else(|| imported_action.and_then(|action| action["details"].as_object()))
     {
         // Invalid label colors are reported by the export review; the label text still exports.
@@ -8640,9 +8633,9 @@ fn encode_slide(
     }
     put_string(
         2,
-        slide
-            .get("label")
-            .and_then(Value::as_str)
+        slide["name"]
+            .as_str()
+            .or_else(|| slide["label"].as_str())
             .unwrap_or("Slide"),
         &mut cue,
     );

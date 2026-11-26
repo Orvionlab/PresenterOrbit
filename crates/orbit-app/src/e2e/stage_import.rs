@@ -159,6 +159,23 @@ fn propresenter_workspace_import_warns_about_partial_outputs_and_relative_media(
         assert!(bytes.len() < 128);
         [vec![(field << 3) | 2, bytes.len() as u8], bytes.to_vec()].concat()
     }
+    let named_cues = [
+        message(3, b"Named cues"),
+        message(13, &message(2, b"Slide 1")),
+        message(
+            13,
+            &[
+                message(2, b"Slide 2"),
+                message(
+                    10,
+                    &[vec![0x48, 11], message(3, &message(2, b"Slide 1"))].concat(),
+                ),
+            ]
+            .concat(),
+        ),
+    ]
+    .concat();
+    std::fs::write(library.join("Named cues.pro"), named_cues).unwrap();
     let size = [
         vec![9],
         0.5_f64.to_le_bytes().to_vec(),
@@ -186,7 +203,16 @@ fn propresenter_workspace_import_warns_about_partial_outputs_and_relative_media(
         )
         .unwrap();
     let workspace = &result["workspace"];
-    assert_eq!(workspace["library"].as_array().unwrap().len(), 1);
+    let presentations = workspace["library"].as_array().unwrap();
+    assert_eq!(presentations.len(), 2);
+    let slides = &presentations
+        .iter()
+        .find(|item| item["title"] == "Named cues")
+        .unwrap()["slides"];
+    assert_eq!(slides[0]["name"], "Slide 1");
+    assert!(slides[0].get("label").is_none());
+    assert_eq!(slides[1]["name"], "Slide 2");
+    assert_eq!(slides[1]["label"], "Slide 1");
     assert_eq!(workspace["screenConfig"]["audience-1"]["enabled"], false);
     let warnings = workspace["importWarnings"].as_array().unwrap();
     assert!(warnings.iter().any(|warning| warning
