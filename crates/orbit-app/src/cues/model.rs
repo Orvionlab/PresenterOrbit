@@ -212,7 +212,6 @@ pub fn hotkey_target(cues: &[Value], groups: &Value, key: &str) -> Option<usize>
         .iter()
         .filter(|(_, group)| {
             crate::keys::normalize_shortcut_key(group["key"].as_str().unwrap_or("")) == key
-                && !crate::settings::is_ignored_group_name(group["name"].as_str().unwrap_or(""))
         })
         .map(|(id, _)| id.as_str())
         .collect();

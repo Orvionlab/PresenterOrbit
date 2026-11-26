@@ -11147,14 +11147,12 @@ fn read_pro_presenter_content(
     } else {
         Vec::new()
     };
-    let group_settings = if existing_group_settings
-        .as_object()
-        .is_some_and(|groups| !groups.is_empty())
-    {
-        existing_group_settings
-    } else {
-        settings::merge_imported_group_settings_value(current_group_settings, &groups, &items)
-    };
+    let group_settings = settings::pro_presenter_workspace_group_settings(
+        current_group_settings,
+        &existing_group_settings,
+        &groups,
+        &mut items,
+    );
     let messages = if selection.wants("messages") {
         let mut messages = import_native_messages(source, &themes, &mut import_stats)?;
         selection.retain_items("messages", &mut [&mut messages])?;

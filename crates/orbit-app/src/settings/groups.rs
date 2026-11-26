@@ -55,22 +55,7 @@ pub fn is_generated_label(value: &str) -> bool {
     }
 }
 
-/// `isIgnoredGroupName`: `Slide 1` to `Slide 25` and `Verse 7` and `Verse 8`, in any case.
-pub fn is_ignored_group_name(name: &str) -> bool {
-    let lower = name.trim().to_lowercase();
-    let numbered = |prefix: &str, valid: &dyn Fn(&str) -> bool| {
-        lower
-            .strip_prefix(prefix)
-            .is_some_and(|rest| rest.starts_with(char::is_whitespace) && valid(rest.trim_start()))
-    };
-    numbered("slide", &|digits| {
-        matches!(digits.parse::<u32>(), Ok(1..=25))
-            && !digits.starts_with('0')
-            && digits.chars().all(|c| c.is_ascii_digit())
-    }) || numbered("verse", &|digits| digits == "7" || digits == "8")
-}
-
-/// `normalizeGroupSettings`: entries without a usable id or with an ignored or generated name are dropped; a
+/// `normalizeGroupSettings`: entries without a usable id are dropped; a
 /// missing colour or key takes its default.
 pub fn normalize_group_settings(value: &Value) -> Vec<Group> {
     let mut groups: Vec<Group> = Vec::new();
@@ -94,12 +79,7 @@ pub fn normalize_group_settings(value: &Value) -> Vec<Group> {
             .or_else(|| (!key.is_empty()).then(|| key.clone()))
             .unwrap_or_else(|| name.clone());
         let id = slug_id(&source);
-        if id.is_empty()
-            || id == NO_GROUP
-            || is_generated_label(&id)
-            || is_generated_label(&name)
-            || is_ignored_group_name(&name)
-        {
+        if id.is_empty() || id == NO_GROUP {
             continue;
         }
         let color = data
@@ -141,23 +121,11 @@ pub fn slide_group_id(slide: &Value) -> String {
 /// `getKnownGroups`: the configured groups, then the groups that slides use.
 pub fn known_groups(group_settings: &Value, library: &Value) -> Vec<String> {
     let groups = normalize_group_settings(group_settings);
-    let mut ids: Vec<String> = groups
-        .iter()
-        .filter(|group| !is_generated_label(&group.id))
-        .map(|group| group.id.clone())
-        .collect();
+    let mut ids: Vec<String> = groups.iter().map(|group| group.id.clone()).collect();
     for item in library.as_array().into_iter().flatten() {
         for slide in item["slides"].as_array().into_iter().flatten() {
             let id = slide_group_id(slide);
-            let name = groups
-                .iter()
-                .find(|group| group.id == id)
-                .map_or(id.as_str(), |group| group.name.as_str());
-            if !id.is_empty()
-                && id != NO_GROUP
-                && !is_ignored_group_name(name)
-                && !ids.contains(&id)
-            {
+            if !id.is_empty() && id != NO_GROUP && !ids.contains(&id) {
                 ids.push(id);
             }
         }
@@ -321,7 +289,7 @@ impl SettingsView {
         cx.notify();
     }
 
-    /// `renameGroupSetting`: an empty, unchanged, unknown, or ignored name only ends the edit.
+    /// `renameGroupSetting`: an empty, unchanged, or unknown name only ends the edit.
     pub(super) fn commit_group_rename(&mut self, id: &str, name: &str, cx: &mut Context<Self>) {
         self.groups.renaming = None;
         let (source, library) = self.group_source(cx);
@@ -333,11 +301,7 @@ impl SettingsView {
             || group_rows(&source, &library)
                 .iter()
                 .any(|group| group.id == id);
-        if !exists
-            || name.is_empty()
-            || current.as_ref().is_some_and(|group| group.name == name)
-            || is_ignored_group_name(&name)
-        {
+        if !exists || name.is_empty() || current.as_ref().is_some_and(|group| group.name == name) {
             cx.notify();
             return;
         }

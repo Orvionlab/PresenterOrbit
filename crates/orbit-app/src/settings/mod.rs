@@ -50,7 +50,6 @@ mod video_preview;
 mod video_targets;
 mod view;
 
-pub(crate) use groups::is_ignored_group_name;
 pub(crate) use slide_labels::slide_labels;
 pub use view::SettingsView;
 

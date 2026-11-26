@@ -119,7 +119,20 @@ Second paragraph",
 fn propresenter_workspace_import_warns_about_partial_outputs_and_relative_media(
     cx: &mut TestAppContext,
 ) {
-    let app = Scenario::new(cx, false, |_| {});
+    let app = Scenario::new(cx, false, |host| {
+        let settings = host.invoke("getSettings", vec![]).unwrap();
+        host.invoke(
+            "saveSettings",
+            vec![
+                json!({"groupSettings":{
+                    "1-1-1": {"name":"1-1-1","key":""},
+                    "custom-verse": {"name":"Verse 8","key":"V"}
+                }}),
+                settings["settingsRevision"].clone(),
+            ],
+        )
+        .unwrap();
+    });
     let source = Folder::new();
     let library = source.0.join("Libraries/Imported");
     std::fs::create_dir_all(&library).unwrap();
@@ -159,12 +172,30 @@ fn propresenter_workspace_import_warns_about_partial_outputs_and_relative_media(
         assert!(bytes.len() < 128);
         [vec![(field << 3) | 2, bytes.len() as u8], bytes.to_vec()].concat()
     }
+    let first_cue = b"cue-one";
+    let second_cue = b"cue-two";
+    let verse = [
+        message(1, b"571eed42-9b52-4c48-9fd1-879153887992"),
+        message(2, b"Verse 8"),
+    ]
+    .concat();
+    let cue_group = [
+        message(1, &verse),
+        message(2, &message(1, first_cue)),
+        message(2, &message(1, second_cue)),
+    ]
+    .concat();
     let named_cues = [
         message(3, b"Named cues"),
-        message(13, &message(2, b"Slide 1")),
+        message(12, &cue_group),
+        message(
+            13,
+            &[message(1, first_cue), message(2, b"Slide 1")].concat(),
+        ),
         message(
             13,
             &[
+                message(1, second_cue),
                 message(2, b"Slide 2"),
                 message(
                     10,
@@ -176,6 +207,17 @@ fn propresenter_workspace_import_warns_about_partial_outputs_and_relative_media(
     ]
     .concat();
     std::fs::write(library.join("Named cues.pro"), named_cues).unwrap();
+    let unused_group = [
+        message(1, b"625bbbd3-6d76-44ad-84ab-9392fd2a6e5e"),
+        message(2, b"42"),
+    ]
+    .concat();
+    std::fs::create_dir_all(source.0.join("Configuration")).unwrap();
+    std::fs::write(
+        source.0.join("Configuration/Groups"),
+        [message(1, &verse), message(1, &unused_group)].concat(),
+    )
+    .unwrap();
     let size = [
         vec![9],
         0.5_f64.to_le_bytes().to_vec(),
@@ -198,7 +240,7 @@ fn propresenter_workspace_import_warns_about_partial_outputs_and_relative_media(
             "selectProPresenterWorkspace",
             vec![
                 json!(source.0),
-                json!({"libraries":["Imported"], "categories":["settings"]}),
+                json!({"libraries":["Imported"], "categories":["settings","groups"]}),
             ],
         )
         .unwrap();
@@ -213,6 +255,19 @@ fn propresenter_workspace_import_warns_about_partial_outputs_and_relative_media(
     assert!(slides[0].get("label").is_none());
     assert_eq!(slides[1]["name"], "Slide 2");
     assert_eq!(slides[1]["label"], "Slide 1");
+    assert_eq!(slides[0]["groupId"], "verse-8");
+    assert_eq!(slides[1]["groupId"], "verse-8");
+    let groups = workspace["groupSettings"].as_object().unwrap();
+    assert_eq!(groups["verse-8"]["name"], "Verse 8");
+    assert_eq!(groups["verse-8"]["key"], "V");
+    assert_eq!(groups["42"]["name"], "42");
+    for id in [
+        "1-1-1",
+        "custom-verse",
+        "571eed42-9b52-4c48-9fd1-879153887992",
+    ] {
+        assert!(!groups.contains_key(id), "unexpected group {id}");
+    }
     assert_eq!(workspace["screenConfig"]["audience-1"]["enabled"], false);
     let warnings = workspace["importWarnings"].as_array().unwrap();
     assert!(warnings.iter().any(|warning| warning

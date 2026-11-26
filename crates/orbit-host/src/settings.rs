@@ -929,9 +929,7 @@ pub fn mutate_group_settings_value(
             if !groups.contains_key(group_id) {
                 return Err(format!("Group setting '{group_id}' was not found."));
             }
-            if is_ignored_group_name(requested_name)
-                || is_generated_slide_metadata_label(requested_name)
-            {
+            if is_generated_slide_metadata_label(requested_name) {
                 return Err(format!(
                     "Group setting name '{requested_name}' is reserved."
                 ));
@@ -1093,7 +1091,7 @@ fn unique_group_name(
         .collect::<Vec<_>>();
     let mut name = base_name.trim().to_string();
     let mut index = 2;
-    while existing_names.contains(&name.as_str()) || is_ignored_group_name(&name) {
+    while existing_names.contains(&name.as_str()) {
         name = format!("{} {index}", base_name.trim());
         index += 1;
     }
@@ -1107,7 +1105,6 @@ fn validate_new_group_identity(base_name: &str) -> Result<(), String> {
         || id == "no-group"
         || is_generated_slide_metadata_label(&id)
         || is_generated_slide_metadata_label(name)
-        || is_ignored_group_name(name)
     {
         return Err(format!("Group setting name '{name}' is reserved."));
     }
@@ -1125,8 +1122,69 @@ pub fn merge_imported_group_settings_value(
         .expect("normalized group settings must be an object");
 
     for group in groups {
-        add_imported_group(&mut normalized, group, true);
+        add_imported_group(&mut normalized, group, true, None);
     }
+    add_presentation_groups(&mut normalized, library);
+    Value::Object(normalized)
+}
+
+pub(crate) fn pro_presenter_workspace_group_settings(
+    current: &Value,
+    existing: &Value,
+    groups: &[Value],
+    library: &mut [Value],
+) -> Value {
+    let mut imported = Map::new();
+    for group in groups {
+        add_imported_group(&mut imported, group, true, group["name"].as_str());
+    }
+    add_presentation_groups(&mut imported, library);
+    let mut settings = default_group_settings();
+    let existing = normalize_group_setting_entries(existing);
+    settings.extend(existing.clone());
+    let preferences = normalize_group_setting_entries(current);
+    for (id, definition) in &mut settings {
+        if let Some(preference) = preferences.get(id).filter(|_| !existing.contains_key(id)) {
+            *definition = preference.clone();
+        }
+    }
+    let mut aliases = Map::new();
+    for (id, definition) in imported {
+        let name = settings_slug(definition["name"].as_str().unwrap_or_default());
+        let by_name = |entries: &Map<String, Value>| {
+            entries.iter().find_map(|(key, group)| {
+                (settings_slug(group["name"].as_str().unwrap_or_default()) == name)
+                    .then(|| key.clone())
+            })
+        };
+        if existing.contains_key(&id) {
+            continue;
+        }
+        if let Some(existing_id) = by_name(&existing) {
+            settings.remove(&id);
+            aliases.insert(id, Value::String(existing_id));
+            continue;
+        }
+        let preference = preferences
+            .get(&id)
+            .or_else(|| by_name(&preferences).and_then(|id| preferences.get(&id)));
+        settings.insert(id, preference.cloned().unwrap_or(definition));
+    }
+    if !aliases.is_empty() {
+        for item in library {
+            for (field, key) in [("groups", "id"), ("slides", "groupId")] {
+                for entry in item[field].as_array_mut().into_iter().flatten() {
+                    if let Some(id) = entry[key].as_str().and_then(|id| aliases.get(id)) {
+                        entry[key] = id.clone();
+                    }
+                }
+            }
+        }
+    }
+    Value::Object(settings)
+}
+
+fn add_presentation_groups(normalized: &mut Map<String, Value>, library: &[Value]) {
     for item in library {
         let Some(item) = item.as_object() else {
             continue;
@@ -1137,7 +1195,7 @@ pub fn merge_imported_group_settings_value(
             .into_iter()
             .flatten()
         {
-            add_imported_group(&mut normalized, group, false);
+            add_imported_group(normalized, group, false, None);
         }
         for slide in item
             .get("slides")
@@ -1145,11 +1203,9 @@ pub fn merge_imported_group_settings_value(
             .into_iter()
             .flatten()
         {
-            add_imported_slide_group(&mut normalized, slide);
+            add_imported_slide_group(normalized, slide);
         }
     }
-
-    Value::Object(normalized)
 }
 
 pub fn normalize_key_mappings_value(value: &Value) -> Value {
@@ -1274,12 +1330,7 @@ fn normalize_group_setting_entries(value: &Value) -> Map<String, Value> {
                 }
             });
         let id = settings_slug(&id_source);
-        if id.is_empty()
-            || id == "no-group"
-            || is_generated_slide_metadata_label(&id)
-            || is_generated_slide_metadata_label(&name)
-            || is_ignored_group_name(&name)
-        {
+        if id.is_empty() || id == "no-group" {
             continue;
         }
         let color = group
@@ -1296,7 +1347,12 @@ fn normalize_group_setting_entries(value: &Value) -> Map<String, Value> {
     normalized
 }
 
-fn add_imported_group(groups: &mut Map<String, Value>, value: &Value, include_key: bool) {
+fn add_imported_group(
+    groups: &mut Map<String, Value>,
+    value: &Value,
+    include_key: bool,
+    id_source: Option<&str>,
+) {
     let Some(group) = value.as_object() else {
         return;
     };
@@ -1305,12 +1361,11 @@ fn add_imported_group(groups: &mut Map<String, Value>, value: &Value, include_ke
         .and_then(Value::as_str)
         .unwrap_or_default()
         .to_string();
-    let id_source = match group.get("id") {
-        Some(Value::String(id)) => id.clone(),
-        _ => name.clone(),
-    };
-    let id = settings_slug(&id_source);
-    if !is_valid_imported_group(&id, &name) || groups.contains_key(&id) {
+    let id_source = id_source
+        .or_else(|| group.get("id").and_then(Value::as_str))
+        .unwrap_or(&name);
+    let id = settings_slug(id_source);
+    if id.is_empty() || id == "no-group" || groups.contains_key(&id) {
         return;
     }
     let color = group
@@ -1368,7 +1423,6 @@ fn is_valid_imported_group(id: &str, name: &str) -> bool {
         && id != "no-group"
         && !is_generated_slide_metadata_label(id)
         && !is_generated_slide_metadata_label(name)
-        && !is_ignored_group_name(name)
 }
 
 fn string_entries(value: &Value) -> Map<String, Value> {
@@ -1419,17 +1473,6 @@ fn is_generated_slide_metadata_label(value: &str) -> bool {
         || value.strip_prefix("new-slide-copy-").is_some_and(|digits| {
             !digits.is_empty() && digits.chars().all(|character| character.is_ascii_digit())
         })
-}
-
-fn is_ignored_group_name(value: &str) -> bool {
-    let words = value.split_whitespace().collect::<Vec<_>>();
-    match words.as_slice() {
-        [kind, number] if kind.eq_ignore_ascii_case("slide") => number
-            .parse::<u8>()
-            .is_ok_and(|number| (1..=25).contains(&number)),
-        [kind, number] if kind.eq_ignore_ascii_case("verse") => matches!(*number, "7" | "8"),
-        _ => false,
-    }
 }
 
 fn default_group_settings() -> Map<String, Value> {
