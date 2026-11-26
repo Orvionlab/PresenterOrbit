@@ -4,6 +4,29 @@
 
 use super::*;
 
+fn finish_operator_cue(
+    state: &AppState,
+    command: &str,
+    response: &mut Value,
+) -> Result<(), String> {
+    if matches!(command, "nextSlide" | "previousSlide") && response["status"] == "not-ready" {
+        let output = lock_output_snapshot_state(&state.output_snapshot)?;
+        response["presentationNextAnchor"] = output
+            .cache
+            .as_ref()
+            .map(|cache| cache.snapshot["presentationNextAnchor"].clone())
+            .unwrap_or(Value::Null);
+        return Ok(());
+    }
+    if response["ok"] != true {
+        return Err(response["error"]
+            .as_str()
+            .unwrap_or("The cue command was not accepted.")
+            .to_string());
+    }
+    Ok(())
+}
+
 impl Host {
     pub fn select_media_files(&self) -> Option<Vec<std::path::PathBuf>> {
         FileDialog::new()
@@ -118,9 +141,32 @@ impl Host {
         workspace: &str,
         edit: impl FnOnce(&mut Value) -> Result<(), String>,
     ) -> Result<Value, String> {
+        self.edit_operator_output_inner(workspace, false, edit)
+    }
+
+    pub fn edit_operator_output_before_save(
+        &self,
+        workspace: &str,
+        edit: impl FnOnce(&mut Value) -> Result<(), String>,
+    ) -> Result<Value, String> {
+        self.edit_operator_output_inner(workspace, true, edit)
+    }
+
+    fn edit_operator_output_inner(
+        &self,
+        workspace: &str,
+        before_save: bool,
+        edit: impl FnOnce(&mut Value) -> Result<(), String>,
+    ) -> Result<Value, String> {
         let state = self.state::<AppState>();
-        let workspace_io = lock_workspace_io(state)?;
-        workspace_io.require_active(std::path::Path::new(workspace))?;
+        let workspace_io = if before_save {
+            active_workspace(state, json!(workspace))?;
+            None
+        } else {
+            let guard = lock_workspace_io(state)?;
+            guard.require_active(std::path::Path::new(workspace))?;
+            Some(guard)
+        };
         let rss = state
             .rss_output
             .lock()
@@ -133,6 +179,9 @@ impl Host {
             .ok_or("Native output is not ready.")?
             .snapshot
             .clone();
+        if before_save && previous["playbackWorkspacePath"].as_str() != Some(workspace) {
+            return Err("The output is switching workspaces.".into());
+        }
         let mut next = previous.clone();
         edit(&mut next)?;
         let patch = next
@@ -209,45 +258,44 @@ impl Host {
             "libraryCue" => remote_controls::execute(self, state, "operatorLibraryCue", payload)?,
             _ => execute_native_remote_command(self, command, payload)?,
         };
-        if matches!(command, "nextSlide" | "previousSlide") && response["status"] == "not-ready" {
-            let output = lock_output_snapshot_state(&state.output_snapshot)?;
-            response["presentationNextAnchor"] = output
-                .cache
-                .as_ref()
-                .map(|cache| cache.snapshot["presentationNextAnchor"].clone())
-                .unwrap_or(Value::Null);
-            return Ok(response);
-        }
-        if response["ok"] != true {
-            return Err(response["error"]
-                .as_str()
-                .unwrap_or("The cue command was not accepted.")
-                .to_string());
-        }
+        finish_operator_cue(state, command, &mut response)?;
         Ok(response)
     }
 
-    /// A direct take can use the last committed cue while slide order, destination or enabled flags are saved.
+    /// Take or navigate committed cues without waiting for queued workspace edits.
     pub fn execute_operator_cue_before_save(
         &self,
         command: &str,
         payload: &Value,
         workspace_revision: u64,
+        media_preview: Option<&Value>,
     ) -> Result<Value, String> {
-        let response = remote_controls::execute_operator_cue_before_save(
-            self,
-            self.state::<AppState>(),
-            command,
-            payload,
-            workspace_revision,
-        )?;
-        if response["ok"] != true {
-            return Err(response["error"]
-                .as_str()
-                .unwrap_or("The cue command was not accepted.")
-                .to_string());
-        }
+        let state = self.state::<AppState>();
+        let mut response = if matches!(command, "nextSlide" | "previousSlide") {
+            let path = active_workspace(state, payload["workspacePath"].clone())?;
+            execute_native_remote_slide_navigation(
+                self,
+                state,
+                if command == "nextSlide" { 1 } else { -1 },
+                path.to_str(),
+            )?
+        } else {
+            remote_controls::execute_operator_cue_before_save(
+                self,
+                state,
+                command,
+                payload,
+                workspace_revision,
+                media_preview,
+            )?
+        };
+        finish_operator_cue(state, command, &mut response)?;
         Ok(response)
+    }
+
+    pub fn operator_cue_media_preview(committed: &Value, shown: &Value) -> Option<Value> {
+        let mut slide = committed.clone();
+        remote_cues::preview_media_layer(&mut slide, shown).then_some(slide)
     }
 
     /// The same occurrence identities and master/arrangement order as native program output.

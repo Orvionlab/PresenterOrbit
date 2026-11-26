@@ -29,26 +29,29 @@ pub struct Report {
     pub armed: Vec<&'static str>,
 }
 
-fn serial<T: Send + 'static>(
+async fn serial<T: Send + 'static>(
     lanes: Option<&crate::state::lane::Lanes>,
     path: &str,
     job: impl FnOnce() -> Result<T, String> + Send + 'static,
 ) -> Result<T, String> {
     match lanes {
-        Some(lanes) => futures::executor::block_on(lanes.task(path, job))
+        Some(lanes) => lanes
+            .task(path, job)
+            .await
             .map_err(|_| "The automation worker stopped.".to_string())?,
         None => job(),
     }
 }
 
-/// The orchestrator waits outside the workspace lane. Each batch and side effect rejoins the lane;
-/// recording questions alone wait outside it, preserving the remaining action order.
-pub fn execute_queued(
+/// Cue media with an explicit layer can go on air ahead of workspace writes. Side effects still
+/// follow workspace writes, while recording questions wait outside the lane.
+pub async fn execute_queued(
     context: &Context,
     facts: Facts,
     actions: &[Value],
     depth: u32,
-    lanes: Option<&crate::state::lane::Lanes>,
+    lanes: &crate::state::lane::Lanes,
+    mut live_cue: Option<(String, Value)>,
 ) -> Result<Report, String> {
     let path = facts.workspace_path.clone();
     let mut report = Report::default();
@@ -56,15 +59,43 @@ pub fn execute_queued(
     loop {
         let (host, batch_facts) = (context.host.clone(), facts.clone());
         let scope = path.clone();
-        let (mut run, done, rest) = serial(lanes, &path, move || {
+        let cue = live_cue.take();
+        let before_save = cue.is_some()
+            && pending.iter().any(|(_, action)| {
+                action["type"] == "media"
+                    && action["enabled"] != false
+                    && matches!(
+                        action["details"]["backgroundBehavior"].as_str(),
+                        Some("foreground" | "background")
+                    )
+            });
+        let batch = move || {
             let mut run = Run::default();
             let mut done = true;
-            host.edit_operator_output(&scope, |live| {
+            let edit = |live: &mut Value| {
+                if cue.is_some_and(|(key, started)| {
+                    super::due::live_key(live) != key || live["timelineStartedAtMs"] != started
+                }) {
+                    return Ok(());
+                }
                 done = runner::run_batch(live, &batch_facts, &mut pending, &mut run);
                 Ok(())
-            })?;
+            };
+            if before_save {
+                host.edit_operator_output_before_save(&scope, edit)?;
+            } else {
+                host.edit_operator_output(&scope, edit)?;
+            }
             Ok((run, done, pending))
-        })?;
+        };
+        let (mut run, done, rest) = if before_save {
+            lanes
+                .operator(batch)
+                .await
+                .map_err(|_| "The operator automation worker stopped.")??
+        } else {
+            serial(Some(lanes), &path, batch).await?
+        };
         pending = rest;
         report.failures.append(&mut run.failures);
         for step in run.steps {
@@ -72,10 +103,15 @@ pub fn execute_queued(
             let question = matches!(&step, Step::Capture { action } if
                 action["details"]["stop"]["showsAlertBeforeStopping"] == true);
             let (context, facts, scope) = (context.clone(), facts.clone(), path.clone());
-            let (next, result) = serial(if question { None } else { lanes }, &path, move || {
-                let result = perform(&context, &facts, &scope, step, &mut report);
-                Ok((report, result))
-            })?;
+            let (next, result) = serial(
+                if question { None } else { Some(lanes) },
+                &path,
+                move || {
+                    let result = perform(&context, &facts, &scope, step, &mut report);
+                    Ok((report, result))
+                },
+            )
+            .await?;
             report = next;
             if let Err(message) = result {
                 report.failures.push(Failure {

@@ -142,19 +142,41 @@ pub(crate) fn run_native(
     cross_documents: bool,
     timing: CueTiming,
 ) {
-    let path = runtime.content.read(cx).workspace_path.clone();
+    let content = runtime.content.read(cx);
+    let path = content.workspace_path.clone();
+    let target_item = payload["presentationId"].as_str();
+    let committed = target_item.and_then(|item| content.committed_slide(item, &payload["slideId"]));
+    let media_preview = committed.and_then(|committed| {
+        let shown = content.items.get(target_item?)?.value["slides"]
+            .as_array()?
+            .iter()
+            .find(|slide| slide["id"] == payload["slideId"])?;
+        if committed == shown {
+            return None;
+        }
+        orbit_host::Host::operator_cue_media_preview(committed, shown)
+    });
     let before_save = timing == CueTiming::Reordering
+        || media_preview.is_some()
         || (timing == CueTiming::Latest
-            && payload["presentationId"]
-                .as_str()
-                .is_some_and(|item| runtime.content.read(cx).cue_flags_pending(item)));
+            && target_item.is_some_and(|item| {
+                content.cue_flags_pending(item)
+                    || content.blank_slide_pending() && committed.is_some()
+            }))
+        || (cross_documents && content.blank_slide_pending());
     let workspace_revision = runtime.lanes.revisions().workspace(&path);
     let host = runtime.host.clone();
     let selection = runtime.ui.read(cx).selected_library_item_id.clone();
     let occurrence = selected_occurrence(runtime, cx);
     let fallback = cross_documents
         .then(|| model::seed(runtime.content.read(cx), runtime.ui.read(cx)))
-        .flatten();
+        .flatten()
+        .and_then(|mut seed| {
+            if before_save {
+                seed.item = content.committed_item(&seed.item.id)?.clone();
+            }
+            Some(seed)
+        });
     let library = fallback
         .as_ref()
         .map(|seed| {
@@ -177,7 +199,12 @@ pub(crate) fn run_native(
         let mut payload = payload;
         payload["workspacePath"] = json!(expected);
         let response = if before_save {
-            host.execute_operator_cue_before_save(command, &payload, workspace_revision)?
+            host.execute_operator_cue_before_save(
+                command,
+                &payload,
+                workspace_revision,
+                media_preview.as_ref(),
+            )?
         } else {
             host.execute_cue_command(command, &payload)?
         };
@@ -195,7 +222,16 @@ pub(crate) fn run_native(
             if let Some(index) = target {
                 let (command, mut payload) = cue_payload(&document, index, &library);
                 payload["workspacePath"] = json!(expected);
-                return host.execute_cue_command(command, &payload);
+                return if before_save {
+                    host.execute_operator_cue_before_save(
+                        command,
+                        &payload,
+                        workspace_revision,
+                        None,
+                    )
+                } else {
+                    host.execute_cue_command(command, &payload)
+                };
             }
             return Ok(json!({"ok":true,"changed":false,"revision":response["revision"]}));
         }
@@ -218,6 +254,8 @@ pub(crate) fn run_native(
     };
     let answer = if timing != CueTiming::Ordered {
         runtime.lanes.latest_cue(&path, before_save, execute)
+    } else if before_save {
+        runtime.lanes.operator(move || execute().map(Some))
     } else {
         runtime.lanes.task(&path, move || execute().map(Some))
     };
@@ -546,12 +584,27 @@ pub(crate) fn edit_native(
     cx: &mut App,
     edit: impl FnOnce(&mut Value) -> Result<(), String> + Send + 'static,
 ) {
+    edit_live(runtime, cx, false, edit);
+}
+
+fn edit_live(
+    runtime: &Runtime,
+    cx: &mut App,
+    before_save: bool,
+    edit: impl FnOnce(&mut Value) -> Result<(), String> + Send + 'static,
+) {
     let path = runtime.content.read(cx).workspace_path.clone();
     let expected = path.clone();
     let host = runtime.host.clone();
-    let answer = runtime
-        .lanes
-        .command(&path, move || host.edit_operator_output(&expected, edit));
+    let answer = if before_save {
+        runtime
+            .lanes
+            .operator(move || host.edit_operator_output_before_save(&expected, edit))
+    } else {
+        runtime
+            .lanes
+            .command(&path, move || host.edit_operator_output(&expected, edit))
+    };
     let runtime = runtime.clone();
     cx.spawn(async move |cx| {
         let result = answer
@@ -582,13 +635,18 @@ pub(crate) fn edit_native(
 
 pub fn clear(runtime: &Runtime, layer: &str, cx: &mut App) {
     if layer == "announcements" {
-        edit_native(runtime, cx, |live| {
+        edit_live(runtime, cx, true, |live| {
             live["announcements"] = Value::Null;
             Ok(())
         });
         return;
     }
     if matches!(layer, "props" | "messages") {
+        let layer_name = layer.to_string();
+        edit_live(runtime, cx, true, move |live| {
+            clear_patch(live, &layer_name);
+            Ok(())
+        });
         crate::output::windows::mutate_config(
             runtime,
             json!({"type":"clearLookLayer","layerId":layer}),
@@ -596,11 +654,14 @@ pub fn clear(runtime: &Runtime, layer: &str, cx: &mut App) {
         );
         return;
     }
+    if matches!(layer, "all" | "logo" | "slide") {
+        runtime.lanes.cancel_pending_cues();
+    }
     let layer = layer.to_string();
     let logo = runtime.output.read(cx).settings["generalSettings"]["logoImageUrl"]
         .as_str()
         .is_some_and(|url| !url.is_empty());
-    edit_native(runtime, cx, move |live| {
+    edit_live(runtime, cx, true, move |live| {
         if layer == "all" || layer == "logo" {
             for layer in ["slide", "media", "music", "videoInput"] {
                 clear_patch(live, layer);
@@ -682,7 +743,15 @@ pub fn clear_group(runtime: &Runtime, id: &str, cx: &mut App) {
         error(runtime, cx, "The clear group is unavailable.".into());
         return;
     };
-    edit_native(runtime, cx, move |live| clear_group_patch(live, &group));
+    if group["layers"]
+        .as_array()
+        .is_some_and(|layers| layers.iter().any(|layer| layer == "slide"))
+    {
+        runtime.lanes.cancel_pending_cues();
+    }
+    edit_live(runtime, cx, true, move |live| {
+        clear_group_patch(live, &group)
+    });
 }
 
 pub fn mutate(runtime: &Runtime, item_id: &str, operation: Value, cx: &mut App) {

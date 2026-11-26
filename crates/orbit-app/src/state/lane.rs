@@ -18,6 +18,7 @@ use super::revisions::Revisions;
 type Job = Box<dyn FnOnce() + Send + 'static>;
 
 const SETTINGS_LANE: &str = "\0settings";
+const OPERATOR_LANE: &str = "\0operator-cue";
 
 /// The result of a lane job, awaited on the foreground.
 pub type Answer = oneshot::Receiver<Result<Value, String>>;
@@ -39,15 +40,29 @@ impl Lanes {
     ) -> oneshot::Receiver<Result<Option<Value>, String>> {
         let latest = self.latest_cue.clone();
         let request = latest.fetch_add(1, Ordering::AcqRel) + 1;
-        self.task(
-            if before_save { "\0operator-cue" } else { path },
-            move || {
-                if latest.load(Ordering::Acquire) != request {
-                    return Ok(None);
-                }
-                operation().map(Some)
-            },
-        )
+        // A dependent take still waits for any clear already submitted to the operator lane.
+        let operator_ready = (!before_save).then(|| self.operator(|| Ok(())));
+        self.task(if before_save { OPERATOR_LANE } else { path }, move || {
+            if let Some(ready) = operator_ready {
+                futures::executor::block_on(ready)
+                    .map_err(|_| "The operator command worker stopped.")??;
+            }
+            if latest.load(Ordering::Acquire) != request {
+                return Ok(None);
+            }
+            operation().map(Some)
+        })
+    }
+
+    pub fn cancel_pending_cues(&self) {
+        self.latest_cue.fetch_add(1, Ordering::AcqRel);
+    }
+
+    pub fn operator<T: Send + 'static>(
+        &self,
+        operation: impl FnOnce() -> Result<T, String> + Send + 'static,
+    ) -> oneshot::Receiver<Result<T, String>> {
+        self.task(OPERATOR_LANE, operation)
     }
 
     /// Serial work that must follow workspace edits but does not return a workspace revision.

@@ -29,7 +29,7 @@ pub struct Content {
     pub libraries: Vec<Library>,
     pub items: Items,
     canonical_items: Items,
-    content_previews: Vec<(u64, ContentPreview)>,
+    content_previews: Vec<(u64, ContentPreview, bool)>,
     next_content_preview: u64,
     pub playlists: Vec<Playlist>,
     pub themes: Vec<Theme>,
@@ -56,7 +56,7 @@ impl Content {
         self.items_generation += 1;
         self.playlists = snapshot.playlists;
         self.workspace_path = snapshot.workspace_path;
-        for (_, preview) in self.content_previews.clone() {
+        for (_, preview, _) in self.content_previews.clone() {
             preview(self);
         }
     }
@@ -74,16 +74,35 @@ impl Content {
         self.apply_document(snapshot);
     }
 
-    pub fn preview_content(&mut self, preview: ContentPreview) -> u64 {
+    pub fn preview_content(&mut self, preview: ContentPreview, inserts_blank_slide: bool) -> u64 {
         self.next_content_preview += 1;
         let id = self.next_content_preview;
         preview(self);
-        self.content_previews.push((id, preview));
+        self.content_previews
+            .push((id, preview, inserts_blank_slide));
         id
     }
 
     pub fn finish_content_preview(&mut self, id: u64) {
-        self.content_previews.retain(|(pending, _)| *pending != id);
+        self.content_previews
+            .retain(|(pending, _, _)| *pending != id);
+    }
+
+    pub fn blank_slide_pending(&self) -> bool {
+        self.content_previews
+            .iter()
+            .any(|(_, _, inserts_blank_slide)| *inserts_blank_slide)
+    }
+
+    pub fn committed_item(&self, id: &str) -> Option<&crate::collections::model::Item> {
+        self.canonical_items.get(id)
+    }
+
+    pub fn committed_slide(&self, item_id: &str, slide_id: &Value) -> Option<&Value> {
+        self.committed_item(item_id)?.value["slides"]
+            .as_array()?
+            .iter()
+            .find(|slide| slide["id"] == *slide_id)
     }
 
     pub fn library(&self, id: &str) -> Option<&Library> {

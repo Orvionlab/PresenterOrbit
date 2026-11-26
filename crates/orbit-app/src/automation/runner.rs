@@ -705,12 +705,12 @@ fn media(live: &mut Value, facts: &Facts, action: &Value, run: &mut Run) -> Resu
     let mut overrides = serde_json::Map::new();
     if let Some(transport) = transport {
         overrides.insert("transport".into(), transport.clone());
-    }
-    if matches!(
-        details["backgroundBehavior"].as_str(),
-        Some("background" | "foreground")
-    ) {
-        overrides.insert("behavior".into(), details["backgroundBehavior"].clone());
+        if matches!(
+            details["backgroundBehavior"].as_str(),
+            Some("background" | "foreground")
+        ) {
+            overrides.insert("behavior".into(), details["backgroundBehavior"].clone());
+        }
     }
     if matches!(
         details["backgroundScale"].as_str(),

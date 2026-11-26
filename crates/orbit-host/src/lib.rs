@@ -4881,6 +4881,7 @@ pub(crate) fn execute_native_remote_command(
             app,
             &state,
             if command == "nextSlide" { 1 } else { -1 },
+            None,
         );
     }
     if command != "clearAll" {
@@ -4944,6 +4945,7 @@ fn execute_native_remote_slide_navigation(
     app: &Host,
     state: &AppState,
     direction: i8,
+    expected_workspace: Option<&str>,
 ) -> Result<Value, String> {
     let rss_snapshot = state
         .rss_output
@@ -4964,6 +4966,11 @@ fn execute_native_remote_slide_navigation(
             "error": "Native output has not accepted an output snapshot yet."
         }));
     };
+    if expected_workspace
+        .is_some_and(|path| cached_snapshot["playbackWorkspacePath"].as_str() != Some(path))
+    {
+        return Err("The output is switching workspaces.".into());
+    }
     let Some((snapshot, renderer_patch)) =
         navigate_remote_slide_in_output_snapshot(&cached_snapshot, direction)?
     else {

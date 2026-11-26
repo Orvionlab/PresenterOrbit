@@ -1,5 +1,60 @@
 use serde_json::Value;
 
+pub(crate) fn preview_media_layer(slide: &mut Value, shown: &Value) -> bool {
+    let mut changed = false;
+    if slide["mediaBackgroundId"].is_string()
+        && slide["mediaBackgroundId"] == shown["mediaBackgroundId"]
+        && matches!(
+            shown["mediaBackgroundBehavior"].as_str(),
+            Some("foreground" | "background")
+        )
+    {
+        for field in ["mediaBackgroundOnly", "mediaBackgroundBehavior"] {
+            if slide[field] != shown[field] {
+                slide[field] = shown[field].clone();
+                changed = true;
+            }
+        }
+    }
+    if let (Some(actions), Some(shown_actions)) = (
+        slide.get_mut("actions").and_then(Value::as_array_mut),
+        shown["actions"].as_array(),
+    ) {
+        for action in actions
+            .iter_mut()
+            .filter(|action| action["type"] == "media")
+        {
+            let behavior = shown_actions
+                .iter()
+                .find(|shown| {
+                    shown["type"] == "media"
+                        && shown["id"] == action["id"]
+                        && shown["targetId"] == action["targetId"]
+                })
+                .map(|shown| &shown["details"]["backgroundBehavior"]);
+            if let Some(behavior) = behavior.filter(|behavior| {
+                matches!(behavior.as_str(), Some("foreground" | "background"))
+                    && **behavior != action["details"]["backgroundBehavior"]
+            }) {
+                action["details"]["backgroundBehavior"] = behavior.clone();
+                changed = true;
+            }
+        }
+    }
+    changed
+}
+
+fn apply_media_preview(item: &mut Value, slide_id: &Value, preview: Option<&Value>) {
+    if let Some(preview) = preview {
+        if let Some(slide) = item["slides"]
+            .as_array_mut()
+            .and_then(|slides| slides.iter_mut().find(|slide| slide["id"] == *slide_id))
+        {
+            preview_media_layer(slide, preview);
+        }
+    }
+}
+
 pub(crate) fn library_catalog(workspace: &Value) -> Result<Value, String> {
     let items = workspace["library"]
         .as_array()
@@ -241,15 +296,24 @@ pub(crate) fn select_playlist(
     workspace: &Value,
     payload: &Value,
 ) -> Result<(Value, Value), String> {
-    select_playlist_entry(snapshot, workspace, payload, false)
+    select_playlist_entry(snapshot, workspace, payload, false, false, None)
 }
 
 pub(crate) fn select_operator_playlist(
     snapshot: &Value,
     workspace: &Value,
     payload: &Value,
+    retain_occurrence: bool,
+    media_preview: Option<&Value>,
 ) -> Result<(Value, Value), String> {
-    select_playlist_entry(snapshot, workspace, payload, true)
+    select_playlist_entry(
+        snapshot,
+        workspace,
+        payload,
+        true,
+        retain_occurrence,
+        media_preview,
+    )
 }
 
 fn select_playlist_entry(
@@ -257,6 +321,8 @@ fn select_playlist_entry(
     workspace: &Value,
     payload: &Value,
     operator: bool,
+    retain_occurrence: bool,
+    media_preview: Option<&Value>,
 ) -> Result<(Value, Value), String> {
     let playlist = workspace["playlist"]
         .as_array()
@@ -296,10 +362,15 @@ fn select_playlist_entry(
     // The operator shows Master for playlist entries without an explicit arrangement.
     let arrangement = entry["arrangementId"].as_str().or(operator.then_some(""));
     selected["liveItem"] = playlist_entry_item(item, arrangement);
+    apply_media_preview(
+        &mut selected["liveItem"],
+        &payload["slideId"],
+        media_preview,
+    );
     selected["livePlaylistId"] = playlist["id"].clone();
     selected["livePlaylistEntryId"] = entry["id"].clone();
     selected["liveCueInstanceId"] = Value::Null;
-    let (next, mut patch) = select_cue(&selected, payload, operator)?;
+    let (next, mut patch) = select_cue(&selected, payload, operator, retain_occurrence)?;
     patch["livePlaylistId"] = playlist["id"].clone();
     patch["livePlaylistEntryId"] = entry["id"].clone();
     Ok((next, patch))
@@ -310,6 +381,8 @@ pub(crate) fn select_library(
     workspace: &Value,
     payload: &Value,
     operator: bool,
+    retain_occurrence: bool,
+    media_preview: Option<&Value>,
 ) -> Result<(Value, Value), String> {
     let library = workspace["libraries"]
         .as_array()
@@ -340,10 +413,15 @@ pub(crate) fn select_library(
         })
         .transpose()?;
     selected["liveItem"] = arrangement_item(item, arrangement_id)?;
+    apply_media_preview(
+        &mut selected["liveItem"],
+        &payload["slideId"],
+        media_preview,
+    );
     selected["livePlaylistEntryId"] = Value::Null;
     selected["livePlaylistId"] = Value::Null;
     selected["liveCueInstanceId"] = Value::Null;
-    let (mut next, mut patch) = select_cue(&selected, payload, operator)?;
+    let (mut next, mut patch) = select_cue(&selected, payload, operator, retain_occurrence)?;
     next["livePlaylistId"] = Value::Null;
     patch["livePlaylistId"] = Value::Null;
     patch["livePlaylistEntryId"] = Value::Null;
@@ -351,13 +429,14 @@ pub(crate) fn select_library(
 }
 
 pub(crate) fn select(snapshot: &Value, payload: &Value) -> Result<(Value, Value), String> {
-    select_cue(snapshot, payload, false)
+    select_cue(snapshot, payload, false, false)
 }
 
 fn select_cue(
     snapshot: &Value,
     payload: &Value,
     allow_disabled: bool,
+    retain_occurrence: bool,
 ) -> Result<(Value, Value), String> {
     let item = snapshot
         .get("liveItem")
@@ -383,11 +462,27 @@ fn select_cue(
                 .iter()
                 .any(|arrangement| arrangement["id"] == item["selectedArrangementId"])
         });
+    let retained_section = retain_occurrence
+        .then(|| {
+            cue_section_id(
+                payload["cueInstanceId"].as_str()?,
+                payload["slideId"].as_str()?,
+            )
+        })
+        .flatten();
     let target = slides
         .iter()
         .find(|slide| {
             slide["id"] == payload["slideId"]
-                && (operator_master || slide["arrangementInstanceId"] == payload["cueInstanceId"])
+                && (operator_master
+                    || slide["arrangementInstanceId"] == payload["cueInstanceId"]
+                    || retained_section.is_some_and(|section| {
+                        slide["arrangementInstanceId"]
+                            .as_str()
+                            .zip(slide["id"].as_str())
+                            .and_then(|(instance, id)| cue_section_id(instance, id))
+                            == Some(section)
+                    }))
         })
         .ok_or("The requested cue occurrence is unavailable in the live arrangement.")?;
     if !allow_disabled && target["disabled"] == true {
@@ -395,4 +490,14 @@ fn select_cue(
     }
     crate::select_remote_slide_in_output_snapshot(snapshot, target)?
         .ok_or("The requested cue could not be selected.".into())
+}
+
+/// Match an operator's retained slide in the same section occurrence after its position shifts.
+fn cue_section_id<'a>(instance: &'a str, slide_id: &str) -> Option<&'a str> {
+    let (section, index) = instance
+        .strip_suffix(slide_id)?
+        .strip_suffix(':')?
+        .rsplit_once(':')?;
+    index.parse::<usize>().ok()?;
+    Some(section)
 }

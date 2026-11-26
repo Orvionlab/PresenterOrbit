@@ -2819,6 +2819,46 @@ fn presentation_take_next_and_clear_reach_a_real_output_process(cx: &mut TestApp
     visual.simulate_keystrokes("f2");
     app.wait(cx, |app, _| output(app)["text"] == "");
     assert!(cx.update(|cx| runtime.output.read(cx).error.is_none()));
+    click(&mut visual, "cue-thumbnail-0");
+    visual.simulate_keystrokes("enter");
+    app.wait(cx, |app, _| output(app)["text"] == "Opening line");
+
+    let release = support::hold_workspace_writes(&app, cx);
+    click(&mut visual, "button-cue-new-slide");
+    app.wait(cx, |app, cx| {
+        app.visual(cx).debug_bounds("cue-thumbnail-2").is_some()
+    });
+    click(&mut visual, "cue-thumbnail-1");
+    visual.simulate_keystrokes("enter");
+    app.wait(cx, |app, _| output(app)["text"] == "Closing line");
+    visual.simulate_keystrokes("left");
+    app.wait(cx, |app, _| output(app)["text"] == "Opening line");
+    visual.simulate_keystrokes("right");
+    app.wait(cx, |app, _| output(app)["text"] == "Closing line");
+    visual.simulate_keystrokes("f2");
+    app.wait(cx, |app, _| output(app)["text"] == "");
+    click(&mut visual, "cue-thumbnail-0");
+    visual.simulate_keystrokes("enter");
+    app.wait(cx, |app, _| output(app)["text"] == "Opening line");
+    click(&mut visual, "cue-thumbnail-2");
+    visual.simulate_keystrokes("enter f1");
+    app.wait(cx, |app, _| output(app)["text"] == "");
+    assert_eq!(
+        app.snapshot()["library"][0]["slides"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    release.send(()).unwrap();
+    app.wait(cx, |app, _| {
+        app.snapshot()["library"][0]["slides"]
+            .as_array()
+            .unwrap()
+            .len()
+            == 3
+    });
+    assert!(cx.update(|cx| runtime.output.read(cx).live["liveSlideId"].is_null()));
 }
 
 #[gpui::test]
@@ -4773,6 +4813,19 @@ fn slide_and_media_takes_follow_their_layer_transitions(cx: &mut TestAppContext)
             background["shortcut"] = json!("D");
             background["mediaBackgroundId"] = json!("back");
             slides.push(background);
+            let mut action = slides[2].clone();
+            action["id"] = json!("media-action-slide");
+            action["content"] = json!("Media action slide");
+            action["shortcut"] = json!("F");
+            action.as_object_mut().unwrap().remove("mediaBackgroundId");
+            action["actions"] = json!([
+                {"id":"play-back", "type":"media", "targetId":"back",
+                    "enabled":true, "delaySeconds":0,
+                    "details":{"backgroundBehavior":"foreground"}},
+                {"id":"clear-music", "type":"clear", "targetLayer":"audio",
+                    "enabled":true, "delaySeconds":0}
+            ]);
+            slides.push(action);
             let saved = host.invoke("mutatePresentationLibrary", vec![path.clone(), json!({
             "type":"mutateItem", "itemId":item["id"],
             "operation":{"type":"setSlideDocument","title":item["title"],"slides":slides}
@@ -4971,4 +5024,72 @@ fn slide_and_media_takes_follow_their_layer_transitions(cx: &mut TestAppContext)
     assert_eq!(&background_fade.pixels[..4], &[33, 22, 11, 255]);
     app.wait_animated(cx, |app, _| !render(app).dynamic_media);
     assert_eq!(&render(&app).pixels[..4], &[66, 55, 44, 255]);
+
+    let release = support::hold_workspace_writes(&app, cx);
+    let asset_name = cx.update(|cx| {
+        let content = runtime.content.read(cx);
+        let asset = content.workspace["media"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|asset| asset["id"] == "back")
+            .unwrap();
+        std::path::Path::new(asset["sourcePath"].as_str().unwrap())
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned()
+    });
+    let take_with_role = |visual: &mut gpui::VisualTestContext, thumbnail: &str, role: &str| {
+        context(visual, thumbnail);
+        click(visual, &format!("menu-item-Edit Action: {asset_name}"));
+        click(visual, "menu-item-Behaviour");
+        click(visual, &format!("menu-item-{role}"));
+        click(visual, thumbnail);
+        visual.simulate_keystrokes("enter");
+    };
+    take_with_role(&mut visual, "cue-thumbnail-2", "Foreground");
+    app.wait(cx, |app, cx| {
+        app.visual(cx)
+            .debug_bounds("cue-media-foreground-2")
+            .is_some()
+    });
+    app.wait_animated(cx, |app, _| {
+        scene(app).is_ok_and(|scene| {
+            scene["text"] == "Background slide" && scene["backgroundBehavior"] == "foreground"
+        })
+    });
+    assert_ne!(
+        app.snapshot()["library"][0]["slides"][2]["mediaBackgroundBehavior"],
+        "foreground"
+    );
+    orbit_host::start_tickers(&app.host).unwrap();
+    take_with_role(&mut visual, "cue-thumbnail-3", "Background");
+    app.wait_animated(cx, |app, _| {
+        scene(app).is_ok_and(|scene| {
+            scene["text"] == "Media action slide"
+                && scene["backgroundBehavior"] == "background"
+                && scene["backgroundMediaType"] == "image"
+        })
+    });
+    assert_ne!(
+        app.snapshot()["library"][0]["slides"][3]["actions"][0]["details"]["backgroundBehavior"],
+        "background"
+    );
+    visual.simulate_keystrokes("f3");
+    app.wait_animated(cx, |app, _| {
+        scene(app).is_ok_and(|scene| {
+            scene["text"] == "Media action slide" && scene["backgroundMediaType"] == ""
+        })
+    });
+    visual.simulate_keystrokes("f1");
+    app.wait_animated(cx, |app, _| {
+        scene(app).is_ok_and(|scene| scene["text"] == "" && scene["backgroundMediaType"] == "")
+    });
+    release.send(()).unwrap();
+    app.wait(cx, |app, _| {
+        let slides = &app.snapshot()["library"][0]["slides"];
+        slides[2]["mediaBackgroundBehavior"] == "foreground"
+            && slides[3]["actions"][0]["details"]["backgroundBehavior"] == "background"
+    });
 }

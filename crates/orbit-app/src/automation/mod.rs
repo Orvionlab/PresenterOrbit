@@ -287,6 +287,17 @@ pub fn run_reporting(
     cx: &mut App,
     finished: impl FnOnce(Result<(), String>, &mut App) + 'static,
 ) {
+    run_actions(runtime, actions, depth, None, cx, finished);
+}
+
+fn run_actions(
+    runtime: &Runtime,
+    actions: Vec<Value>,
+    depth: u32,
+    live_cue: Option<(String, Value)>,
+    cx: &mut App,
+    finished: impl FnOnce(Result<(), String>, &mut App) + 'static,
+) {
     if !cx.has_global::<Automation>() {
         finished(Err("Automation has not started.".into()), cx);
         return;
@@ -296,7 +307,7 @@ pub fn run_reporting(
     let context = context(runtime, cx.global::<Automation>());
     let lanes = runtime.lanes.clone();
     let answer = cx.background_spawn(async move {
-            let report = execute::execute_queued(&context, facts, &actions, depth, Some(&lanes))?;
+            let report = execute::execute_queued(&context, facts, &actions, depth, &lanes, live_cue).await?;
             Ok(json!({
                 "failures": report.failures.iter().map(|failure| failure.message.clone()).collect::<Vec<_>>(),
                 "armed": report.armed,
@@ -390,7 +401,11 @@ pub fn on_due(runtime: &Runtime, event: &Value, cx: &mut App) {
             }
             cx.notify();
         }),
-        due::Due::Actions { actions, depth } => run(runtime, actions, depth, cx),
+        due::Due::Actions { actions, depth } => {
+            let live_cue = (event["source"] == "cue")
+                .then(|| (due::live_key(&live), live["timelineStartedAtMs"].clone()));
+            run_actions(runtime, actions, depth, live_cue, cx, |_, _| {});
+        }
         due::Due::Build {
             step,
             started_at_ms,

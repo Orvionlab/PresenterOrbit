@@ -265,7 +265,7 @@ pub(crate) fn execute(
             json!({"ok":false,"status":"invalid-target","changed":false,"error":"The remote command belongs to a different workspace."}),
         );
     }
-    execute_resolved(app, state, command, payload, &workspace, None)
+    execute_resolved(app, state, command, payload, &workspace, None, None)
 }
 
 pub(crate) fn execute_operator_cue_before_save(
@@ -274,6 +274,7 @@ pub(crate) fn execute_operator_cue_before_save(
     command: &str,
     payload: &Value,
     revision: u64,
+    media_preview: Option<&Value>,
 ) -> Result<Value, String> {
     let command = match command {
         "playlistCue" => "operatorPlaylistCue",
@@ -288,7 +289,15 @@ pub(crate) fn execute_operator_cue_before_save(
         .filter(|cached| cached.path == path && cached.revision >= revision)
         .map(|cached| cached.document.clone())
         .ok_or("The committed workspace for this cue is unavailable.")?;
-    execute_resolved(app, state, command, payload, &workspace, path.to_str())
+    execute_resolved(
+        app,
+        state,
+        command,
+        payload,
+        &workspace,
+        path.to_str(),
+        media_preview,
+    )
 }
 
 fn execute_resolved(
@@ -298,6 +307,7 @@ fn execute_resolved(
     payload: &Value,
     workspace: &Value,
     expected_workspace: Option<&str>,
+    media_preview: Option<&Value>,
 ) -> Result<Value, String> {
     let rss = state
         .rss_output
@@ -319,7 +329,15 @@ fn execute_resolved(
         .lock()
         .map_err(|_| "Native timer state is unavailable.")?;
     let mut staged = registry.clone();
-    let (mut next, mut patch) = match mutate(&cached, workspace, &mut staged, command, payload) {
+    let (mut next, mut patch) = match mutate(
+        &cached,
+        workspace,
+        &mut staged,
+        command,
+        payload,
+        expected_workspace.is_some(),
+        media_preview,
+    ) {
         Ok(value) => value,
         Err(error) => {
             return Ok(
@@ -433,6 +451,8 @@ fn mutate(
     timers: &mut TimerRegistry,
     command: &str,
     payload: &Value,
+    retain_occurrence: bool,
+    media_preview: Option<&Value>,
 ) -> Result<(Value, Value), String> {
     if command == "videoInputClear" {
         return crate::video_input::clear_snapshot(snapshot);
@@ -444,7 +464,13 @@ fn mutate(
         return crate::remote_cues::select_playlist(snapshot, workspace, payload);
     }
     if command == "operatorPlaylistCue" {
-        return crate::remote_cues::select_operator_playlist(snapshot, workspace, payload);
+        return crate::remote_cues::select_operator_playlist(
+            snapshot,
+            workspace,
+            payload,
+            retain_occurrence,
+            media_preview,
+        );
     }
     if matches!(command, "libraryCue" | "operatorLibraryCue") {
         return crate::remote_cues::select_library(
@@ -452,6 +478,8 @@ fn mutate(
             workspace,
             payload,
             command == "operatorLibraryCue",
+            retain_occurrence,
+            media_preview,
         );
     }
     if command == "stageMessage" {

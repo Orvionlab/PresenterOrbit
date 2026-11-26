@@ -536,7 +536,7 @@ fn select_timeline_start(
         if let Some(arrangement_id) = arrangement_id {
             cue["arrangementId"] = json!(arrangement_id);
         }
-        crate::remote_cues::select_library(snapshot, workspace, &cue, false)
+        crate::remote_cues::select_library(snapshot, workspace, &cue, false, false, None)
     } else {
         let mut cue = selection;
         cue["playlistId"] = json!(playlist_id.ok_or("Playlist identity is required.")?);

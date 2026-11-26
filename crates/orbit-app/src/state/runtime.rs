@@ -208,7 +208,10 @@ impl Runtime {
         change: impl Fn(&mut Content) + 'static,
     ) -> gpui::Task<()> {
         let (id, load) = self.content.update(cx, |content, cx| {
-            let id = content.preview_content(Rc::new(change));
+            let id = content.preview_content(
+                Rc::new(change),
+                kind == Kind::Library && mutation["operation"]["type"] == "insertBlankSlide",
+            );
             cx.notify();
             (id, content.load_generation)
         });
