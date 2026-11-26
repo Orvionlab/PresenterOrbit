@@ -421,7 +421,14 @@ pub fn on_due(runtime: &Runtime, event: &Value, cx: &mut App) {
                 payload["libraryId"] = json!(library);
                 "libraryCue"
             };
-            crate::cues::actions::run_native(runtime, cx, command, payload, false, false);
+            crate::cues::actions::run_native(
+                runtime,
+                cx,
+                command,
+                payload,
+                false,
+                crate::cues::actions::CueTiming::Ordered,
+            );
         }
     }
 }

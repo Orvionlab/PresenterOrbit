@@ -745,6 +745,13 @@ fn selected_slides_move_and_use_the_context_menu_in_a_continuous_playlist(cx: &m
     assert!(visual.debug_bounds("cue-selection-2").is_some());
     assert!(visual.debug_bounds("cue-selection-3").is_some());
     assert_eq!(app.snapshot()["library"][0]["slides"][0]["id"], ids[0]);
+    for (index, id) in [(0, &ids[1]), (3, &ids[2])] {
+        click(&mut visual, &format!("cue-thumbnail-{index}"));
+        app.wait(cx, |_, cx| {
+            cx.update(|cx| runtime.output.read(cx).live["liveSlideId"] == *id)
+        });
+    }
+    assert_eq!(app.snapshot()["library"][0]["slides"][0]["id"], ids[0]);
     release.send(()).unwrap();
     app.wait(cx, |app, _| {
         app.snapshot()["library"][0]["slides"]
@@ -754,6 +761,15 @@ fn selected_slides_move_and_use_the_context_menu_in_a_continuous_playlist(cx: &m
             .map(|slide| &slide["id"])
             .eq([&ids[1], &ids[3], &ids[0], &ids[2]])
     });
+    visual.run_until_parked();
+    let moved = visual.debug_bounds("cue-thumbnail-2").unwrap().center();
+    visual.simulate_click(
+        moved,
+        gpui::Modifiers {
+            control: true,
+            ..Default::default()
+        },
+    );
     visual.run_until_parked();
     context(&mut visual, "cue-thumbnail-3");
     click(&mut visual, "menu-item-Copy");

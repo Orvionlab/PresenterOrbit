@@ -201,7 +201,7 @@ impl Host {
         Ok(response)
     }
 
-    /// A direct take can use the last committed cue while destination or enabled flags are being saved.
+    /// A direct take can use the last committed cue while slide order, destination or enabled flags are saved.
     pub fn execute_operator_cue_before_save(
         &self,
         command: &str,

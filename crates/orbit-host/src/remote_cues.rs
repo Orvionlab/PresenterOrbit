@@ -376,11 +376,18 @@ fn select_cue(
         snapshot["livePlaylistEntryId"].as_str(),
     )
     .ok_or("The live arrangement is unavailable.")?;
+    let operator_master = allow_disabled
+        && payload["cueInstanceId"].is_null()
+        && !item["arrangements"].as_array().is_some_and(|arrangements| {
+            arrangements
+                .iter()
+                .any(|arrangement| arrangement["id"] == item["selectedArrangementId"])
+        });
     let target = slides
         .iter()
         .find(|slide| {
             slide["id"] == payload["slideId"]
-                && slide["arrangementInstanceId"] == payload["cueInstanceId"]
+                && (operator_master || slide["arrangementInstanceId"] == payload["cueInstanceId"])
         })
         .ok_or("The requested cue occurrence is unavailable in the live arrangement.")?;
     if !allow_disabled && target["disabled"] == true {

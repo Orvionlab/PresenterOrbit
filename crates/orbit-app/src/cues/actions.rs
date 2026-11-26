@@ -15,7 +15,13 @@ pub fn error(runtime: &Runtime, cx: &mut App, error: String) {
     });
 }
 
-pub fn take(runtime: &Runtime, document: &Document, index: usize, cx: &mut App) {
+pub fn take(
+    runtime: &Runtime,
+    document: &Document,
+    index: usize,
+    reorder_pending: bool,
+    cx: &mut App,
+) {
     if document.cues.get(index).is_none() {
         return;
     }
@@ -36,8 +42,17 @@ pub fn take(runtime: &Runtime, document: &Document, index: usize, cx: &mut App) 
         .read(cx)
         .library_id_for_item(&document.item.id)
         .to_string();
-    let (command, payload) = cue_payload(document, index, &library);
-    run_native(runtime, cx, command, payload, false, true);
+    let (command, mut payload) = cue_payload(document, index, &library);
+    let timing = if reorder_pending {
+        // Master cues are unique by slide ID. Their playlist occurrence IDs contain a position.
+        if document.arrangement.is_empty() {
+            payload["cueInstanceId"] = Value::Null;
+        }
+        CueTiming::Reordering
+    } else {
+        CueTiming::Latest
+    };
+    run_native(runtime, cx, command, payload, false, timing);
 }
 
 /// A presentation whose destination is announcements goes to the independent announcements player, timed by
@@ -92,7 +107,7 @@ pub fn take_editor_slide(runtime: &Runtime, item_id: &str, index: usize, cx: &mu
         return;
     };
     let payload = json!({"presentationId":item_id,"slideId":slide["id"],"libraryId":content.library_id_for_item(item_id),"cueInstanceId":null});
-    run_native(runtime, cx, "libraryCue", payload, false, true);
+    run_native(runtime, cx, "libraryCue", payload, false, CueTiming::Latest);
 }
 
 fn cue_payload(document: &Document, index: usize, library: &str) -> (&'static str, Value) {
@@ -112,20 +127,27 @@ fn cue_payload(document: &Document, index: usize, library: &str) -> (&'static st
     (command, payload)
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CueTiming {
+    Ordered,
+    Latest,
+    Reordering,
+}
+
 pub(crate) fn run_native(
     runtime: &Runtime,
     cx: &mut App,
     command: &'static str,
     payload: Value,
     cross_documents: bool,
-    latest: bool,
+    timing: CueTiming,
 ) {
     let path = runtime.content.read(cx).workspace_path.clone();
-    let before_save = latest
-        && matches!(command, "playlistCue" | "libraryCue")
-        && payload["presentationId"]
-            .as_str()
-            .is_some_and(|item| runtime.content.read(cx).cue_flags_pending(item));
+    let before_save = timing == CueTiming::Reordering
+        || (timing == CueTiming::Latest
+            && payload["presentationId"]
+                .as_str()
+                .is_some_and(|item| runtime.content.read(cx).cue_flags_pending(item)));
     let workspace_revision = runtime.lanes.revisions().workspace(&path);
     let host = runtime.host.clone();
     let selection = runtime.ui.read(cx).selected_library_item_id.clone();
@@ -151,7 +173,7 @@ pub(crate) fn run_native(
     let workspace = runtime.content.read(cx).workspace.clone();
     let lanes = runtime.lanes.clone();
     let execute = move || {
-        // A direct take can use the committed cue while its flags are being saved.
+        // A direct take can use the committed cue while its order or flags are being saved.
         let mut payload = payload;
         payload["workspacePath"] = json!(expected);
         let response = if before_save {
@@ -194,7 +216,7 @@ pub(crate) fn run_native(
         }
         Ok(response)
     };
-    let answer = if latest {
+    let answer = if timing != CueTiming::Ordered {
         runtime.lanes.latest_cue(&path, before_save, execute)
     } else {
         runtime.lanes.task(&path, move || execute().map(Some))
@@ -258,7 +280,7 @@ pub fn navigate(runtime: &Runtime, direction: i8, cx: &mut App) {
         },
         json!({}),
         true,
-        false,
+        CueTiming::Ordered,
     );
 }
 
@@ -463,7 +485,7 @@ fn take_document_edge(
                             .rposition(|cue| cue["disabled"] != true)
                     };
                     if let Some(index) = index {
-                        take(&runtime, &document, index, cx);
+                        take(&runtime, &document, index, false, cx);
                     } else if header_step {
                         if let Some((playlist, index)) = &occurrence {
                             reveal_next_playlist_header(&runtime, playlist, *index, cx);

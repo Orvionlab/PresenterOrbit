@@ -214,7 +214,7 @@ pub struct CueView {
     arr_picker: Rc<std::cell::Cell<gpui::Bounds<Pixels>>>,
     arr_gap: Option<usize>,
     /// Slide reorders sent to the host and not answered yet; their snapshots must not overwrite the optimistic order.
-    pending_reorders: usize,
+    pending_reorders: HashMap<String, usize>,
     suppress_click: bool,
     scroll: ListState,
     focus: FocusHandle,
@@ -325,7 +325,7 @@ impl CueView {
             arr_bar: Rc::new(RefCell::new(None)),
             arr_picker: Rc::default(),
             arr_gap: None,
-            pending_reorders: 0,
+            pending_reorders: HashMap::new(),
             suppress_click: false,
             scroll,
             focus: cx.focus_handle(),
@@ -428,7 +428,7 @@ impl CueView {
                 .zip(&seeds)
                 .all(|(document, seed)| document.item.id == seed.item.id);
         // A reorder is still in flight: its optimistic order stays until the last answer reconciles.
-        if same_documents && self.pending_reorders > 0 {
+        if same_documents && !self.pending_reorders.is_empty() {
             self.key = key;
             return;
         }
@@ -596,7 +596,7 @@ impl CueView {
         match command {
             "takeCue" => {
                 if let Some((document, index)) = self.current(cx) {
-                    actions::take(&self.runtime, &self.documents[document], index, cx);
+                    self.take(document, index, cx);
                 }
             }
             "nextSlide" => actions::navigate(&self.runtime, 1, cx),
@@ -814,6 +814,17 @@ impl CueView {
                     .map(|(index, _)| (index, 0))
             })
     }
+    fn take(&self, document: usize, index: usize, cx: &mut App) {
+        let document = &self.documents[document];
+        actions::take(
+            &self.runtime,
+            document,
+            index,
+            self.pending_reorders.contains_key(&document.item.id),
+            cx,
+        );
+    }
+
     fn click(
         &mut self,
         document: usize,
@@ -869,7 +880,7 @@ impl CueView {
                     }
                 });
             }
-            actions::take(&self.runtime, item, index, cx);
+            self.take(document, index, cx);
         }
         cx.notify();
     }
@@ -894,7 +905,7 @@ impl CueView {
         }) else {
             return false;
         };
-        actions::take(&self.runtime, &self.documents[document], index, cx);
+        self.take(document, index, cx);
         true
     }
     fn key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
@@ -917,7 +928,7 @@ impl CueView {
             return;
         };
         match key {
-            "enter" => actions::take(&self.runtime, &self.documents[document], current, cx),
+            "enter" => self.take(document, current, cx),
             "up" | "down" => {
                 let step = if self.mode == Mode::Table {
                     1
@@ -1189,19 +1200,27 @@ impl CueView {
                         self.documents[press.document] = Arc::new(next);
                         self.rebuild_rows(cx);
                     }
-                    self.pending_reorders += 1;
+                    let item = self.documents[press.document].item.id.clone();
+                    *self.pending_reorders.entry(item.clone()).or_default() += 1;
                     let saved = actions::mutate_checked(
                         &self.runtime,
-                        &self.documents[press.document].item.id,
+                        &item,
                         json!({"type":"reorderSlides","slideIds":ids,"targetIndex":index}),
                         cx,
                     );
                     cx.spawn(async move |view, cx| {
                         let accepted = saved.await.is_some();
                         view.update(cx, |view, cx| {
-                            view.pending_reorders -= 1;
+                            if let std::collections::hash_map::Entry::Occupied(mut count) =
+                                view.pending_reorders.entry(item)
+                            {
+                                *count.get_mut() -= 1;
+                                if *count.get() == 0 {
+                                    count.remove();
+                                }
+                            }
                             // The last answer reconciles with the host's content; a rejection restores its order.
-                            if view.pending_reorders == 0 || !accepted {
+                            if view.pending_reorders.is_empty() || !accepted {
                                 view.key.0 = u64::MAX;
                                 cx.notify();
                             }
