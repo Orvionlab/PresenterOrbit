@@ -2,7 +2,8 @@ import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import { cp, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
 type Platform = "windows" | "macos";
@@ -43,6 +44,29 @@ async function run(command: string, args: string[], cwd?: string) {
       code === 0 ? accept(output) : reject(new Error(`${command} exited with ${code}.\n${output.slice(-16000)}`)),
     );
   });
+}
+
+async function downloadSource(name: string, url: string) {
+  const maxAttempts = 3;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(120_000) });
+      if (response.ok) return Buffer.from(await response.arrayBuffer());
+      await response.body?.cancel();
+      if (response.status !== 408 && response.status !== 429 && response.status < 500) {
+        throw new Error(`Source download failed for ${name}: HTTP ${response.status}.`);
+      }
+      throw new TypeError(`HTTP ${response.status}`);
+    } catch (cause) {
+      const retryable = cause instanceof TypeError || (cause instanceof Error && cause.name === "TimeoutError");
+      if (!retryable) throw cause;
+      if (attempt === maxAttempts) {
+        throw new Error(`Source download failed for ${name} after ${maxAttempts} attempts.`, { cause });
+      }
+      console.warn(`Source download interrupted for ${name} (attempt ${attempt}/${maxAttempts}): ${cause.message}`);
+      await delay(attempt * 1_000);
+    }
+  }
 }
 
 export async function verifyFfmpegSource(sourceDirectory: string) {
@@ -241,15 +265,10 @@ export async function preparePackageFfmpeg(
         "\n",
       ),
     );
-    const response = await fetch(ffmpegSources.ffmpeg.url, { signal: AbortSignal.timeout(120000) });
-    if (!response.ok) throw new Error(`FFmpeg source download failed: HTTP ${response.status}.`);
-    await writeFile(join(source, "ffmpeg-8.1.1.tar.xz"), Buffer.from(await response.arrayBuffer()));
-    const dav1dResponse = await fetch(ffmpegSources.dav1d.url, { signal: AbortSignal.timeout(120000) });
-    if (!dav1dResponse.ok) throw new Error(`dav1d source download failed: HTTP ${dav1dResponse.status}.`);
-    await writeFile(join(source, "dav1d-1.5.4.tar.xz"), Buffer.from(await dav1dResponse.arrayBuffer()));
-    const zlibResponse = await fetch(ffmpegSources.zlib.url, { signal: AbortSignal.timeout(120000) });
-    if (!zlibResponse.ok) throw new Error(`zlib source download failed: HTTP ${zlibResponse.status}.`);
-    await writeFile(join(source, "zlib-1.3.1.tar.gz"), Buffer.from(await zlibResponse.arrayBuffer()));
+    for (const { url } of [ffmpegSources.ffmpeg, ffmpegSources.dav1d, ffmpegSources.zlib]) {
+      const name = basename(new URL(url).pathname);
+      await writeFile(join(source, name), await downloadSource(name, url));
+    }
     const checkout = await mkdtemp(join(tmpdir(), "orbit-x264-source-"));
     try {
       await run("git", ["init", "--quiet", checkout]);
