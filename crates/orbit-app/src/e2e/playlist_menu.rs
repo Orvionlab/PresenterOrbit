@@ -703,14 +703,33 @@ fn selected_slides_move_and_use_the_context_menu_in_a_continuous_playlist(cx: &m
     click(&mut visual, "region-media");
     assert!(visual.debug_bounds("cue-selection-2").is_none());
     select_slides(&mut visual);
+    let release = support::hold_workspace_writes(&app, cx);
     context(&mut visual, "cue-thumbnail-2");
     click(&mut visual, "menu-item-Disable");
+    for index in [1, 2] {
+        click(&mut visual, &format!("cue-thumbnail-{index}"));
+        app.wait(cx, |_, cx| {
+            cx.update(|cx| runtime.output.read(cx).live["liveSlideId"] == ids[index])
+        });
+    }
+    assert_ne!(app.snapshot()["library"][0]["slides"][2]["disabled"], true);
+    release.send(()).unwrap();
     app.wait(cx, |app, _| {
         let data = app.snapshot();
         let slides = &data["library"][0]["slides"];
         slides[0]["disabled"] == true
             && slides[1]["disabled"] != true
             && slides[2]["disabled"] == true
+    });
+    for (key, index) in [("right", 3), ("left", 1)] {
+        visual.simulate_keystrokes(key);
+        app.wait(cx, |_, cx| {
+            cx.update(|cx| runtime.output.read(cx).live["liveSlideId"] == ids[index])
+        });
+    }
+    select_slides(&mut visual);
+    app.wait(cx, |_, cx| {
+        cx.update(|cx| runtime.output.read(cx).live["liveSlideId"] == ids[0])
     });
 
     let from = visual.debug_bounds("cue-thumbnail-2").unwrap().center();

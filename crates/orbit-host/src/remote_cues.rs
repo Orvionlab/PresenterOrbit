@@ -299,7 +299,7 @@ fn select_playlist_entry(
     selected["livePlaylistId"] = playlist["id"].clone();
     selected["livePlaylistEntryId"] = entry["id"].clone();
     selected["liveCueInstanceId"] = Value::Null;
-    let (next, mut patch) = select(&selected, payload)?;
+    let (next, mut patch) = select_cue(&selected, payload, operator)?;
     patch["livePlaylistId"] = playlist["id"].clone();
     patch["livePlaylistEntryId"] = entry["id"].clone();
     Ok((next, patch))
@@ -309,6 +309,7 @@ pub(crate) fn select_library(
     snapshot: &Value,
     workspace: &Value,
     payload: &Value,
+    operator: bool,
 ) -> Result<(Value, Value), String> {
     let library = workspace["libraries"]
         .as_array()
@@ -342,7 +343,7 @@ pub(crate) fn select_library(
     selected["livePlaylistEntryId"] = Value::Null;
     selected["livePlaylistId"] = Value::Null;
     selected["liveCueInstanceId"] = Value::Null;
-    let (mut next, mut patch) = select(&selected, payload)?;
+    let (mut next, mut patch) = select_cue(&selected, payload, operator)?;
     next["livePlaylistId"] = Value::Null;
     patch["livePlaylistId"] = Value::Null;
     patch["livePlaylistEntryId"] = Value::Null;
@@ -350,6 +351,14 @@ pub(crate) fn select_library(
 }
 
 pub(crate) fn select(snapshot: &Value, payload: &Value) -> Result<(Value, Value), String> {
+    select_cue(snapshot, payload, false)
+}
+
+fn select_cue(
+    snapshot: &Value,
+    payload: &Value,
+    allow_disabled: bool,
+) -> Result<(Value, Value), String> {
     let item = snapshot
         .get("liveItem")
         .filter(|value| value.is_object())
@@ -374,7 +383,7 @@ pub(crate) fn select(snapshot: &Value, payload: &Value) -> Result<(Value, Value)
                 && slide["arrangementInstanceId"] == payload["cueInstanceId"]
         })
         .ok_or("The requested cue occurrence is unavailable in the live arrangement.")?;
-    if target.get("disabled").and_then(Value::as_bool) == Some(true) {
+    if !allow_disabled && target["disabled"] == true {
         return Err("The requested cue is disabled.".into());
     }
     crate::select_remote_slide_in_output_snapshot(snapshot, target)?

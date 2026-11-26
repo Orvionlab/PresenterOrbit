@@ -348,6 +348,7 @@ impl TreesView {
             .filter(|i| i.kind == kind && i.target == id)?;
         let theme = cx.theme();
         let line = div()
+            .debug_selector(|| "collection-tree-insertion-line".into())
             .absolute()
             .right(px(4.))
             .left(px(indent))

@@ -1628,6 +1628,79 @@ fn clipboard_import_edits_slide_breaks_and_saves_to_the_chosen_playlist(cx: &mut
 }
 
 #[gpui::test]
+fn collection_tree_reorders_stay_visible_between_saves(cx: &mut TestAppContext) {
+    let mut app = Scenario::new(cx, false, |host| {
+        seed(host);
+        let path =
+            host.invoke("getSettings", vec![]).unwrap()["presenterOrbitWorkspacePath"].clone();
+        let mut revision = host
+            .invoke("readWorkspaceSnapshot", vec![path.clone()])
+            .unwrap()["revision"]
+            .clone();
+        for method in ["mutatePresentationLibrary", "mutatePresentationPlaylist"] {
+            for title in ["Alpha", "Bravo", "Charlie"] {
+                revision = host
+                    .invoke(
+                        method,
+                        vec![
+                            path.clone(),
+                            json!({"type":"create","baseTitle":title}),
+                            revision,
+                        ],
+                    )
+                    .unwrap()["revision"]
+                    .clone();
+            }
+        }
+    });
+    let runtime = app.runtime(cx);
+    let mut visual = app.visual(cx);
+    for (field, prefix) in [("libraries", "library"), ("playlist", "playlist")] {
+        let before = app.snapshot();
+        let originals = before[field].as_array().unwrap();
+        let base = originals.len() - 3;
+        let [a, b, c] =
+            std::array::from_fn(|offset| originals[base + offset]["id"].as_str().unwrap());
+        let [row_a, row_b, row_c] = [a, b, c]
+            .map(|id| Box::leak(format!("{prefix}-{id}").into_boxed_str()) as &'static str);
+        let row_top =
+            |visual: &mut gpui::VisualTestContext, id| visual.debug_bounds(id).unwrap().top();
+        let first = support::hold_workspace_writes(&app, cx);
+        support::drag_row(
+            &mut visual,
+            row_c,
+            row_a,
+            false,
+            "collection-tree-insertion-line",
+        );
+        assert!(row_top(&mut visual, row_c) < row_top(&mut visual, row_a));
+        let second = support::hold_workspace_writes(&app, cx);
+        support::drag_row(
+            &mut visual,
+            row_b,
+            row_c,
+            false,
+            "collection-tree-insertion-line",
+        );
+        assert!(row_top(&mut visual, row_b) < row_top(&mut visual, row_c));
+        assert_eq!(app.snapshot()[field][base]["id"], a);
+        first.send(()).unwrap();
+        app.wait(cx, |_, cx| {
+            cx.update(|cx| runtime.content.read(cx).workspace[field][base]["id"] == c)
+        });
+        assert!(row_top(&mut visual, row_b) < row_top(&mut visual, row_c));
+        assert!(row_top(&mut visual, row_c) < row_top(&mut visual, row_a));
+        second.send(()).unwrap();
+        app.wait(cx, |app, _| {
+            let saved = app.snapshot();
+            saved[field][base]["id"] == b
+                && saved[field][base + 1]["id"] == c
+                && saved[field][base + 2]["id"] == a
+        });
+    }
+}
+
+#[gpui::test]
 fn library_authoring_saves_and_reopens_the_workspace(cx: &mut TestAppContext) {
     let mut app = Scenario::new(cx, false, seed);
     let mut visual = app.visual(cx);

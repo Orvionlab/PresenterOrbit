@@ -13,7 +13,6 @@ use super::model::{
     copy_name, descendant_ids, insertion_anchor, is_descendant, unique_collection_id, unique_title,
     visible_ids, DropMode, Library, Playlist, ThemeAssignment,
 };
-use super::selection::selected_playlist_ids;
 use crate::state::runtime::{Kind, Persist, Runtime};
 use crate::state::slices::{Content, Ui};
 
@@ -187,9 +186,10 @@ pub fn reorder_libraries(
     target: &str,
     after: bool,
 ) -> Option<Task<()>> {
-    let reordered =
-        reordered_libraries(&runtime.content.read(cx).libraries, dragged, target, after)?;
-    let request = Persist::new(
+    reordered_libraries(&runtime.content.read(cx).libraries, dragged, target, after)?;
+    let (dragged, target) = (dragged.to_string(), target.to_string());
+    Some(runtime.save_preview(
+        cx,
         Kind::Library,
         json!({
             "type": "reorder",
@@ -197,17 +197,14 @@ pub fn reorder_libraries(
             "targetLibraryId": target,
             "placement": if after { "after" } else { "before" },
         }),
-        move |content: &mut Content, ui: &mut Ui| {
-            ui.selected_library_ids = ui
-                .selected_library_ids
-                .iter()
-                .filter(|id| reordered.iter().any(|library| &library.id == *id))
-                .cloned()
-                .collect();
-            content.libraries = reordered;
+        move |content| {
+            if let Some(reordered) =
+                reordered_libraries(&content.libraries, &dragged, &target, after)
+            {
+                content.libraries = reordered;
+            }
         },
-    );
-    Some(spawn_persist(runtime, cx, request, |_, _, _| {}))
+    ))
 }
 
 /// The message of the delete confirmation: how many libraries and how many documents go with them.
@@ -525,11 +522,11 @@ pub fn reordered_playlists(
 ) -> Option<Vec<Playlist>> {
     let dragged_index = playlists.iter().position(|p| p.id == dragged)?;
     let target_playlist = playlists.iter().find(|p| p.id == target)?;
+    if dragged == target || is_descendant(playlists, target, dragged) {
+        return None;
+    }
     if mode == DropMode::Inside {
-        if !target_playlist.is_folder()
-            || dragged == target
-            || is_descendant(playlists, target, dragged)
-        {
+        if !target_playlist.is_folder() {
             return None;
         }
         let mut next = playlists.to_vec();
@@ -567,16 +564,18 @@ pub fn reorder_playlists(
     target: &str,
     mode: DropMode,
 ) -> Option<Task<()>> {
-    let next = reordered_playlists(&runtime.content.read(cx).playlists, dragged, target, mode)?;
-    let request = Persist::new(
+    reordered_playlists(&runtime.content.read(cx).playlists, dragged, target, mode)?;
+    let (dragged, target) = (dragged.to_string(), target.to_string());
+    Some(runtime.save_preview(
+        cx,
         Kind::Playlist,
         json!({ "type": "reorder", "playlistId": dragged, "targetPlaylistId": target, "placement": mode.as_str() }),
-        move |content: &mut Content, ui: &mut Ui| {
-            ui.selected_playlist_ids = selected_playlist_ids(content, ui);
-            content.playlists = next;
+        move |content| {
+            if let Some(next) = reordered_playlists(&content.playlists, &dragged, &target, mode) {
+                content.playlists = next;
+            }
         },
-    );
-    Some(spawn_persist(runtime, cx, request, |_, _, _| {}))
+    ))
 }
 
 /// `movePlaylistToParent`: an empty `parent_id` moves it to the root.
@@ -596,16 +595,18 @@ pub fn move_playlist_to_parent(
         }
     }
     let (id, parent) = (playlist_id.to_string(), parent_id.to_string());
-    let request = Persist::new(
+    Some(runtime.save_preview(
+        cx,
         Kind::Playlist,
         json!({ "type": "moveParent", "playlistId": playlist_id, "parentId": parent_id }),
-        move |content: &mut Content, _ui: &mut Ui| {
-            if let Some(playlist) = content.playlists.iter_mut().find(|p| p.id == id) {
-                playlist.parent_id = parent;
+        move |content| {
+            if !is_descendant(&content.playlists, &parent, &id) {
+                if let Some(playlist) = content.playlists.iter_mut().find(|p| p.id == id) {
+                    playlist.parent_id.clone_from(&parent);
+                }
             }
         },
-    );
-    Some(spawn_persist(runtime, cx, request, |_, _, _| {}))
+    ))
 }
 
 pub fn toggle_playlist_collapsed(

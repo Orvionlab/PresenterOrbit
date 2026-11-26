@@ -112,10 +112,11 @@ pub fn replay_safe_library_mutation(mutation: &Value) -> bool {
         "deleteArrangement",
         "addArrangementSection",
     ];
-    const SAFE_ITEM_OPERATIONS: [&str; 6] = [
+    const SAFE_ITEM_OPERATIONS: [&str; 7] = [
         "setTitle",
         "setOperatorNotes",
         "setSlideEnabled",
+        "setSlidesEnabled",
         "setSlideGroup",
         "setSlideTheme",
         "setSlideMedia",

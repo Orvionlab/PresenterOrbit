@@ -252,7 +252,13 @@ pub(crate) fn execute(
     let workspace = cached_workspace(&path, revision)?;
     if matches!(
         command,
-        "cue" | "libraryCue" | "playlistCue" | "operatorPlaylistCue" | "stageMessage" | "media"
+        "cue"
+            | "libraryCue"
+            | "playlistCue"
+            | "operatorLibraryCue"
+            | "operatorPlaylistCue"
+            | "stageMessage"
+            | "media"
     ) && payload["workspacePath"].as_str() != path.to_str()
     {
         return Ok(
@@ -271,7 +277,7 @@ pub(crate) fn execute_operator_cue_before_save(
 ) -> Result<Value, String> {
     let command = match command {
         "playlistCue" => "operatorPlaylistCue",
-        "libraryCue" => "libraryCue",
+        "libraryCue" => "operatorLibraryCue",
         _ => return Err("Unsupported operator cue command.".into()),
     };
     let path = crate::active_workspace(state, payload["workspacePath"].clone())?;
@@ -440,8 +446,13 @@ fn mutate(
     if command == "operatorPlaylistCue" {
         return crate::remote_cues::select_operator_playlist(snapshot, workspace, payload);
     }
-    if command == "libraryCue" {
-        return crate::remote_cues::select_library(snapshot, workspace, payload);
+    if matches!(command, "libraryCue" | "operatorLibraryCue") {
+        return crate::remote_cues::select_library(
+            snapshot,
+            workspace,
+            payload,
+            command == "operatorLibraryCue",
+        );
     }
     if command == "stageMessage" {
         return mutate_stage_message(snapshot, payload);

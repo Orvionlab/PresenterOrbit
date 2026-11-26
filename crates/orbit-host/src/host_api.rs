@@ -178,10 +178,10 @@ impl Host {
         if payload["workspacePath"].as_str() != path.to_str() {
             return Err("The operator cue command belongs to a different workspace.".into());
         }
-        let mut response = if command == "playlistCue" {
-            remote_controls::execute(self, state, "operatorPlaylistCue", payload)?
-        } else {
-            execute_native_remote_command(self, command, payload)?
+        let mut response = match command {
+            "playlistCue" => remote_controls::execute(self, state, "operatorPlaylistCue", payload)?,
+            "libraryCue" => remote_controls::execute(self, state, "operatorLibraryCue", payload)?,
+            _ => execute_native_remote_command(self, command, payload)?,
         };
         if matches!(command, "nextSlide" | "previousSlide") && response["status"] == "not-ready" {
             let output = lock_output_snapshot_state(&state.output_snapshot)?;
@@ -201,7 +201,7 @@ impl Host {
         Ok(response)
     }
 
-    /// A direct take can use the last committed cue while a destination-only edit is being saved.
+    /// A direct take can use the last committed cue while destination or enabled flags are being saved.
     pub fn execute_operator_cue_before_save(
         &self,
         command: &str,

@@ -16,11 +16,7 @@ pub fn error(runtime: &Runtime, cx: &mut App, error: String) {
 }
 
 pub fn take(runtime: &Runtime, document: &Document, index: usize, cx: &mut App) {
-    if !document
-        .cues
-        .get(index)
-        .is_some_and(|cue| cue["disabled"] != true)
-    {
+    if document.cues.get(index).is_none() {
         return;
     }
     if runtime.output.read(cx).committed_revision == 0 {
@@ -53,7 +49,7 @@ fn announce(runtime: &Runtime, document: &Document, index: usize, cx: &mut App) 
     shown["selectedArrangementId"] = json!("");
     shown["arrangements"] = json!([]);
     let (interval, looped) = super::flow::player_timing(&shown);
-    match player::select_slide(
+    match player::select_operator_slide(
         &shown,
         &document.cues,
         cue["id"].as_str().unwrap_or_default(),
@@ -129,7 +125,7 @@ pub(crate) fn run_native(
         && matches!(command, "playlistCue" | "libraryCue")
         && payload["presentationId"]
             .as_str()
-            .is_some_and(|item| runtime.content.read(cx).destination_pending(item));
+            .is_some_and(|item| runtime.content.read(cx).cue_flags_pending(item));
     let workspace_revision = runtime.lanes.revisions().workspace(&path);
     let host = runtime.host.clone();
     let selection = runtime.ui.read(cx).selected_library_item_id.clone();
@@ -155,7 +151,7 @@ pub(crate) fn run_native(
     let workspace = runtime.content.read(cx).workspace.clone();
     let lanes = runtime.lanes.clone();
     let execute = move || {
-        // Workspace lanes serialize takes with edits; the host validates the active workspace again.
+        // A direct take can use the committed cue while its flags are being saved.
         let mut payload = payload;
         payload["workspacePath"] = json!(expected);
         let response = if before_save {
@@ -668,36 +664,6 @@ pub fn clear_group(runtime: &Runtime, id: &str, cx: &mut App) {
 }
 
 pub fn mutate(runtime: &Runtime, item_id: &str, operation: Value, cx: &mut App) {
-    if operation["type"] == "setSlideEnabled" {
-        if let (Some(slide), Some(enabled)) = (
-            operation["slideId"].as_str(),
-            operation["enabled"].as_bool(),
-        ) {
-            let path = runtime.content.read(cx).workspace_path.clone();
-            let token = runtime.content.update(cx, |content, cx| {
-                let token = content.preview_slide_enabled(item_id, slide, enabled);
-                cx.notify();
-                token
-            });
-            let task = mutate_checked(runtime, item_id, operation, cx);
-            let runtime = runtime.clone();
-            cx.spawn(async move |cx| {
-                task.await;
-                cx.update(|cx| {
-                    runtime.content.update(cx, |content, cx| {
-                        if content.workspace_path == path {
-                            if let Some(token) = token {
-                                content.finish_slide_enabled(token);
-                                cx.notify();
-                            }
-                        }
-                    });
-                });
-            })
-            .detach();
-            return;
-        }
-    }
     mutate_checked(runtime, item_id, operation, cx).detach();
 }
 
@@ -765,19 +731,13 @@ pub fn set_selected_enabled(
     enabled: bool,
     cx: &mut App,
 ) {
-    if let [id] = ids.as_slice() {
-        mutate(
-            runtime,
-            item,
-            json!({"type":"setSlideEnabled","slideId":id,"enabled":enabled}),
-            cx,
-        );
-        return;
-    }
+    let operation = match ids.as_slice() {
+        [id] => json!({"type":"setSlideEnabled","slideId":id,"enabled":enabled}),
+        _ => json!({"type":"setSlidesEnabled","slideIds":ids,"enabled":enabled}),
+    };
+    let refresh = runtime.output.read(cx).live["liveItemId"] == item;
     let item = item.to_string();
-    let mutation = json!({"type":"mutateItem","itemId":item,"operation":{
-        "type":"setSlidesEnabled","slideIds":ids,"enabled":enabled
-    }});
+    let mutation = json!({"type":"mutateItem","itemId":item,"operation":operation});
     runtime
         .save_preview(cx, Kind::Library, mutation, move |content| {
             edit_item(content, &item, |value| {
@@ -798,6 +758,9 @@ pub fn set_selected_enabled(
             });
         })
         .detach();
+    if refresh {
+        refresh_live(runtime, cx);
+    }
 }
 
 /// `mutate` that first applies `change` to the item's local value, and puts the previous value back when the host
@@ -929,14 +892,10 @@ pub fn refresh_live(runtime: &Runtime, cx: &mut App) {
         let cue = cues
             .iter()
             .find(|cue| {
-                cue["disabled"] != true
-                    && !current["liveCueInstanceId"].is_null()
+                !current["liveCueInstanceId"].is_null()
                     && cue["arrangementInstanceId"] == current["liveCueInstanceId"]
             })
-            .or_else(|| {
-                cues.iter()
-                    .find(|cue| cue["disabled"] != true && cue["id"] == current["liveSlideId"])
-            })
+            .or_else(|| cues.iter().find(|cue| cue["id"] == current["liveSlideId"]))
             .or_else(|| cues.iter().find(|cue| cue["disabled"] != true));
         let mut item_value = (*item.value).clone();
         item_value["selectedArrangementId"] = json!(arrangement);

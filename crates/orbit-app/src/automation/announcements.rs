@@ -90,6 +90,26 @@ pub fn select(
     if slides.is_empty() {
         return Err("The presentation has no enabled slides.".into());
     }
+    Ok(start_player(
+        item,
+        slides,
+        interval_seconds,
+        looped,
+        now,
+        selection_id,
+        revision,
+    ))
+}
+
+fn start_player(
+    item: &Value,
+    slides: Vec<Value>,
+    interval_seconds: Option<f64>,
+    looped: bool,
+    now: f64,
+    selection_id: String,
+    revision: u64,
+) -> Value {
     let mut shown = item.clone();
     shown["slides"] = Value::Array(slides);
     let mut player = json!({
@@ -102,7 +122,7 @@ pub fn select(
         },
     });
     project(&mut player, now);
-    Ok(player)
+    player
 }
 
 /// The announcements player an action starts: manual, on the slide the action names.
@@ -115,15 +135,51 @@ pub fn select_slide(
     selection_id: String,
     revision: u64,
 ) -> Result<Value, String> {
-    let mut player = select(item, cues, None, false, now, selection_id, revision)?;
-    let index = player["item"]["slides"]
-        .as_array()
-        .and_then(|slides| {
-            slides.iter().position(|slide| {
-                slide["id"] == slide_id && slide["arrangementInstanceId"] == *instance
-            })
-        })
+    select_slide_from(
+        item,
+        enabled(cues),
+        slide_id,
+        instance,
+        now,
+        selection_id,
+        revision,
+    )
+}
+
+pub fn select_operator_slide(
+    item: &Value,
+    cues: &[Value],
+    slide_id: &str,
+    instance: &Value,
+    now: f64,
+    selection_id: String,
+    revision: u64,
+) -> Result<Value, String> {
+    select_slide_from(
+        item,
+        cues.to_vec(),
+        slide_id,
+        instance,
+        now,
+        selection_id,
+        revision,
+    )
+}
+
+fn select_slide_from(
+    item: &Value,
+    slides: Vec<Value>,
+    slide_id: &str,
+    instance: &Value,
+    now: f64,
+    selection_id: String,
+    revision: u64,
+) -> Result<Value, String> {
+    let index = slides
+        .iter()
+        .position(|slide| slide["id"] == slide_id && slide["arrangementInstanceId"] == *instance)
         .ok_or("automation.macros.targetInvalid")?;
+    let mut player = start_player(item, slides, None, false, now, selection_id, revision);
     player["player"]["index"] = json!(index);
     project(&mut player, now);
     Ok(player)
@@ -137,15 +193,20 @@ pub fn navigate(
     selection_id: String,
     revision: u64,
 ) -> Value {
-    let count = player["item"]["slides"].as_array().map_or(0, Vec::len) as i64;
-    let index = player["player"]["index"].as_i64().unwrap_or(0) + direction;
+    let slides = player["item"]["slides"]
+        .as_array()
+        .map_or(&[][..], Vec::as_slice);
+    let count = slides.len() as i64;
+    let current = player["player"]["index"].as_i64().unwrap_or(0);
+    let looped = player["player"]["loop"] == true;
+    let target = (1..=count)
+        .map(|step| current + step * direction)
+        .take_while(|&index| looped || (0..count).contains(&index))
+        .map(|index| index.rem_euclid(count) as usize)
+        .find(|&index| slides[index]["disabled"] != true);
     let mut next = player.clone();
-    if (index < 0 || index >= count) && player["player"]["loop"] != true {
-        next["player"]["status"] = json!("paused");
-        next["player"]["elapsedMs"] = json!(elapsed(player, now));
-        next["player"]["startedAt"] = Value::Null;
-    } else {
-        next["player"]["index"] = json!((index + count) % count.max(1));
+    if let Some(index) = target {
+        next["player"]["index"] = json!(index);
         next["player"]["elapsedMs"] = json!(0);
         next["player"]["startedAt"] = if playing(player) {
             json!(now)
@@ -154,6 +215,10 @@ pub fn navigate(
         };
         next["selectionId"] = json!(selection_id);
         next["clockRevision"] = json!(revision);
+    } else {
+        next["player"]["status"] = json!("paused");
+        next["player"]["elapsedMs"] = json!(elapsed(player, now));
+        next["player"]["startedAt"] = Value::Null;
     }
     project(&mut next, now);
     next

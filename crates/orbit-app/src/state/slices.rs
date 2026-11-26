@@ -1,6 +1,7 @@
 //! The state slices of `runtime-state-slices.ts` that the collection panels need. Each is one `Entity`, so a change
 //! only notifies the views that observe that slice.
 
+use serde_json::Value;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -28,7 +29,6 @@ pub struct Content {
     pub libraries: Vec<Library>,
     pub items: Items,
     canonical_items: Items,
-    pending_slide_enabled: Vec<(u64, String, String, bool)>,
     content_previews: Vec<(u64, ContentPreview)>,
     next_content_preview: u64,
     pub playlists: Vec<Playlist>,
@@ -53,9 +53,6 @@ impl Content {
         self.libraries = snapshot.libraries;
         self.items = snapshot.items;
         self.canonical_items = self.items.clone();
-        for (_, item, slide, enabled) in self.pending_slide_enabled.clone() {
-            self.patch_slide_enabled(&item, &slide, Some(!enabled));
-        }
         self.items_generation += 1;
         self.playlists = snapshot.playlists;
         self.workspace_path = snapshot.workspace_path;
@@ -73,7 +70,6 @@ impl Content {
     /// A workspace switch or the first load also resets workspace-scoped state.
     pub fn load(&mut self, snapshot: Snapshot) {
         self.load_generation += 1;
-        self.pending_slide_enabled.clear();
         self.content_previews.clear();
         self.apply_document(snapshot);
     }
@@ -90,77 +86,37 @@ impl Content {
         self.content_previews.retain(|(pending, _)| *pending != id);
     }
 
-    fn patch_slide_enabled(&mut self, item: &str, slide: &str, disabled: Option<bool>) {
-        crate::collections::arrangements::edit_item(self, item, |value| {
-            if let Some(target) = value["slides"]
-                .as_array_mut()
-                .and_then(|slides| slides.iter_mut().find(|value| value["id"] == slide))
-            {
-                if let Some(disabled) = disabled {
-                    target["disabled"] = serde_json::json!(disabled);
-                } else if let Some(object) = target.as_object_mut() {
-                    object.remove("disabled");
-                }
-            }
-        });
-    }
-
-    pub fn preview_slide_enabled(&mut self, item: &str, slide: &str, enabled: bool) -> Option<u64> {
-        self.items.get(item)?.value["slides"]
-            .as_array()?
-            .iter()
-            .find(|value| value["id"] == slide)?;
-        self.patch_slide_enabled(item, slide, Some(!enabled));
-        let token = self.items_generation;
-        self.pending_slide_enabled
-            .push((token, item.into(), slide.into(), enabled));
-        Some(token)
-    }
-
-    pub fn finish_slide_enabled(&mut self, token: u64) {
-        let Some(index) = self
-            .pending_slide_enabled
-            .iter()
-            .position(|entry| entry.0 == token)
-        else {
-            return;
-        };
-        let (_, item, slide, _) = self.pending_slide_enabled.remove(index);
-        let disabled = self
-            .canonical_items
-            .get(&item)
-            .and_then(|item| item.value["slides"].as_array())
-            .and_then(|slides| slides.iter().find(|value| value["id"] == slide))
-            .and_then(|slide| slide["disabled"].as_bool());
-        self.patch_slide_enabled(&item, &slide, disabled);
-        for (_, item, slide, enabled) in self.pending_slide_enabled.clone() {
-            self.patch_slide_enabled(&item, &slide, Some(!enabled));
-        }
-    }
-
     pub fn library(&self, id: &str) -> Option<&Library> {
         self.libraries.iter().find(|library| library.id == id)
     }
 
-    pub fn destination_pending(&self, id: &str) -> bool {
+    /// A direct take can use committed cue identities while destination or enabled flags are being saved.
+    pub fn cue_flags_pending(&self, id: &str) -> bool {
         let Some((current, canonical)) = self.items.get(id).zip(self.canonical_items.get(id))
         else {
             return false;
         };
-        current.value["destination"] != canonical.value["destination"]
-            && current
-                .value
-                .as_object()
-                .zip(canonical.value.as_object())
+        let same_fields = |left: &Value, right: &Value, ignored: &[&str]| {
+            left.as_object()
+                .zip(right.as_object())
+                .is_some_and(|(left, right)| {
+                    left.iter()
+                        .filter(|(key, _)| !ignored.contains(&key.as_str()))
+                        .eq(right
+                            .iter()
+                            .filter(|(key, _)| !ignored.contains(&key.as_str())))
+                })
+        };
+        current.value != canonical.value
+            && same_fields(&current.value, &canonical.value, &["destination", "slides"])
+            && current.value["slides"]
+                .as_array()
+                .zip(canonical.value["slides"].as_array())
                 .is_some_and(|(current, canonical)| {
-                    current
-                        .iter()
-                        .filter(|(key, _)| *key != "destination")
-                        .all(|(key, value)| canonical.get(key) == Some(value))
-                        && canonical
-                            .keys()
-                            .filter(|key| *key != "destination")
-                            .all(|key| current.contains_key(key))
+                    current.len() == canonical.len()
+                        && current.iter().zip(canonical).all(|(current, canonical)| {
+                            same_fields(current, canonical, &["disabled"])
+                        })
                 })
     }
 

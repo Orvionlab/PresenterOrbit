@@ -5028,11 +5028,8 @@ fn navigate_remote_slide_in_output_snapshot(
     ) else {
         return Ok(None);
     };
-    let slides = slides
-        .into_iter()
-        .filter(|slide| !remote_json_truthy(slide.get("disabled")))
-        .collect::<Vec<_>>();
-    if slides.is_empty() {
+    let enabled = |slide: &Value| !remote_json_truthy(slide.get("disabled"));
+    if !slides.iter().any(enabled) {
         return Ok(None);
     }
 
@@ -5043,7 +5040,7 @@ fn navigate_remote_slide_in_output_snapshot(
     let current_index =
         output_arrangement::live_slide_index(&slides, live_slide_id, live_instance_id);
     if direction > 0 {
-        if let Some(index) = current_index {
+        if let Some(index) = current_index.filter(|&index| enabled(&slides[index])) {
             let live_build_step = snapshot_object
                 .get("liveBuildStep")
                 .and_then(media_action_number_value)
@@ -5081,18 +5078,21 @@ fn navigate_remote_slide_in_output_snapshot(
         }
     }
 
-    let target_index = match current_index {
-        Some(index) => {
-            (index as isize + direction as isize).clamp(0, slides.len() as isize - 1) as usize
-        }
-        None if direction > 0 => 0,
-        None => slides.len() - 1,
+    let mut ordered = slides.iter().enumerate();
+    let target = if direction > 0 {
+        ordered.find(|(index, slide)| {
+            current_index.is_none_or(|current| *index > current) && enabled(slide)
+        })
+    } else {
+        ordered.rfind(|(index, slide)| {
+            current_index.is_none_or(|current| *index < current) && enabled(slide)
+        })
     };
-    if current_index == Some(target_index) {
+    let Some((_, target)) = target else {
         return Ok(Some((snapshot.clone(), json!({}))));
-    }
+    };
 
-    select_remote_slide_in_output_snapshot(snapshot, &slides[target_index])
+    select_remote_slide_in_output_snapshot(snapshot, target)
 }
 
 pub(crate) fn select_remote_slide_in_output_snapshot(
