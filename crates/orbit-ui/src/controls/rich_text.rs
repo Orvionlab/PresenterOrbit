@@ -266,6 +266,7 @@ impl RichText {
                             .unwrap_or("#ffffff")
                             .to_string(),
                     )
+                    .compact()
                     .disabled(self.disabled)
                     .on_change({
                         let weak = weak.clone();
@@ -715,6 +716,7 @@ impl Render for RichText {
             )
             .child(
                 ColorPicker::new("rich-color", t.t("slideEditor.color"), "#ffffff")
+                    .compact()
                     .disabled(self.disabled)
                     .on_change(move |color, _, cx| {
                         weak.update(cx, |view, cx| view.format("textColor", json!(color), cx))

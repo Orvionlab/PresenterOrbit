@@ -44,6 +44,7 @@ pub struct SegmentedControl<T: Clone + PartialEq + 'static> {
     label: SharedString,
     options: Vec<SegmentedOption<T>>,
     value: T,
+    filled: bool,
     on_change: Option<Handler<T>>,
 }
 
@@ -59,8 +60,15 @@ impl<T: Clone + PartialEq + 'static> SegmentedControl<T> {
             label: label.into(),
             options,
             value,
+            filled: false,
             on_change: None,
         }
+    }
+
+    /// Equal-width segments with a visible button surface.
+    pub fn filled(mut self) -> Self {
+        self.filled = true;
+        self
     }
 
     pub fn on_change(mut self, handler: impl Fn(T, &mut Window, &mut App) + 'static) -> Self {
@@ -90,6 +98,12 @@ impl<T: Clone + PartialEq + 'static> RenderOnce for SegmentedControl<T> {
                 .rounded(theme.metrics.radius_sm)
                 .text_size(theme.metrics.font_sm)
                 .text_color(theme.colors.text_muted)
+                .when(self.filled, |this| {
+                    this.flex_1()
+                        .justify_center()
+                        .px(theme.metrics.space_xs)
+                        .bg(theme.colors.control_bg)
+                })
                 .styles(|styles| {
                     styles
                         .selected(|style| {

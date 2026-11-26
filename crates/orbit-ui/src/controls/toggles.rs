@@ -126,6 +126,7 @@ pub struct CheckboxField {
     label: SharedString,
     checked: bool,
     bare: bool,
+    compact: bool,
     mixed: bool,
     disabled: bool,
     label_style: Option<(Pixels, gpui::FontWeight)>,
@@ -139,6 +140,7 @@ impl CheckboxField {
             label: label.into(),
             checked,
             bare: false,
+            compact: false,
             mixed: false,
             disabled: false,
             label_style: None,
@@ -149,6 +151,11 @@ impl CheckboxField {
     /// A compact checkbox whose label is retained as its accessible name.
     pub fn bare(mut self) -> Self {
         self.bare = true;
+        self
+    }
+
+    pub fn compact(mut self) -> Self {
+        self.compact = true;
         self
     }
 
@@ -184,16 +191,20 @@ impl RenderOnce for CheckboxField {
             .flex()
             .items_center()
             .gap(theme.metrics.space_snug)
-            .min_h(if self.bare {
+            .min_h(if self.bare || self.compact {
                 theme.metrics.control_height_compact
             } else {
                 theme.metrics.control_height
             })
             .min_w_0()
-            .text_size(
-                self.label_style
-                    .map_or(theme.metrics.font_md, |(size, _)| size),
-            )
+            .text_size(self.label_style.map_or(
+                if self.compact {
+                    theme.metrics.font_sm
+                } else {
+                    theme.metrics.font_md
+                },
+                |(size, _)| size,
+            ))
             .when_some(self.label_style, |this, (_, weight)| {
                 this.font_weight(weight)
             })

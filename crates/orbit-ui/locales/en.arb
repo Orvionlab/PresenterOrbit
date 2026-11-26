@@ -3409,9 +3409,9 @@
   "@cue.view.mediaAndColors": {
     "description": "Shows attached media indicators and slide background colors in text view."
   },
-  "cue.view.useThumbnailColor": "Use thumbnail background color",
-  "@cue.view.useThumbnailColor": {
-    "description": "Enables a custom background in the thumbnail preview."
+  "cue.view.thumbnailColorHelp": "Only used in the thumbnail preview.",
+  "@cue.view.thumbnailColorHelp": {
+    "description": "Explains that the thumbnail background color affects only the operator preview."
   },
   "cue.view.thumbnailColor": "Thumbnail background color",
   "@cue.view.thumbnailColor": {

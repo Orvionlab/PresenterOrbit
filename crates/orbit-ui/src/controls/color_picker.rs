@@ -636,6 +636,7 @@ pub struct ColorPicker {
     on_change: Option<Handler<String>>,
     anchor: gpui::Anchor,
     close_on_selection: bool,
+    compact: bool,
 }
 
 impl ColorPicker {
@@ -652,6 +653,7 @@ impl ColorPicker {
             on_change: None,
             anchor: gpui::Anchor::TopLeft,
             close_on_selection: false,
+            compact: false,
         }
     }
 
@@ -662,6 +664,12 @@ impl ColorPicker {
 
     pub fn anchor(mut self, anchor: gpui::Anchor) -> Self {
         self.anchor = anchor;
+        self
+    }
+
+    /// Standard swatch width for compact inspector rows and toolbars.
+    pub fn compact(mut self) -> Self {
+        self.compact = true;
         self
     }
 
@@ -753,6 +761,10 @@ impl RenderOnce for ColorPicker {
             child_id(&self.id, "popup"),
             div()
                 .w_full()
+                .when(self.compact, |this| {
+                    this.w(theme.metrics.control_height_compact * 2.5)
+                        .flex_none()
+                })
                 .on_prepaint(move |bounds, _, _| placed.set(bounds))
                 .child(trigger),
         )

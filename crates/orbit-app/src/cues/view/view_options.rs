@@ -115,6 +115,7 @@ impl CueView {
                 })
                 .child(
                     CheckboxField::new(id, t.t(label), checked)
+                        .compact()
                         .on_change(move |value, _, cx| save(json!(value), cx)),
                 )
         };
@@ -123,24 +124,41 @@ impl CueView {
                 let save = update(key);
                 let label = t.t(label);
                 let value = value.cloned().unwrap_or_else(|| color_hex(default));
-                Field::new(
-                    label.clone(),
-                    ColorPicker::new(format!("cue-view-{key}"), label, value)
-                        .disabled(disabled)
-                        .on_change(move |value, _, cx| save(json!(value), cx)),
-                )
-                .inline()
+                ColorPicker::new(format!("cue-view-{key}"), label, value)
+                    .compact()
+                    .disabled(disabled)
+                    .on_change(move |value, _, cx| save(json!(value), cx))
             };
+        let separator = || {
+            div()
+                .flex_none()
+                .w_full()
+                .h(px(1.))
+                .my(theme.metrics.space_2xs)
+                .bg(theme.colors.menu_separator)
+        };
+        let label = |key| div().min_w_0().flex_1().child(t.t(key));
+        let row = || div().flex().items_center().gap(theme.metrics.space_sm);
+        let thumbnail_label = if mode == Mode::Easy {
+            label("cue.view.thumbnailColor")
+        } else {
+            div().flex_1().min_w_0().child(checkbox(
+                "useThumbnailColor",
+                "cue.view.thumbnailColor",
+                options.use_thumbnail_color,
+            ))
+        };
         let mut panel = div()
             .debug_selector(|| "cue-view-options-panel".into())
-            .w(theme.metrics.control_height * 10.)
+            .w(theme.metrics.control_height_compact * 11.)
             .max_h(window.viewport_size().height * 0.8)
             .id("cue-view-options-scroll")
             .overflow_y_scroll()
             .flex()
             .flex_col()
-            .gap(theme.metrics.space_sm)
-            .p(theme.metrics.panel_padding)
+            .gap(theme.metrics.space_xs)
+            .p(theme.metrics.space_sm)
+            .text_size(theme.metrics.font_sm)
             .rounded(theme.metrics.radius_md)
             .bg(theme.colors.popover_bg)
             .border_1()
@@ -158,31 +176,33 @@ impl CueView {
                     options.show_media_and_colors,
                 ))
             })
-            .when(mode != Mode::Easy, |panel| {
-                panel.child(checkbox(
-                    "useThumbnailColor",
-                    "cue.view.useThumbnailColor",
-                    options.use_thumbnail_color,
-                ))
-            })
-            .child(color(
+            .child(separator())
+            .child(row().child(thumbnail_label).child(color(
                 "thumbnailColor",
                 "cue.view.thumbnailColor",
                 options.thumbnail_color.as_ref(),
                 theme.colors.preview_matte_bg,
                 mode != Mode::Easy && !options.use_thumbnail_color,
-            ));
+            )))
+            .child(
+                div()
+                    .text_color(theme.colors.text_muted)
+                    .child(t.t("cue.view.thumbnailColorHelp")),
+            );
         if mode == Mode::Grid {
             return panel;
         }
         if mode == Mode::Table {
-            panel = panel.child(color(
-                "tableColor",
-                "cue.view.tableColor",
-                options.table_color.as_ref(),
-                theme.colors.stage_bg,
-                false,
-            ));
+            panel =
+                panel
+                    .child(separator())
+                    .child(row().child(label("cue.view.tableColor")).child(color(
+                        "tableColor",
+                        "cue.view.tableColor",
+                        options.table_color.as_ref(),
+                        theme.colors.stage_bg,
+                        false,
+                    )));
         }
         let save_family = update("fontFamily");
         let fonts = std::iter::once(SelectOption::new(None, t.t("cue.view.systemFont")))
@@ -198,19 +218,21 @@ impl CueView {
         let save_horizontal = update("horizontal");
         let save_vertical = update("vertical");
         panel
-            .child(Field::new(
-                t.t("cue.view.font"),
+            .child(separator())
+            .child(t.t("cue.view.font"))
+            .child(
                 Select::new("cue-view-font", fonts, Some(options.font_family))
+                    .compact()
+                    .label(t.t("cue.view.font"))
                     .on_change(move |value, _, cx| save_family(json!(value), cx)),
-            ))
+            )
             .child(
                 div()
                     .flex()
                     .gap(theme.metrics.space_sm)
                     .items_end()
                     .child(
-                        div().flex_1().min_w_0().child(Field::new(
-                            t.t("cue.view.fontStyle"),
+                        div().flex_1().min_w_0().child(
                             Select::new(
                                 "cue-view-font-style",
                                 [
@@ -224,24 +246,27 @@ impl CueView {
                                 .collect(),
                                 options.font_style,
                             )
+                            .compact()
+                            .label(t.t("cue.view.fontStyle"))
                             .on_change(move |value, _, cx| save_style(json!(value), cx)),
-                        )),
+                        ),
                     )
                     .child(
                         div()
-                            .w(theme.metrics.control_height * 3.)
+                            .w(theme.metrics.control_height_compact * 2.5)
                             .child(self.font_size_field(mode, window, cx)),
                     ),
             )
-            .child(color(
+            .child(row().justify_end().child(color(
                 "textColor",
                 "cue.view.textColor",
                 options.text_color.as_ref(),
                 theme.colors.text_strong,
                 false,
-            ))
-            .child(Field::new(
-                t.t("cue.view.alignment"),
+            )))
+            .child(separator())
+            .child(t.t("cue.view.alignment"))
+            .child(
                 div()
                     .flex()
                     .flex_col()
@@ -274,6 +299,7 @@ impl CueView {
                             ],
                             options.horizontal,
                         )
+                        .filled()
                         .on_change(move |value, _, cx| save_horizontal(json!(value), cx)),
                     )
                     .child(
@@ -299,9 +325,10 @@ impl CueView {
                             ],
                             options.vertical,
                         )
+                        .filled()
                         .on_change(move |value, _, cx| save_vertical(json!(value), cx)),
                     ),
-            ))
+            )
             .child(
                 Field::new(
                     t.t("cue.view.truncate"),
@@ -317,6 +344,7 @@ impl CueView {
                         .collect(),
                         options.truncate,
                     )
+                    .compact()
                     .on_change(move |value, _, cx| save_truncate(json!(value), cx)),
                 )
                 .inline(),
@@ -370,20 +398,17 @@ impl CueView {
             .2;
         let owner = cx.weak_entity();
         let label = cx.global::<Translator>().t("cue.view.fontSize");
-        Field::new(
-            label.clone(),
-            NumberInput::new("cue-view-font-size", state)
-                .label(label)
-                .range(8., 72.)
-                .stepper()
-                .on_step(move |value, _, cx| {
-                    owner
-                        .update(cx, |view, cx| {
-                            view.save_view_option(mode, "fontSize", json!(value as u16), cx)
-                        })
-                        .ok();
-                }),
-        )
+        NumberInput::new("cue-view-font-size", state)
+            .label(label)
+            .range(8., 72.)
+            .stepper()
+            .on_step(move |value, _, cx| {
+                owner
+                    .update(cx, |view, cx| {
+                        view.save_view_option(mode, "fontSize", json!(value as u16), cx)
+                    })
+                    .ok();
+            })
     }
 }
 

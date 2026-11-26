@@ -1707,20 +1707,29 @@ impl SlideCanvas {
             }
             Kind::Color => {
                 let weak = cx.weak_entity();
-                ColorPicker::new(
+                let picker = ColorPicker::new(
                     id,
                     label,
                     spec.value
                         .as_str()
                         .unwrap_or(editing::DEFAULT_LAYER_COLOR)
                         .to_string(),
-                )
-                .disabled(disabled)
-                .on_change(move |value, _, cx| {
-                    weak.update(cx, |view, cx| view.patch_inspector(&spec, json!(value), cx))
-                        .ok();
-                })
-                .into_any_element()
+                );
+                let picker = if spec.target == Target::Text
+                    || spec.label == "theme.gpui.textColor"
+                    || spec.key.starts_with("textGradient")
+                {
+                    picker.compact()
+                } else {
+                    picker
+                };
+                picker
+                    .disabled(disabled)
+                    .on_change(move |value, _, cx| {
+                        weak.update(cx, |view, cx| view.patch_inspector(&spec, json!(value), cx))
+                            .ok();
+                    })
+                    .into_any_element()
             }
             Kind::Choice(options) => {
                 let weak = cx.weak_entity();

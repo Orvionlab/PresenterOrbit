@@ -184,6 +184,7 @@ impl ShowcaseView {
                     ],
                     self.dutch,
                 )
+                .filled()
                 .on_change(move |dutch, _, cx| {
                     cx.set_global(Translator::new(if dutch { "nl" } else { "en" }));
                     language_view.update(cx, |this, cx| {
@@ -487,6 +488,7 @@ impl ShowcaseView {
                 Field::new(
                     "Color",
                     ColorPicker::new("color", "Color", self.color.clone())
+                        .compact()
                         .anchor(gpui::Anchor::BottomLeft)
                         .close_on_selection()
                         .on_change(move |value, _, cx| {

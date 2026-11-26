@@ -4483,8 +4483,8 @@ impl Render for CueView {
                     "cue-view-mode",
                     t.t("cue.view.easy"),
                     vec![
-                        SegmentedOption::icon(Mode::Easy, "letter-t", t.t("cue.view.easy")),
                         SegmentedOption::icon(Mode::Grid, "layout-grid", t.t("cue.view.grid")),
+                        SegmentedOption::icon(Mode::Easy, "letter-t", t.t("cue.view.easy")),
                         SegmentedOption::icon(Mode::Table, "table", t.t("cue.view.table")),
                     ],
                     self.mode,
@@ -4495,26 +4495,6 @@ impl Render for CueView {
                 }),
             )
             .child(self.view_options_button(window, cx))
-            .child(
-                IconButton::new("cue-continuous", "list", t.t("collections.menu.playlist"))
-                    .selected(self.continuous)
-                    .disabled(
-                        self.runtime
-                            .content
-                            .read(cx)
-                            .playlist(&self.runtime.ui.read(cx).selected_playlist_id)
-                            .is_none(),
-                    )
-                    .on_click({
-                        let weak = cx.weak_entity();
-                        move |_, _, cx| {
-                            weak.update(cx, |view, cx| {
-                                view.toggle_continuous(cx);
-                            })
-                            .ok();
-                        }
-                    }),
-            )
             .child(
                 div()
                     .w(theme.metrics.control_height * 4.)

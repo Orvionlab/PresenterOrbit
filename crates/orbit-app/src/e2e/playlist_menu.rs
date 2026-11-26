@@ -1003,7 +1003,7 @@ fn seed_playlist(host: &orbit_host::Host, content: &str) {
 }
 
 #[gpui::test]
-fn continuous_playlist_follows_settings_toolbar_menu_and_restart(cx: &mut TestAppContext) {
+fn continuous_playlist_follows_settings_menu_and_restart(cx: &mut TestAppContext) {
     let mut app = Scenario::new(cx, false, |host| {
         seed_playlist(host, &vec!["Other text"; 25].join("\n\n"));
         let settings = host.invoke("getSettings", vec![]).unwrap();
@@ -1056,7 +1056,10 @@ fn continuous_playlist_follows_settings_toolbar_menu_and_restart(cx: &mut TestAp
             == false
             && app.visual(cx).debug_bounds(headings[1]).is_none()
     });
-    click(&mut visual, "button-cue-continuous");
+    assert!(visual.debug_bounds("button-cue-continuous").is_none());
+    let commands = cx.update(|cx| app.main.view.read(cx).commands.clone());
+    visual.update(|window, cx| assert!(commands.run("view-continuous", false, window, cx)));
+    visual.run_until_parked();
     app.wait(cx, |app, cx| {
         app.host.invoke("getSettings", vec![]).unwrap()["generalSettings"]["useContinuousPlaylist"]
             == true
@@ -1064,7 +1067,6 @@ fn continuous_playlist_follows_settings_toolbar_menu_and_restart(cx: &mut TestAp
                 .iter()
                 .all(|heading| app.visual(cx).debug_bounds(heading).is_some())
     });
-    let commands = cx.update(|cx| app.main.view.read(cx).commands.clone());
     visual.update(|window, cx| assert!(commands.run("view-continuous", false, window, cx)));
     visual.run_until_parked();
     app.wait(cx, |app, cx| {
