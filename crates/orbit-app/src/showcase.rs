@@ -273,6 +273,13 @@ impl ShowcaseView {
             .gap(theme.metrics.control_gap)
             .child(row(false, "enabled"))
             .child(row(true, "disabled"))
+            .child(
+                div()
+                    .flex()
+                    .gap(theme.metrics.control_gap)
+                    .child(orbit_ui::icons::media_layer_icon(true, theme))
+                    .child(orbit_ui::icons::media_layer_icon(false, theme)),
+            )
     }
 
     fn fields(&self, cx: &mut Context<Self>) -> impl IntoElement {

@@ -548,6 +548,7 @@
   "media.transitions": "Overgangen...",
   "media.transition.dissolve": "Vervagen",
   "media.transition.layerDefault": "Laagstandaard",
+  "media.transition.slideDefault": "Diastandaard",
   "media.transition.cut": "Knippen",
   "media.endBehavior": "Eindgedrag",
   "media.end.hold": "Laatste frame vasthouden",

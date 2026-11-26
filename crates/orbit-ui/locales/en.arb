@@ -1683,6 +1683,10 @@
   "@media.transition.layerDefault": {
     "description": "Media transition option that plays the layer's default transition."
   },
+  "media.transition.slideDefault": "Slide default",
+  "@media.transition.slideDefault": {
+    "description": "Transition shown for foreground assets that follow the slide transition."
+  },
   "media.transition.cut": "Cut",
   "@media.transition.cut": {
     "description": "User-facing cut text in the media interface."

@@ -3954,6 +3954,8 @@ fn dropping_media_copies_assets_filters_the_bin_and_survives_restart(cx: &mut Te
     assert_eq!(inserted[0], original["slides"][0]);
     assert_eq!(inserted[1]["mediaBackgroundId"], media[0].0);
     assert_eq!(inserted[2]["mediaBackgroundId"], media[2].0);
+    assert!(inserted[1]["mediaBackgroundOnly"].is_null());
+    assert!(inserted[2]["mediaBackgroundOnly"].is_null());
     assert_eq!(inserted[3], original["slides"][1]);
     let target = visual.debug_bounds("cue-thumbnail-0").unwrap().center();
     drag_to(&mut visual, target, "cue-media-drop-background");
@@ -3965,7 +3967,6 @@ fn dropping_media_copies_assets_filters_the_bin_and_survives_restart(cx: &mut Te
     });
     let mut expected = inserted;
     expected[0]["mediaBackgroundId"] = json!(media[2].0);
-    expected[0]["mediaBackgroundOnly"] = json!(true);
     assert_eq!(app.snapshot()["library"][0]["slides"], expected);
     let workspace = app.snapshot();
     let asset = workspace["media"]
@@ -4226,6 +4227,7 @@ fn media_thumbnails_and_video_start_preserve_the_outgoing_picture(cx: &mut TestA
     clip["thumbnailFile"] = json!("Thumbnails/stored.png");
     clip["thumbnailTimeSeconds"] = json!(0.2);
     clip["backgroundTransition"] = json!("fade:0.5:Dissolve");
+    clip["backgroundBehavior"] = json!("background");
     clip["backgroundPlayback"] = json!("loop");
     clip["mediaHardwareDecoding"] = json!("disabled");
     clip["mediaTransport"] = json!({"inSeconds":0.2,"outSeconds":4.000005,"rate":1,"delaySeconds":1,"retrigger":"restart"});
@@ -4671,6 +4673,7 @@ fn media_thumbnails_and_video_start_preserve_the_outgoing_picture(cx: &mut TestA
         first_loads + 1,
         "Changed media must not reuse stale metadata"
     );
+
     cx.update(|cx| {
         for window in cx.windows() {
             window
@@ -4678,4 +4681,193 @@ fn media_thumbnails_and_video_start_preserve_the_outgoing_picture(cx: &mut TestA
                 .unwrap();
         }
     });
+}
+
+#[gpui::test]
+fn slide_and_media_takes_follow_their_layer_transitions(cx: &mut TestAppContext) {
+    let files = support::Folder::new();
+    let front = files.0.join("Foreground.png");
+    let back = files.0.join("Background.png");
+    image::RgbaImage::from_pixel(16, 9, image::Rgba([11, 22, 33, 255]))
+        .save(&front)
+        .unwrap();
+    image::RgbaImage::from_pixel(16, 9, image::Rgba([44, 55, 66, 255]))
+        .save(&back)
+        .unwrap();
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../../tests/fixtures/gpui-output-freeze.json"
+    ))
+    .unwrap();
+    let mut app =
+        Scenario::new(cx, true, |host| {
+            seed(host);
+            let path =
+                host.invoke("getSettings", vec![]).unwrap()["presenterOrbitWorkspacePath"].clone();
+            let snapshot = host
+                .invoke("readWorkspaceSnapshot", vec![path.clone()])
+                .unwrap();
+            let assets = host.invoke("saveMediaSettings", vec![path.clone(), json!([
+            {"id":"front", "title":"Foreground", "libraryId":"default-graphics",
+                "type":"image", "sourcePath":front, "backgroundBehavior":"foreground",
+                "backgroundTransition":"cut"},
+            {"id":"back", "title":"Background", "libraryId":"default-graphics",
+                "type":"image", "sourcePath":back, "backgroundBehavior":"background"}
+        ]), snapshot["revision"].clone()]).unwrap();
+            let item = &snapshot["workspace"]["library"][0];
+            let mut slides = item["slides"].as_array().unwrap().clone();
+            slides[0]["background"] = fixture["backgrounds"][0].clone();
+            slides[0]["backgroundEnabled"] = json!(true);
+            slides[0]["shortcut"] = json!("A");
+            slides[1]["mediaBackgroundId"] = json!("front");
+            slides[1]["shortcut"] = json!("S");
+            let mut background = slides[1].clone();
+            background["id"] = json!("background-slide");
+            background["content"] = json!("Background slide");
+            background["shortcut"] = json!("D");
+            background["mediaBackgroundId"] = json!("back");
+            slides.push(background);
+            let saved = host.invoke("mutatePresentationLibrary", vec![path.clone(), json!({
+            "type":"mutateItem", "itemId":item["id"],
+            "operation":{"type":"setSlideDocument","title":item["title"],"slides":slides}
+        }), assets["revision"].clone()]).unwrap();
+            host.invoke(
+                "saveWorkspaceContent",
+                vec![
+                    path,
+                    json!({
+                        "layerTransitions":{"background":crate::transitions::fade(1.3)}
+                    }),
+                    saved["revision"].clone(),
+                ],
+            )
+            .unwrap();
+        });
+    let runtime = app.runtime(cx);
+    app.wait(cx, |_, cx| {
+        cx.update(|cx| runtime.output.read(cx).committed_revision > 0)
+    });
+    let screen = cx.update(|cx| {
+        crate::output::view::screens(runtime.output.read(cx).snapshot.as_ref().unwrap())[0]
+            .0
+            .clone()
+    });
+    let scene = |app: &Scenario| {
+        crate::state::runtime::output_call(&app.host, "getOutputContent", vec![json!(screen)])
+    };
+    let compositor =
+        std::cell::RefCell::new(orbit_host::native_compositor::NativeCompositor::new_preview());
+    let render = |app: &Scenario| {
+        compositor
+            .borrow_mut()
+            .try_render_layered_for("slide-and-media-transitions", &scene(app).unwrap(), 64, 36)
+            .unwrap()
+            .flatten()
+    };
+    let mut visual = app.visual(cx);
+    assert!(visual
+        .debug_bounds("media-layer-foreground-front")
+        .is_some());
+    assert!(visual.debug_bounds("media-layer-background-back").is_none());
+    assert!(visual.debug_bounds("media-layer-foreground-back").is_none());
+    click(&mut visual, "document-0");
+    app.wait(cx, |app, cx| {
+        app.visual(cx).debug_bounds("cue-thumbnail-2").is_some()
+    });
+    assert!(visual.debug_bounds("cue-media-foreground-1").is_some());
+    assert!(visual.debug_bounds("cue-media-background-2").is_some());
+    assert!(visual.debug_bounds("cue-media-background-0").is_none());
+    assert!(visual.debug_bounds("cue-media-foreground-0").is_none());
+    let controls = visual.debug_bounds("transition-mode-slide").unwrap();
+    visual.simulate_click(controls.center(), Default::default());
+    click(&mut visual, "cue-thumbnail-0");
+    visual.simulate_keystrokes("enter");
+    app.wait_animated(cx, |app, _| {
+        scene(app).is_ok_and(|scene| {
+            scene["text"] == "Opening line"
+                && scene["slideTransition"]["transition"] == crate::transitions::fade(0.6)
+        })
+    });
+    app.wait_animated(cx, |app, _| !render(app).dynamic_media);
+    let text_frame = render(&app);
+    assert_eq!(&text_frame.pixels[..4], &[0, 0, 255, 255]);
+
+    visual.simulate_keystrokes("right");
+    app.wait_animated(cx, |app, _| {
+        scene(app).is_ok_and(|scene| {
+            scene["text"] == "Closing line" && scene["backgroundBehavior"] == "foreground"
+        })
+    });
+    let first = render(&app);
+    assert!(first.dynamic_media);
+    assert!(
+        first.pixels == text_frame.pixels,
+        "The fade must start from the text slide"
+    );
+    app.wait_animated(cx, |app, _| {
+        let frame = render(app);
+        frame.dynamic_media && frame.pixels != text_frame.pixels
+    });
+    app.wait_animated(cx, |app, _| !render(app).dynamic_media);
+    let media_frame = render(&app);
+    assert_eq!(&media_frame.pixels[..4], &[33, 22, 11, 255]);
+
+    visual.simulate_keystrokes("left");
+    app.wait_animated(cx, |app, _| {
+        scene(app).is_ok_and(|scene| {
+            scene["text"] == "Opening line" && scene["backgroundMediaType"] == ""
+        })
+    });
+    assert!(
+        render(&app).pixels == media_frame.pixels,
+        "The return fade must start from the slide with foreground media"
+    );
+    app.wait_animated(cx, |app, _| !render(app).dynamic_media);
+    assert!(
+        render(&app).pixels == text_frame.pixels,
+        "The return fade must finish on the text slide"
+    );
+
+    visual.simulate_click(
+        gpui::point(controls.left() + gpui::px(12.), controls.center().y),
+        Default::default(),
+    );
+    click(&mut visual, "cue-thumbnail-1");
+    visual.simulate_keystrokes("enter");
+    app.wait_animated(cx, |app, _| {
+        scene(app).is_ok_and(|scene| {
+            scene["text"] == "Closing line" && scene["slideTransition"]["transition"].is_null()
+        })
+    });
+    let cut = render(&app);
+    assert!(!cut.dynamic_media);
+    assert!(
+        cut.pixels == media_frame.pixels,
+        "A cut must immediately show the slide and foreground media"
+    );
+
+    let foreground = scene(&app).unwrap();
+    let item = app.snapshot()["library"][0].clone();
+    cx.update(|cx| {
+        crate::cues::actions::drop_media(
+            &runtime,
+            item["id"].as_str().unwrap(),
+            json!({"type":"setSlideMedia", "slideId":item["slides"][1]["id"], "mediaId":"back"}),
+            cx,
+        );
+    });
+    app.wait_animated(cx, |app, _| {
+        scene(app).is_ok_and(|scene| {
+            scene["text"] == "Closing line"
+                && scene["backgroundBehavior"] == "background"
+                && scene["backgroundSelectionId"] != foreground["backgroundSelectionId"]
+                && scene["layerTransitions"]["media"]["transition"] == crate::transitions::fade(1.3)
+        })
+    });
+    assert!(visual.debug_bounds("cue-media-foreground-1").is_none());
+    assert!(visual.debug_bounds("cue-media-background-1").is_some());
+    let background_fade = render(&app);
+    assert!(background_fade.dynamic_media);
+    assert_eq!(&background_fade.pixels[..4], &[33, 22, 11, 255]);
+    app.wait_animated(cx, |app, _| !render(app).dynamic_media);
+    assert_eq!(&render(&app).pixels[..4], &[66, 55, 44, 255]);
 }

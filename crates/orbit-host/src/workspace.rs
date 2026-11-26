@@ -4780,9 +4780,6 @@ pub(crate) fn apply_presentation_media_edit(
                 };
                 let mut slide =
                     json!({ "id": &new_id, "content": "", "mediaBackgroundId": media_id });
-                if batch {
-                    slide["mediaBackgroundOnly"] = json!(true);
-                }
                 if let Some(group) = &group {
                     slide["groupId"] = json!(group);
                 }

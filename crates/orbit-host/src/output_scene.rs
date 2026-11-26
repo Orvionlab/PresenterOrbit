@@ -958,11 +958,11 @@ fn apply_canvas_views(
 }
 
 /// The live slide identity and its effective transition: the slide's own, then the
-/// presentation's, then the workspace default, as ProPresenter resolves them. Absent when
-/// the screen shows no slide layer or nothing in reach defines a transition.
+/// presentation's, then the workspace default, as ProPresenter resolves them.
 fn slide_transition_context(
     input: &OutputSceneStateInput,
     slide_visible: bool,
+    slide_media: bool,
 ) -> Result<Option<Value>, String> {
     let item = input.live_item.as_ref();
     let defined = |value: Option<&Value>| value.filter(|value| !value.is_null()).cloned();
@@ -976,7 +976,9 @@ fn slide_transition_context(
         });
     let presentation = defined(item.and_then(|item| item.get("transition")));
     let workspace = defined(input.slide_transition.as_ref());
-    if !slide_visible || !(item_slides_define || presentation.is_some() || workspace.is_some()) {
+    if !(slide_media
+        || slide_visible && (item_slides_define || presentation.is_some() || workspace.is_some()))
+    {
         return Ok(None);
     }
     let transition = effective_slide_transition_value(
@@ -987,6 +989,7 @@ fn slide_transition_context(
     Ok(Some(json!({
         "key": slide_entry_key(input),
         "transition": transition.unwrap_or(Value::Null),
+        "includesMedia": slide_media,
     })))
 }
 
@@ -1007,13 +1010,13 @@ pub(crate) fn effective_slide_transition_value(
 }
 
 /// The media, prop and message changes a screen animates. Each layer has a key that
-/// changes when its content changes and the library transition the change plays: a
-/// media selection's own transition, then the workspace default of its background or
-/// foreground layer; a prop's own transition, then the props default; the messages
-/// default. A layer is omitted when nothing in reach defines a transition.
+/// changes when its content changes and the library transition the change plays.
+/// Foreground media use slide transitions. Background media and props use their
+/// own transitions or their layer defaults.
 fn layer_transition_context(
     input: &OutputSceneStateInput,
     background: &BackgroundOutput,
+    slide_foreground: bool,
     props_visible: bool,
     messages_visible: bool,
 ) -> Result<Option<Value>, String> {
@@ -1035,8 +1038,15 @@ fn layer_transition_context(
     let selection = crate::native_transitions::media_transition(
         input.background_transition.as_deref().unwrap_or("none"),
     )?;
+    let foreground = media_shown && background.behavior == "foreground";
+    let foreground_transition = effective_slide_transition_value(
+        input.live_slide.as_ref().filter(|_| slide_foreground),
+        input.live_item.as_ref().filter(|_| slide_foreground),
+        input.slide_transition.as_ref(),
+    )?;
     let media_defined = default("background").is_some()
-        || default("foreground").is_some()
+        || foreground
+        || foreground_transition.is_some()
         || selection.is_some()
         || input.media.iter().any(|media| {
             media
@@ -1045,9 +1055,13 @@ fn layer_transition_context(
                 .is_some_and(|value| value != "none")
         });
     if background.visible && media_defined {
-        let transition = selection
-            .or_else(|| default(&background.behavior))
-            .filter(|_| media_shown);
+        let transition = if foreground {
+            foreground_transition
+        } else {
+            selection
+                .or_else(|| default("background"))
+                .filter(|_| media_shown)
+        };
         layers.insert(
             "media".into(),
             json!({
@@ -1455,7 +1469,10 @@ fn build_screen_scene_base(
         }
     }
     let background = build_background_output(input, !has_stage_layout && look_layers.media);
-    if uses_slide_media_background(input) && !background.media_type.is_empty() {
+    if background.behavior == "background"
+        && !background.media_type.is_empty()
+        && slide_media_id(input).is_some()
+    {
         if let Some(slide) = presentation_theme_slide
             .as_mut()
             .and_then(Value::as_object_mut)
@@ -1521,10 +1538,20 @@ fn build_screen_scene_base(
         .unwrap_or_else(|| if is_stage { "Stage" } else { "Audience" }.to_string());
 
     let slide_visible = !has_stage_layout && look_layers.slide;
-    let slide_transition = slide_transition_context(input, slide_visible)?;
+    let slide_foreground = !background.media_type.is_empty()
+        && background.behavior == "foreground"
+        && input.live_slide.as_ref().is_some_and(|slide| {
+            input
+                .background_id
+                .as_deref()
+                .is_some_and(|id| slide_connects_media(slide, id, &input.media))
+                || slide_media_id(input).is_some()
+        });
+    let slide_transition = slide_transition_context(input, slide_visible, slide_foreground)?;
     let layer_transitions = layer_transition_context(
         input,
         &background,
+        slide_foreground,
         props_visible,
         !is_stage && look_layers.messages,
     )?;
@@ -1829,9 +1856,37 @@ fn effective_canvas_source_config<'a>(
 }
 
 fn uses_slide_media_background(input: &OutputSceneStateInput) -> bool {
-    input.live_slide.as_ref().is_some_and(|slide| {
-        slide["mediaBackgroundOnly"] == true
-            && string_field(slide, "mediaBackgroundId").is_some_and(|id| !id.is_empty())
+    input
+        .live_slide
+        .as_ref()
+        .is_some_and(|slide| slide["mediaBackgroundOnly"] == true)
+        && slide_media_id(input).is_some()
+}
+
+fn slide_media_id(input: &OutputSceneStateInput) -> Option<String> {
+    input
+        .live_slide
+        .as_ref()
+        .and_then(|slide| string_field(slide, "mediaBackgroundId"))
+        .filter(|id| !id.is_empty())
+}
+
+pub(crate) fn slide_connects_media(slide: &Value, id: &str, media: &[Value]) -> bool {
+    if slide["mediaBackgroundId"] == id {
+        return true;
+    }
+    let Some(actions) = slide["actions"].as_array() else {
+        return false;
+    };
+    let source_id = media
+        .iter()
+        .find(|asset| asset["id"] == id)
+        .and_then(|asset| asset["sourceId"].as_str());
+    actions.iter().any(|action| {
+        action["type"] == "media"
+            && action["targetId"]
+                .as_str()
+                .is_some_and(|target| target == id || Some(target) == source_id)
     })
 }
 
@@ -1862,12 +1917,7 @@ fn build_background_output(input: &OutputSceneStateInput, media_visible: bool) -
         };
     }
 
-    let background_id = input
-        .live_slide
-        .as_ref()
-        .and_then(|slide| string_field(slide, "mediaBackgroundId"))
-        .filter(|id| !id.is_empty())
-        .or_else(|| input.background_id.clone());
+    let background_id = slide_media_id(input).or_else(|| input.background_id.clone());
     let (default_scale, default_playback, default_end_behavior) = (
         non_empty_or(&input.background_scale, "fit"),
         non_empty_or(
@@ -1930,7 +1980,7 @@ fn build_background_output(input: &OutputSceneStateInput, media_visible: bool) -
             "foreground".to_string()
         };
         media_type = string_field(media, "type").unwrap_or_default();
-        if background_id == input.background_id {
+        if background_id == input.background_id && slide_media_id(input).is_none() {
             if let Some(value) = &input.background_behavior {
                 behavior = value.clone();
             }

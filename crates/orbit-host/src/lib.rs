@@ -4614,14 +4614,18 @@ fn select_media_in_output_snapshot(
         "backgroundTransition": action.transition,
         "media": media
     });
-    for (key, value) in [
-        ("backgroundBehavior", &action.behavior),
-        ("backgroundScale", &action.scale),
-    ] {
-        if let Some(value) = value {
-            snapshot_object.insert(key.to_string(), json!(value));
-            patch[key] = json!(value);
+    let behavior = action.behavior.as_deref().unwrap_or_else(|| {
+        if media[index]["backgroundBehavior"] == "background" {
+            "background"
+        } else {
+            "foreground"
         }
+    });
+    snapshot_object.insert("backgroundBehavior".into(), json!(behavior));
+    patch["backgroundBehavior"] = json!(behavior);
+    if let Some(scale) = &action.scale {
+        snapshot_object.insert("backgroundScale".into(), json!(scale));
+        patch["backgroundScale"] = json!(scale);
     }
     let playback_state = json!({ "selectionId": selection_id, "status": "playing" });
     snapshot_object.insert(
@@ -5130,40 +5134,9 @@ pub(crate) fn select_remote_slide_in_output_snapshot(
         .filter(|value| !value.is_empty())
         .ok_or_else(|| "Remote navigation live item id is required.".to_string())?;
     let timeline_started_at_ms = Utc::now().timestamp_millis();
-    let (mut screen_config, mut screen_config_changed) =
+    let (screen_config, screen_config_changed) =
         show_output_snapshot_look_layer(snapshot_object.get("screenConfig"), "slide")?;
-    let media = raw_target
-        .get("mediaBackgroundId")
-        .and_then(Value::as_str)
-        .and_then(|id| {
-            snapshot_object
-                .get("media")
-                .and_then(Value::as_array)?
-                .iter()
-                .find(|media| media["id"] == id)
-        });
-    let background_patch = if let Some(media) = media {
-        let (config, changed) = show_output_snapshot_look_layer(Some(&screen_config), "media")?;
-        screen_config = config;
-        screen_config_changed |= changed;
-        let selection_id = snapshot_object
-            .get("backgroundSelectionId")
-            .and_then(media_action_number_value)
-            .unwrap_or(0.0)
-            + 1.0;
-        Some(json!({
-            "backgroundId": media["id"],
-            "backgroundSelectionId": selection_id,
-            "backgroundBehavior": if media["backgroundBehavior"] == "background" { "background" } else { "foreground" },
-            "backgroundEndBehavior": media.get("backgroundEndBehavior").filter(|value| !value.is_null()).cloned().unwrap_or(json!("hold")),
-            "backgroundPlayback": media.get("backgroundPlayback").filter(|value| !value.is_null()).cloned().unwrap_or(json!("stop")),
-            "backgroundPlaybackState": { "selectionId": selection_id, "status": "playing" },
-            "backgroundScale": media.get("backgroundScale").filter(|value| !value.is_null()).cloned().unwrap_or(json!("fit")),
-            "backgroundTransition": media.get("backgroundTransition").filter(|value| !value.is_null()).cloned().unwrap_or(json!("none"))
-        }))
-    } else {
-        None
-    };
+    let background_patch = slide_media_patch(snapshot, &raw_target, false);
 
     let mut next = snapshot.clone();
     let next_object = next.as_object_mut().expect("validated snapshot object");
@@ -5200,6 +5173,7 @@ pub(crate) fn select_remote_slide_in_output_snapshot(
     let mut patch = serde_json::Map::new();
     patch.insert("liveItem".into(), next["liveItem"].clone());
     patch.insert("liveSlide".into(), next["liveSlide"].clone());
+    let media_changed = background_patch.is_some();
     if let Some(background) = background_patch {
         patch.extend(
             background
@@ -5227,7 +5201,7 @@ pub(crate) fn select_remote_slide_in_output_snapshot(
         patch.insert("screenConfig".to_string(), screen_config);
     }
     let mut patch = Value::Object(patch);
-    if media.is_some() {
+    if media_changed {
         resume_selected_output_layer(
             next.as_object_mut().expect("validated snapshot object"),
             "media",
@@ -5235,6 +5209,65 @@ pub(crate) fn select_remote_slide_in_output_snapshot(
         )?;
     }
     Ok(Some((next, patch)))
+}
+
+fn slide_media_patch(
+    snapshot: &Value,
+    target: &Value,
+    clear_removed_background: bool,
+) -> Option<Value> {
+    let media_catalog = snapshot["media"].as_array().map_or(&[][..], Vec::as_slice);
+    let media = target
+        .get("mediaBackgroundId")
+        .and_then(Value::as_str)
+        .and_then(|id| media_catalog.iter().find(|media| media["id"] == id));
+    let clear_media = (clear_removed_background || snapshot["backgroundBehavior"] == "foreground")
+        && snapshot["backgroundId"].as_str().is_some_and(|id| {
+            !id.is_empty()
+                && output_scene::slide_connects_media(&snapshot["liveSlide"], id, media_catalog)
+                && !output_scene::slide_connects_media(target, id, media_catalog)
+        });
+    let next_selection_id = || {
+        snapshot
+            .get("backgroundSelectionId")
+            .and_then(media_action_number_value)
+            .unwrap_or(0.0)
+            + 1.0
+    };
+    if let Some(media) = media {
+        let selection_id = next_selection_id();
+        let behavior = if target["mediaBackgroundOnly"] == true {
+            "background"
+        } else {
+            target["mediaBackgroundBehavior"]
+                .as_str()
+                .unwrap_or_else(|| {
+                    if media["backgroundBehavior"] == "background" {
+                        "background"
+                    } else {
+                        "foreground"
+                    }
+                })
+        };
+        Some(json!({
+            "backgroundId": media["id"],
+            "backgroundSelectionId": selection_id,
+            "backgroundBehavior": behavior,
+            "backgroundEndBehavior": media.get("backgroundEndBehavior").filter(|value| !value.is_null()).cloned().unwrap_or(json!("hold")),
+            "backgroundPlayback": media.get("backgroundPlayback").filter(|value| !value.is_null()).cloned().unwrap_or(json!("stop")),
+            "backgroundPlaybackState": { "selectionId": selection_id, "status": "playing" },
+            "backgroundScale": media.get("backgroundScale").filter(|value| !value.is_null()).cloned().unwrap_or(json!("fit")),
+            "backgroundTransition": media.get("backgroundTransition").filter(|value| !value.is_null()).cloned().unwrap_or(json!("none"))
+        }))
+    } else if clear_media {
+        Some(json!({
+            "backgroundId": "",
+            "backgroundSelectionId": next_selection_id(),
+            "backgroundPlaybackState": null,
+        }))
+    } else {
+        None
+    }
 }
 
 fn add_remote_build_step_clock(

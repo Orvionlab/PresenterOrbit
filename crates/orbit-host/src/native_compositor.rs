@@ -447,8 +447,10 @@ struct LayerTransitionState {
     /// The prop layer's transition per shown prop.
     transitions: Value,
     layers: Vec<NativeLayerFrame>,
-    displayed: Option<Vec<u8>>,
+    displayed: Option<Arc<Vec<u8>>>,
     active: Option<native_transitions::ActiveTransition>,
+    replace: bool,
+    includes_media: bool,
     /// The highest stacking rank the layer last occupied.
     rank: u8,
 }
@@ -703,6 +705,10 @@ impl NativeCompositor {
             .get("keyFillSignal")
             .is_some_and(|value| !value.is_null())
             || content.get("slideTransition").is_some_and(Value::is_object)
+            || content.get("slideEntryKey").is_some_and(Value::is_string)
+            || self
+                .layer_transitions
+                .contains_key(&("render-into".into(), TransitionLayer::Slide))
             || content
                 .get("layerTransitions")
                 .is_some_and(Value::is_object)
@@ -816,6 +822,12 @@ impl NativeCompositor {
                 .as_object_mut()
                 .ok_or("Key/fill scene must be an object.")?
                 .remove("keyFillSignal");
+            if content
+                .get("projectorCorrection")
+                .is_none_or(Value::is_null)
+            {
+                source["backgroundCss"] = Value::String("transparent".into());
+            }
             let mut frame = self.try_render_layered_for(namespace, &source, width, height)?;
             frame.layers.retain(|layer| layer.id != "background-color");
             return Ok(apply_key_fill_signal(frame, signal));
@@ -918,6 +930,12 @@ impl NativeCompositor {
             .ok_or("Key/fill source must be an object.")?;
         for field in ["keyFillSignal", "keyFillSourceId", "keyFillPartnerId"] {
             source_fields.remove(field);
+        }
+        if content
+            .get("projectorCorrection")
+            .is_none_or(Value::is_null)
+        {
+            source_fields.insert("backgroundCss".into(), Value::String("transparent".into()));
         }
         let mut frame = self.try_render_layered_for(namespace, &source, width, height)?;
         frame.layers.retain(|layer| layer.id != "background-color");
@@ -1502,17 +1520,75 @@ impl NativeCompositor {
         now: Instant,
     ) -> Result<bool, String> {
         let mut transitioning = false;
-        // Top-down, so an absent layer's anchor sees the planes above it already in place.
+        let slide_context = TransitionLayer::Slide.context(content);
+        let slide_key = slide_context
+            .and_then(|context| context.get("key"))
+            .or_else(|| content.get("slideEntryKey"))
+            .filter(|key| !key.is_null());
+        let previous_slide = self
+            .layer_transitions
+            .get(&(namespace.into(), TransitionLayer::Slide));
+        let media_context = TransitionLayer::Media.context(content);
+        let slide_has_media = slide_context
+            .and_then(|context| context.get("includesMedia"))
+            .and_then(Value::as_bool)
+            == Some(true);
+        let removes_slide_media = previous_slide.is_some_and(|state| state.includes_media)
+            && media_context
+                .and_then(|context| context.get("key"))
+                .is_none_or(Value::is_null);
+        let previous_key = previous_slide
+            .map(|state| &state.key)
+            .filter(|key| !key.is_null());
+        let slide_media_take =
+            (slide_has_media || removes_slide_media) && previous_key != slide_key;
+        let media_pending =
+            (slide_media_take || media_context.is_some()) && self.background_media_pending(content);
+        let slide_waiting = slide_media_take
+            && media_pending
+            && slide_context
+                .and_then(|context| context.get("transition"))
+                .filter(|value| !value.is_null())
+                .map(native_transitions::resolve)
+                .transpose()?
+                .flatten()
+                .is_some();
+        // Compose independent media before the slide, which may need it as a backdrop.
         for layer in [
             TransitionLayer::Messages,
             TransitionLayer::Props,
-            TransitionLayer::Slide,
             TransitionLayer::Media,
+            TransitionLayer::Slide,
         ] {
-            transitioning |=
-                self.apply_layer_transition(layer, namespace, content, layers, width, height, now)?;
+            let waiting_for_media = match layer {
+                TransitionLayer::Media if slide_waiting => continue,
+                TransitionLayer::Media => !slide_media_take && media_pending,
+                TransitionLayer::Slide => slide_waiting,
+                _ => false,
+            };
+            transitioning |= self.apply_layer_transition(
+                layer,
+                namespace,
+                content,
+                layers,
+                (width, height),
+                now,
+                waiting_for_media,
+                slide_media_take,
+            )?;
         }
         Ok(transitioning)
+    }
+
+    fn background_media_pending(&self, content: &Value) -> bool {
+        content["backgroundMediaType"].as_str().is_some_and(|kind| {
+            matches!(kind, "image" | "video")
+                && content
+                    .get("backgroundMediaPath")
+                    .or_else(|| content.get("backgroundMediaUrl"))
+                    .and_then(local_media_path)
+                    .is_none_or(|path| kind == "video" && !self.renderer.video_frame_ready(&path))
+        })
     }
 
     /// When an Audience Look was applied (its token changed), replaces the whole frame with a dissolve
@@ -1617,54 +1693,76 @@ impl NativeCompositor {
         namespace: &str,
         content: &Value,
         layers: &mut Vec<NativeLayerFrame>,
-        width: usize,
-        height: usize,
+        (width, height): (usize, usize),
         now: Instant,
+        waiting_for_media: bool,
+        slide_media_take: bool,
     ) -> Result<bool, String> {
         let state_key = (namespace.to_string(), layer);
-        let Some(context) = layer.context(content) else {
+        let context = layer.context(content);
+        let slide = layer == TransitionLayer::Slide;
+        if context.is_none() && !slide {
             self.layer_transitions.remove(&state_key);
             return Ok(false);
-        };
-        let key = context.get("key").cloned().unwrap_or(Value::Null);
-        let spec = match context.get("transition").filter(|value| !value.is_null()) {
+        }
+        let key = context
+            .and_then(|context| context.get("key"))
+            .or_else(|| slide.then(|| content.get("slideEntryKey")).flatten())
+            .cloned()
+            .unwrap_or(Value::Null);
+        let spec = match context
+            .and_then(|context| context.get("transition"))
+            .filter(|value| !value.is_null())
+        {
             Some(value) => native_transitions::resolve(value)?,
             None => None,
         };
-        let indices = layers
+        let in_plane = |frame: &NativeLayerFrame, backdrop| {
+            layer.contains(&frame.id) || (backdrop && layer_rank(&frame.id) <= 5)
+        };
+        let group = layers
             .iter()
-            .enumerate()
-            .filter(|(_, frame)| layer.contains(&frame.id))
-            .map(|(index, _)| index)
+            .filter(|frame| in_plane(frame, slide))
+            .cloned()
             .collect::<Vec<_>>();
-        // Backdrop-dependent layers already contain everything beneath them.
-        let blendable = !indices.iter().any(|index| layers[*index].replace);
-        let group = indices
-            .iter()
-            .map(|index| layers[*index].clone())
-            .collect::<Vec<_>>();
-        let plane = |layers: &[NativeLayerFrame]| {
+        // A slide with a replacement plane needs its backdrop on both sides of the blend.
+        let has_slide_backdrop = |group: &[NativeLayerFrame]| {
+            group
+                .iter()
+                .any(|frame| frame.replace && is_slide_layer(&frame.id))
+        };
+        let blendable = slide || !group.iter().any(|frame| frame.replace);
+        let plane = |layers: Vec<NativeLayerFrame>| {
             NativeLayeredFrame {
                 width,
                 height,
-                layers: layers.to_vec(),
+                layers,
                 dynamic_media: false,
             }
             .flatten()
             .pixels
         };
+        let indices = |layers: &[NativeLayerFrame], replace: bool| {
+            layers
+                .iter()
+                .enumerate()
+                .filter_map(|(index, frame)| in_plane(frame, replace).then_some(index))
+                .collect::<Vec<_>>()
+        };
+        let transition_frame = |pixels, replace, visual_key| NativeLayerFrame {
+            id: layer.plane_id().into(),
+            visual_key,
+            pixels,
+            bounds: Some(NativeLayerBounds {
+                x: 0,
+                y: 0,
+                width,
+                height,
+            }),
+            dynamic_media: true,
+            replace,
+        };
         let mut first_frame = !self.layer_transitions.contains_key(&state_key);
-        let waiting_for_media = layer == TransitionLayer::Media
-            && content["backgroundMediaType"].as_str().is_some_and(|kind| {
-                matches!(kind, "image" | "video")
-                    && content
-                        .get("backgroundMediaPath")
-                        .or_else(|| content.get("backgroundMediaUrl"))
-                        .and_then(local_media_path)
-                        .is_none_or(|path| {
-                            kind == "video" && !self.renderer.video_frame_ready(&path)
-                        })
-            });
         let state = self.layer_transitions.entry(state_key).or_default();
         if state
             .layers
@@ -1678,26 +1776,37 @@ impl NativeCompositor {
             *state = LayerTransitionState::default();
             first_frame = true;
         }
+        let outgoing = |state: &LayerTransitionState, replace: bool| {
+            if let Some(pixels) = state.displayed.as_ref().filter(|_| state.active.is_some()) {
+                if replace && !state.replace {
+                    let mut backdrop = state
+                        .layers
+                        .iter()
+                        .filter(|frame| !is_slide_layer(&frame.id))
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    backdrop.push(transition_frame(Arc::clone(pixels), false, 0));
+                    return plane(backdrop);
+                }
+                return pixels.as_ref().clone();
+            }
+            plane(
+                state
+                    .layers
+                    .iter()
+                    .filter(|frame| in_plane(frame, replace))
+                    .cloned()
+                    .collect(),
+            )
+        };
         if waiting_for_media {
             // Keep the outgoing picture, including an interrupted fade, until decoding delivers a frame.
-            let outgoing = state.displayed.as_ref().map_or_else(
-                || state.layers.clone(),
-                |pixels| {
-                    vec![NativeLayerFrame {
-                        id: layer.plane_id().into(),
-                        visual_key: 0,
-                        pixels: Arc::new(pixels.clone()),
-                        bounds: Some(NativeLayerBounds {
-                            x: 0,
-                            y: 0,
-                            width,
-                            height,
-                        }),
-                        dynamic_media: true,
-                        replace: false,
-                    }]
-                },
-            );
+            let indices = indices(layers, slide);
+            let outgoing = if state.active.is_some() {
+                vec![transition_frame(Arc::new(outgoing(state, slide)), slide, 0)]
+            } else {
+                state.layers.clone()
+            };
             let insert_at = indices.first().copied().unwrap_or_else(|| {
                 layers
                     .iter()
@@ -1710,17 +1819,16 @@ impl NativeCompositor {
             layers.splice(insert_at..insert_at, outgoing);
             return Ok(true);
         }
-        if let Some(rank) = indices
-            .iter()
-            .map(|index| layer_rank(&layers[*index].id))
-            .max()
-        {
+        if let Some(rank) = group.iter().map(|frame| layer_rank(&frame.id)).max() {
             state.rank = rank;
         }
         if !first_frame && state.key != key {
             let change = match layer {
+                TransitionLayer::Media if slide_media_take => None,
                 TransitionLayer::Props => {
-                    match props_change_transition(&state.key, &state.transitions, context) {
+                    match context.and_then(|context| {
+                        props_change_transition(&state.key, &state.transitions, context)
+                    }) {
                         Some(value) => native_transitions::resolve(value)?,
                         None => None,
                     }
@@ -1731,12 +1839,13 @@ impl NativeCompositor {
             };
             state.active = match change.filter(|_| blendable) {
                 Some(spec) => {
-                    let from = state
-                        .active
-                        .as_ref()
-                        .and(state.displayed.take())
-                        .filter(|pixels| pixels.len() == width * height * 4)
-                        .unwrap_or_else(|| plane(&state.layers));
+                    let replace = slide
+                        && (slide_media_take
+                            || has_slide_backdrop(&group)
+                            || has_slide_backdrop(&state.layers)
+                            || (state.active.is_some() && state.replace));
+                    let from = outgoing(state, replace);
+                    state.replace = replace;
                     Some(native_transitions::ActiveTransition {
                         spec,
                         started: now,
@@ -1748,9 +1857,17 @@ impl NativeCompositor {
         }
         state.key = key;
         state.spec = spec;
-        state.transitions = context.get("transitions").cloned().unwrap_or(Value::Null);
+        state.includes_media = context
+            .and_then(|context| context.get("includesMedia"))
+            .and_then(Value::as_bool)
+            == Some(true);
+        state.transitions = context
+            .and_then(|context| context.get("transitions"))
+            .cloned()
+            .unwrap_or(Value::Null);
         state.layers = group;
         let Some(active) = state.active.as_ref() else {
+            state.displayed = None;
             return Ok(false);
         };
         let progress = active.progress(now);
@@ -1759,7 +1876,8 @@ impl NativeCompositor {
             state.displayed = None;
             return Ok(false);
         }
-        let to = plane(&state.layers);
+        let indices = indices(layers, state.replace);
+        let to = plane(indices.iter().map(|index| layers[*index].clone()).collect());
         let mut blended = vec![0; to.len()];
         native_transitions::blend(
             &active.spec,
@@ -1770,8 +1888,8 @@ impl NativeCompositor {
             width,
             height,
         );
-        let pixels = Arc::new(blended);
-        state.displayed = Some(pixels.as_ref().clone());
+        let blended = Arc::new(blended);
+        state.displayed = Some(Arc::clone(&blended));
         let anchor_rank = match layer {
             TransitionLayer::Slide => 1,
             _ => state.rank,
@@ -1792,19 +1910,7 @@ impl NativeCompositor {
         progress.to_bits().hash(&mut hasher);
         layers.insert(
             insert_at.min(layers.len()),
-            NativeLayerFrame {
-                id: layer.plane_id().into(),
-                visual_key: hasher.finish(),
-                pixels,
-                bounds: Some(NativeLayerBounds {
-                    x: 0,
-                    y: 0,
-                    width,
-                    height,
-                }),
-                dynamic_media: true,
-                replace: false,
-            },
+            transition_frame(blended, state.replace, hasher.finish()),
         );
         Ok(true)
     }
@@ -1890,7 +1996,7 @@ fn layer_rank(id: &str) -> u8 {
         "background-color" => 0,
         "background-media" => 2,
         "theme-background" => 3,
-        "foreground-media" => 4,
+        "foreground-media" | "media-transition" => 4,
         "slide-transition" | "fallback-text" => 5,
         "props-transition" => 6,
         "messages-transition" | "message" => 9,

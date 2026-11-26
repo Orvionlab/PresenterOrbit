@@ -1,7 +1,7 @@
 //! The footer controls of the slide grid, media bin and props for the global default transition: icon buttons for cut,
 //! fade and the picker of every library effect, and the duration of a transition that has one. Slides use the
-//! workspace's `slideTransition`; media and props use their entries of `layerTransitions`. A
-//! transition set on a slide, presentation, media selection or prop still wins; the output resolves that.
+//! workspace's `slideTransition`, as does foreground media. Background media and props use
+//! their entries of `layerTransitions`. The output resolves individual overrides.
 
 use gpui::{
     div, prelude::*, Anchor, App, Context, Entity, Focusable, IntoElement, Render, SharedString,
@@ -70,12 +70,11 @@ pub fn fade(seconds: f64) -> Value {
     json!({"effectId": DISSOLVE_ID, "durationSeconds": seconds})
 }
 
-/// The `saveWorkspaceContent` patch that makes `transition` (`Null` for a cut) the default of `kind`. Media
-/// defaults cover both media layers and leave the prop and message defaults as they are.
+/// The `saveWorkspaceContent` patch that makes `transition` (`Null` for a cut) the default of `kind`.
 pub fn patch(workspace: &Value, kind: Kind, transition: Value) -> Value {
     match kind {
         Kind::Slide => json!({"slideTransition": transition}),
-        Kind::Media => layer_patch(workspace, &["background", "foreground"], transition),
+        Kind::Media => layer_patch(workspace, &["background"], transition),
         Kind::Props => layer_patch(workspace, &["props"], transition),
     }
 }

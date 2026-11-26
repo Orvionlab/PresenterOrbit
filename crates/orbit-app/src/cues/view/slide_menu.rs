@@ -87,17 +87,10 @@ impl SlideMedia {
     }
 
     fn behavior<'a>(&'a self, slide: &'a Value) -> &'a str {
-        let value = if self.action_id.is_some() {
-            self.details(slide)
-                .and_then(|details| details["backgroundBehavior"].as_str())
-        } else if slide["mediaBackgroundOnly"] == true {
-            Some("background")
-        } else {
-            slide["mediaBackgroundBehavior"].as_str()
-        };
-        value
-            .or(self.asset["backgroundBehavior"].as_str())
-            .unwrap_or("foreground")
+        let value = self
+            .details(slide)
+            .map(|details| &details["backgroundBehavior"]);
+        media_behavior(slide, &self.asset, self.action_id.is_some(), value)
     }
 
     fn convert(&self, slide: &mut Value) {
@@ -133,6 +126,61 @@ fn media_assets(workspace: &Value) -> impl Iterator<Item = &Value> {
         .into_iter()
         .flatten()
         .filter(|asset| matches!(asset["type"].as_str(), Some("image" | "video" | "audio")))
+}
+
+fn connected_media<'a>(
+    workspace: &'a Value,
+    slide: &'a Value,
+) -> impl Iterator<Item = (&'a Value, Option<&'a Value>)> {
+    let attached = slide["mediaBackgroundId"].as_str().map(|id| (id, None));
+    let actions = slide["actions"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|action| action["type"] == "media")
+        .filter_map(|action| Some((action["targetId"].as_str()?, Some(action))));
+    attached
+        .into_iter()
+        .chain(actions)
+        .filter_map(|(id, action)| {
+            let asset = media_assets(workspace)
+                .find(|asset| asset["id"] == id || asset["sourceId"] == id)?;
+            Some((asset, action))
+        })
+}
+
+fn media_behavior<'a>(
+    slide: &'a Value,
+    asset: &'a Value,
+    is_action: bool,
+    action_behavior: Option<&'a Value>,
+) -> &'a str {
+    let value = if is_action {
+        action_behavior.and_then(Value::as_str)
+    } else if slide["mediaBackgroundOnly"] == true {
+        Some("background")
+    } else {
+        slide["mediaBackgroundBehavior"].as_str()
+    };
+    value
+        .or(asset["backgroundBehavior"].as_str())
+        .unwrap_or("foreground")
+}
+
+pub(super) fn connected_visual_layers(workspace: &Value, slide: &Value) -> [bool; 2] {
+    let mut layers = [false; 2];
+    for (asset, action) in
+        connected_media(workspace, slide).filter(|(asset, _)| asset["type"] != "audio")
+    {
+        let behavior = media_behavior(
+            slide,
+            asset,
+            action.is_some(),
+            action.map(|action| &action["details"]["backgroundBehavior"]),
+        );
+        layers[usize::from(behavior == "foreground")] = true;
+    }
+    layers
 }
 
 fn edit_slides(runtime: &Runtime, item_id: &str, cx: &mut App, edit: impl FnOnce(&mut [Value])) {
@@ -371,28 +419,21 @@ impl CueView {
                 entries: media_choices,
             },
         ];
-        let background = slide["mediaBackgroundId"].as_str().map(|id| (id, None));
-        let actions = slide["actions"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter(|action| action["type"] == "media")
-            .filter_map(|action| {
-                Some((
-                    action["targetId"].as_str()?,
-                    Some(action["id"].as_str()?.to_owned()),
-                ))
-            });
-        for (id, action_id) in background.into_iter().chain(actions) {
-            if let Some(asset) =
-                media_assets(workspace).find(|asset| asset["id"] == id || asset["sourceId"] == id)
-            {
-                let media = SlideMedia {
-                    asset: asset.clone(),
-                    action_id,
-                };
-                self.add_media_entries(&mut entries, item, slide, media, cx);
-            }
+        for (asset, action) in connected_media(workspace, slide) {
+            let action_id = match action {
+                Some(action) => {
+                    let Some(id) = action["id"].as_str() else {
+                        continue;
+                    };
+                    Some(id.to_owned())
+                }
+                None => None,
+            };
+            let media = SlideMedia {
+                asset: asset.clone(),
+                action_id,
+            };
+            self.add_media_entries(&mut entries, item, slide, media, cx);
         }
         entries
     }

@@ -151,10 +151,11 @@ impl MediaBin {
         });
         let layer_selector = format!("media-layer-{layer}-{}", text(item, "id"));
         let transition = menu::option_value(item, live, "backgroundTransition");
-        let transition = match transition.as_str() {
-            "none" => t.t("media.transition.layerDefault"),
-            "cut" => t.t("media.transition.cut"),
-            "dissolve" => t.t("media.transition.dissolve"),
+        let transition = match (layer.as_str(), transition.as_str()) {
+            ("foreground", _) => t.t("media.transition.slideDefault"),
+            (_, "none") => t.t("media.transition.layerDefault"),
+            (_, "cut") => t.t("media.transition.cut"),
+            (_, "dissolve") => t.t("media.transition.dissolve"),
             _ => transition,
         };
         let picture = div()
@@ -201,11 +202,10 @@ impl MediaBin {
                     .debug_selector(move || layer_selector.clone())
                     .aria_label(layer_label.clone())
                     .tooltip(orbit_ui::controls::tooltip_text(layer_label))
-                    .child(orbit_ui::icon(if layer == "background" {
-                        "stack-back"
-                    } else {
-                        "stack-front"
-                    }))
+                    .child(orbit_ui::icons::media_layer_icon(
+                        layer == "foreground",
+                        &theme,
+                    ))
                     .into_any_element(),
                 picture.into_any_element(),
                 div().truncate().child(transition).into_any_element(),

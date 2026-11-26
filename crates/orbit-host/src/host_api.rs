@@ -155,6 +155,32 @@ impl Host {
         Ok(response)
     }
 
+    /// Keep the media selection in sync when an on-air slide's attachment is edited.
+    pub fn refresh_live_slide_media(snapshot: &mut Value, slide: &Value) -> Result<(), String> {
+        let previous = &snapshot["liveSlide"];
+        if [
+            "mediaBackgroundId",
+            "mediaBackgroundOnly",
+            "mediaBackgroundBehavior",
+        ]
+        .into_iter()
+        .all(|field| previous[field] == slide[field])
+        {
+            return Ok(());
+        }
+        let Some(selection) = slide_media_patch(snapshot, slide, true) else {
+            return Ok(());
+        };
+        let fields = snapshot
+            .as_object_mut()
+            .ok_or("Output snapshot must be an object.")?;
+        let selection = selection
+            .as_object()
+            .ok_or("Media selection must be an object.")?;
+        fields.extend(selection.clone());
+        resume_selected_output_layer(fields, "media", &mut json!({}))
+    }
+
     /// Operator cue commands share the native coordinator used by Remote, without network dispatch.
     pub fn execute_cue_command(&self, command: &str, payload: &Value) -> Result<Value, String> {
         if !matches!(

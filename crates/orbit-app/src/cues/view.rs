@@ -1178,7 +1178,7 @@ impl CueView {
         };
         let operation = match target.placement {
             MediaPlacement::Background => json!({
-                "type":"setSlideMedia","slideId":slide,"mediaId":drag.id,"backgroundOnly":true,
+                "type":"setSlideMedia","slideId":slide,"mediaId":drag.id,
             }),
             placement => json!({
                 "type":"insertMediaSlides","slideId":slide,"mediaIds":drag.slide_media.as_ref(),
@@ -1345,6 +1345,8 @@ impl CueView {
         } else {
             String::new()
         };
+        let media_layers =
+            slide_menu::connected_visual_layers(&self.runtime.content.read(cx).workspace, &cue);
         let label = if first_in_group { label } else { String::new() };
         // `.cue-card-label`: the slide's own label, in its own color.
         let label_chip = cue["label"]
@@ -1616,35 +1618,70 @@ impl CueView {
                         ),
                 )
             })
-            .when(!shortcut.is_empty(), |el| {
-                el.child(
-                    div()
-                        .absolute()
-                        .top(if table {
-                            theme.metrics.font_xl + theme.metrics.space_xs
-                        } else {
-                            theme.metrics.space_xs
-                        })
-                        .left(if table {
-                            theme.metrics.tabbar_height
-                                + row_height * (16. / 9.)
-                                + theme.metrics.space_xs
-                        } else {
-                            theme.metrics.space_xs
-                        })
-                        .min_w(px(17.))
-                        .h(px(17.))
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .rounded(theme.metrics.radius_md)
-                        .bg(theme.colors.warning)
-                        .text_color(theme.colors.preview_matte_bg)
-                        .text_size(theme.metrics.font_sm)
-                        .font_weight(gpui::FontWeight::EXTRA_BOLD)
-                        .child(shortcut),
-                )
-            })
+            .when(
+                !shortcut.is_empty() || media_layers.into_iter().any(|shown| shown),
+                |el| {
+                    el.child(
+                        div()
+                            .absolute()
+                            .top(if table {
+                                theme.metrics.font_xl + theme.metrics.space_xs
+                            } else {
+                                theme.metrics.space_xs
+                            })
+                            .left(if table {
+                                theme.metrics.tabbar_height
+                                    + row_height * (16. / 9.)
+                                    + theme.metrics.space_xs
+                            } else {
+                                theme.metrics.space_xs
+                            })
+                            .flex()
+                            .items_center()
+                            .gap(theme.metrics.space_2xs)
+                            .when(!shortcut.is_empty(), |row| {
+                                row.child(
+                                    div()
+                                        .min_w(px(17.))
+                                        .h(px(17.))
+                                        .flex()
+                                        .items_center()
+                                        .justify_center()
+                                        .rounded(theme.metrics.radius_md)
+                                        .bg(theme.colors.warning)
+                                        .text_color(theme.colors.preview_matte_bg)
+                                        .text_size(theme.metrics.font_sm)
+                                        .font_weight(gpui::FontWeight::EXTRA_BOLD)
+                                        .child(shortcut),
+                                )
+                            })
+                            .children(
+                                [
+                                    ("cue-media-background", false, "media.behavior.background"),
+                                    ("cue-media-foreground", true, "media.behavior.foreground"),
+                                ]
+                                .into_iter()
+                                .zip(media_layers)
+                                .filter(|(_, shown)| *shown)
+                                .map(
+                                    |((id, foreground, label), _)| {
+                                        let label = t.t(label);
+                                        let id = format!("{id}-{index}");
+                                        div()
+                                            .id(SharedString::from(id.clone()))
+                                            .debug_selector(move || id.clone())
+                                            .flex_none()
+                                            .aria_label(label.clone())
+                                            .tooltip(orbit_ui::controls::tooltip_text(label))
+                                            .child(orbit_ui::icons::media_layer_icon(
+                                                foreground, &theme,
+                                            ))
+                                    },
+                                ),
+                            ),
+                    )
+                },
+            )
             .when(disabled, |el| el.opacity(0.55))
             .when(selected && self.show_selection, |el| {
                 el.child(

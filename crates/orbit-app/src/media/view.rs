@@ -1494,6 +1494,7 @@ impl MediaBin {
             .map_or(1, |index| index + 1);
         // `.thumb-preview` + `<footer>` of `MediaCard`: a 16:9 box with the picture, the clock chip, then the number and title.
         let table = (!grid && !audio).then(|| self.table_row(&item, index, cx));
+        let foreground = grid && !audio && item["backgroundBehavior"] != "background";
         let preview = grid.then(|| {
             div()
                 .debug_selector({
@@ -1677,7 +1678,20 @@ impl MediaBin {
                             } else {
                                 format!("{index}  {title}")
                             },
-                        )),
+                        ))
+                        .when(foreground, |footer| {
+                            let label = cx.global::<Translator>().t("media.behavior.foreground");
+                            let selector = format!("media-layer-foreground-{id}");
+                            footer.child(
+                                div()
+                                    .id(SharedString::from(selector.clone()))
+                                    .debug_selector(move || selector.clone())
+                                    .flex_none()
+                                    .aria_label(label.clone())
+                                    .tooltip(orbit_ui::controls::tooltip_text(label))
+                                    .child(orbit_ui::icons::media_layer_icon(true, &theme)),
+                            )
+                        }),
                 )
             })
             .when_some(duration.filter(|_| audio), |row, duration| {

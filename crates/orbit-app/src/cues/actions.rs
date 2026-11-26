@@ -921,6 +921,7 @@ pub fn refresh_live(runtime: &Runtime, cx: &mut App) {
             .or_else(|| cues.iter().find(|cue| cue["disabled"] != true));
         let mut item_value = (*item.value).clone();
         item_value["selectedArrangementId"] = json!(arrangement);
+        orbit_host::Host::refresh_live_slide_media(current, cue.unwrap_or(&Value::Null))?;
         current["liveItem"] = item_value;
         current["liveSlide"] = cue.cloned().unwrap_or(Value::Null);
         current["liveSlideId"] = cue.map_or(Value::Null, |cue| cue["id"].clone());
