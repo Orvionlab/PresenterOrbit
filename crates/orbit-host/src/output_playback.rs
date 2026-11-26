@@ -47,7 +47,9 @@ pub fn validate_media_transport_duration(
     end: Option<f64>,
     duration: f64,
 ) -> Result<(), String> {
-    if start >= duration || end.is_some_and(|end| end > duration) {
+    // Imported trim points and FFprobe stream durations can round the same endpoint differently.
+    const END_ROUNDING_SECONDS: f64 = 0.001;
+    if start >= duration || end.is_some_and(|end| end > duration + END_ROUNDING_SECONDS) {
         return Err("Media transport trim points exceed the decoded source duration.".to_string());
     }
     Ok(())
@@ -313,6 +315,12 @@ impl PlaybackTrack {
             out_seconds: self.out_seconds,
             error: self.error.clone(),
         }
+    }
+
+    fn validate_and_clamp_trim(&mut self, duration: f64) -> Result<(), String> {
+        validate_media_transport_duration(self.in_seconds, self.out_seconds, duration)?;
+        self.out_seconds = self.out_seconds.map(|end| end.min(duration));
+        Ok(())
     }
 
     fn advance_to(&mut self, now: Instant) {
@@ -726,9 +734,7 @@ impl PlaybackRegistry {
             return;
         }
         track.duration = Some(duration);
-        if let Err(error) =
-            validate_media_transport_duration(track.in_seconds, track.out_seconds, duration)
-        {
+        if let Err(error) = track.validate_and_clamp_trim(duration) {
             track.error = Some(error);
             track.status = PlaybackStatus::Ended;
             track.clock_revision = track.clock_revision.saturating_add(1);
@@ -1014,9 +1020,7 @@ fn sync_media_track(source: &mut SourcePlayback, content: &Value, now: Instant) 
         let track = source.media.as_mut().expect("track identity was checked");
         if let Some(duration) = duration_from_content(content) {
             track.duration = Some(duration);
-            if let Err(error) =
-                validate_media_transport_duration(track.in_seconds, track.out_seconds, duration)
-            {
+            if let Err(error) = track.validate_and_clamp_trim(duration) {
                 track.error = Some(error);
                 track.status = PlaybackStatus::Ended;
             }
@@ -1125,9 +1129,7 @@ fn sync_media_track(source: &mut SourcePlayback, content: &Value, now: Instant) 
             track.position = track.position.min(end);
         }
         if let Some(duration) = track.duration {
-            if let Err(error) =
-                validate_media_transport_duration(track.in_seconds, track.out_seconds, duration)
-            {
+            if let Err(error) = track.validate_and_clamp_trim(duration) {
                 track.error = Some(error);
                 track.status = PlaybackStatus::Ended;
             }

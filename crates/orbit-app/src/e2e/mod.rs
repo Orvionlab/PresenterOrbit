@@ -3867,8 +3867,7 @@ fn media_thumbnails_and_video_start_preserve_the_outgoing_picture(cx: &mut TestA
     clip["thumbnailTimeSeconds"] = json!(0.2);
     clip["backgroundTransition"] = json!("fade:0.5:Dissolve");
     clip["backgroundPlayback"] = json!("loop");
-    clip["mediaTransport"] =
-        json!({"inSeconds":0.2,"outSeconds":null,"rate":1,"delaySeconds":1,"retrigger":"restart"});
+    clip["mediaTransport"] = json!({"inSeconds":0.2,"outSeconds":4.000005,"rate":1,"delaySeconds":1,"retrigger":"restart"});
     app.host
         .invoke(
             "saveMediaSettings",
@@ -4189,6 +4188,9 @@ fn media_thumbnails_and_video_start_preserve_the_outgoing_picture(cx: &mut TestA
     app.wait_animated(cx, |app, _| {
         scene(app).is_ok_and(|scene| scene["backgroundMediaType"] == "video")
     });
+    let playback = scene(&app).unwrap()["backgroundPlaybackState"].clone();
+    assert_eq!(playback["outSeconds"], 4.);
+    assert!(playback["error"].is_null());
     let activated =
         crate::state::runtime::output_call(&app.host, "getMediaPreparationStatus", vec![]).unwrap();
     assert_eq!(

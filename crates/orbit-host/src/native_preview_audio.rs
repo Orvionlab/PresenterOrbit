@@ -127,9 +127,7 @@ impl<I: Source<Item = f32>> Iterator for Meter<I> {
                 / 50
         {
             let rms = (self.sum / self.count as f64).sqrt();
-            let percent = (((20. * rms.max(0.001).log10() + 60.) / 60.) * 100.)
-                .round()
-                .clamp(0., 100.) as f32;
+            let percent = super::program_levels::rms_percent(rms);
             self.level.store(percent.to_bits(), Ordering::Relaxed);
             self.sum = 0.;
             self.count = 0;

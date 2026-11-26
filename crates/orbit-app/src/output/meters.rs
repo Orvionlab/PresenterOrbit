@@ -3,7 +3,7 @@
 
 use std::time::Duration;
 
-use gpui::{div, prelude::*, px, relative, rgb, rgba, Context, Rgba, Window};
+use gpui::{div, prelude::*, px, relative, rgb, Context, Rgba, Window};
 use orbit_ui::ActiveTheme;
 use serde_json::Value;
 
@@ -139,7 +139,7 @@ impl gpui::Render for ProgramMeters {
                     .px(px(2.))
                     .pt(px(4.))
                     .pb(px(2.))
-                    .bg(rgba(0x000000b8))
+                    .bg(colors.preview_matte_bg)
                     .children((0..self.bars).map(|channel| {
                         let percent = self.levels.get(channel).copied().unwrap_or(0.);
                         bar(
