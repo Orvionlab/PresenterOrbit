@@ -291,6 +291,25 @@ impl Host {
         width: u32,
         height: u32,
     ) -> Result<native_compositor::NativeFrame, String> {
+        self.render_cue_still_with_background(
+            snapshot,
+            item,
+            slide,
+            playlist_id,
+            (width, height),
+            None,
+        )
+    }
+
+    pub fn render_cue_still_with_background(
+        &self,
+        snapshot: &Value,
+        item: &Value,
+        slide: &Value,
+        playlist_id: &str,
+        (width, height): (u32, u32),
+        background: Option<&str>,
+    ) -> Result<native_compositor::NativeFrame, String> {
         let mut input = json!({
             "liveItem": item, "liveItemId": item["id"], "liveSlide": slide, "liveSlideId": slide["id"],
             "livePlaylistId": if playlist_id.is_empty() { Value::Null } else { json!(playlist_id) },
@@ -318,6 +337,9 @@ impl Host {
         let mut scene = output_scene::build_output_scene_state(&input)?
             .remove("cue-preview")
             .ok_or("The cue preview scene was not built.")?;
+        if let Some(background) = background {
+            scene["backgroundCss"] = json!(background);
+        }
         if let Some(composed) = scene
             .get_mut("presentationThemeSlide")
             .filter(|slide| slide.is_object())

@@ -3393,9 +3393,121 @@
     "description": "User-facing untitled text in the cue interface."
   },
   "cue.size": "Cue size",
-  "cue.view.easy": "Easy view",
+  "cue.view.easy": "Text view",
   "@cue.view.easy": {
-    "description": "Accessible label for switching the cue workspace to Easy view."
+    "description": "Accessible label for switching the cue workspace to text view."
+  },
+  "cue.view.options": "View settings",
+  "@cue.view.options": {
+    "description": "Button that opens the settings for the current slide view."
+  },
+  "cue.view.groupSlides": "Slides by group",
+  "@cue.view.groupSlides": {
+    "description": "Option to separate slide groups in the current view."
+  },
+  "cue.view.mediaAndColors": "Show media actions and background colors",
+  "@cue.view.mediaAndColors": {
+    "description": "Shows attached media indicators and slide background colors in text view."
+  },
+  "cue.view.useThumbnailColor": "Use thumbnail background color",
+  "@cue.view.useThumbnailColor": {
+    "description": "Enables a custom background in the thumbnail preview."
+  },
+  "cue.view.thumbnailColor": "Thumbnail background color",
+  "@cue.view.thumbnailColor": {
+    "description": "Label for a thumbnail-only background color."
+  },
+  "cue.view.tableColor": "Table background color",
+  "@cue.view.tableColor": {
+    "description": "Label for the background color of table rows."
+  },
+  "cue.view.systemFont": "System font",
+  "@cue.view.systemFont": {
+    "description": "Font option that follows the application’s default font."
+  },
+  "cue.view.font": "Font",
+  "@cue.view.font": {
+    "description": "Label for the slide view font family."
+  },
+  "cue.view.fontStyle": "Style",
+  "@cue.view.fontStyle": {
+    "description": "Label for the slide view font style."
+  },
+  "cue.view.fontSize": "Size",
+  "@cue.view.fontSize": {
+    "description": "Label for the slide view font size."
+  },
+  "cue.view.regular": "Regular",
+  "@cue.view.regular": {
+    "description": "Regular font style."
+  },
+  "cue.view.bold": "Bold",
+  "@cue.view.bold": {
+    "description": "Bold font style."
+  },
+  "cue.view.italic": "Italic",
+  "@cue.view.italic": {
+    "description": "Italic font style."
+  },
+  "cue.view.boldItalic": "Bold italic",
+  "@cue.view.boldItalic": {
+    "description": "Bold italic font style."
+  },
+  "cue.view.textColor": "Text color",
+  "@cue.view.textColor": {
+    "description": "Label for the slide view text color."
+  },
+  "cue.view.alignment": "Alignment",
+  "@cue.view.alignment": {
+    "description": "Label for horizontal text alignment in the slide view."
+  },
+  "cue.view.verticalAlignment": "Vertical alignment",
+  "@cue.view.verticalAlignment": {
+    "description": "Accessible label for vertical text alignment in the slide view."
+  },
+  "cue.view.alignLeft": "Left",
+  "@cue.view.alignLeft": {
+    "description": "Left text alignment option."
+  },
+  "cue.view.alignCenter": "Center",
+  "@cue.view.alignCenter": {
+    "description": "Centered text alignment option."
+  },
+  "cue.view.alignRight": "Right",
+  "@cue.view.alignRight": {
+    "description": "Right text alignment option."
+  },
+  "cue.view.justify": "Justify",
+  "@cue.view.justify": {
+    "description": "Justified text alignment option."
+  },
+  "cue.view.alignTop": "Top",
+  "@cue.view.alignTop": {
+    "description": "Top text alignment option."
+  },
+  "cue.view.alignMiddle": "Middle",
+  "@cue.view.alignMiddle": {
+    "description": "Middle vertical text alignment option."
+  },
+  "cue.view.alignBottom": "Bottom",
+  "@cue.view.alignBottom": {
+    "description": "Bottom text alignment option."
+  },
+  "cue.view.truncate": "Truncate",
+  "@cue.view.truncate": {
+    "description": "Label for where long slide text is truncated."
+  },
+  "cue.view.truncateStart": "Start",
+  "@cue.view.truncateStart": {
+    "description": "Option to omit the start of long slide text."
+  },
+  "cue.view.truncateMiddle": "Middle",
+  "@cue.view.truncateMiddle": {
+    "description": "Option to omit the middle of long slide text."
+  },
+  "cue.view.truncateEnd": "End",
+  "@cue.view.truncateEnd": {
+    "description": "Option to omit the end of long slide text."
   },
   "cue.view.grid": "Grid view",
   "@cue.view.grid": {

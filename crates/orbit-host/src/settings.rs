@@ -846,6 +846,12 @@ pub fn normalize_general_settings_value(value: &Value) -> Value {
             "easy",
         )),
     );
+    normalized.insert(
+        "cueViewOptions".to_string(),
+        crate::cue_view_options::normalize(
+            configured.get("cueViewOptions").unwrap_or(&Value::Null),
+        ),
+    );
     Value::Object(normalized)
 }
 

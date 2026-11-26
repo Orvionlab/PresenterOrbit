@@ -40,7 +40,7 @@ fn generated_label(value: &str) -> bool {
 }
 
 /// `getSlideGroupId`.
-fn slide_group_id(slide: &Value) -> String {
+pub(crate) fn slide_group_id(slide: &Value) -> String {
     let value = if slide.get("groupId").is_some() {
         &slide["groupId"]
     } else {

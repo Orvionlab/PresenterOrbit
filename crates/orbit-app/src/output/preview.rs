@@ -44,6 +44,7 @@ pub enum Source {
         item: Item,
         index: usize,
         playlist_id: String,
+        background: Option<String>,
     },
 }
 
@@ -431,19 +432,20 @@ fn render(
             item,
             index,
             playlist_id,
+            background,
             ..
         } => {
             let slide = item.value["slides"]
                 .as_array()
                 .and_then(|slides| slides.get(*index))
                 .ok_or("The cue thumbnail slide is no longer present.")?;
-            host.render_cue_still(
+            host.render_cue_still_with_background(
                 snapshot,
                 &item.value,
                 slide,
                 playlist_id,
-                size.width,
-                size.height,
+                (size.width, size.height),
+                background.as_deref(),
             )?
         }
     };

@@ -4718,8 +4718,10 @@ fn slide_and_media_takes_follow_their_layer_transitions(cx: &mut TestAppContext)
             slides[0]["background"] = fixture["backgrounds"][0].clone();
             slides[0]["backgroundEnabled"] = json!(true);
             slides[0]["shortcut"] = json!("A");
+            slides[0]["groupId"] = json!("verse");
             slides[1]["mediaBackgroundId"] = json!("front");
             slides[1]["shortcut"] = json!("S");
+            slides[1]["groupId"] = json!("chorus");
             let mut background = slides[1].clone();
             background["id"] = json!("background-slide");
             background["content"] = json!("Background slide");
@@ -4773,6 +4775,60 @@ fn slide_and_media_takes_follow_their_layer_transitions(cx: &mut TestAppContext)
     app.wait(cx, |app, cx| {
         app.visual(cx).debug_bounds("cue-thumbnail-2").is_some()
     });
+    assert!(visual.debug_bounds("cue-copy-1").is_some());
+    assert!(visual.debug_bounds("cue-picture-1").is_none());
+    assert!(visual.debug_bounds("cue-media-foreground-1").is_none());
+    let commands = cx.update(|cx| app.main.view.read(cx).commands.clone());
+    let show = |visual: &mut gpui::VisualTestContext, mode: &str| {
+        visual.update(|window, cx| {
+            assert!(commands.run(mode, false, window, cx));
+            window.simulate_next_frame(cx);
+        });
+        visual.run_until_parked();
+    };
+    let button = "button-cue-view-options-button";
+    click(&mut visual, button);
+    assert!(visual
+        .debug_bounds("select-cue-view-font-trigger")
+        .is_some());
+    click(&mut visual, "cue-view-showMediaAndColors");
+    click(&mut visual, "cue-view-groupSlides");
+    assert!(
+        visual.debug_bounds("cue-thumbnail-1").unwrap().top()
+            > visual.debug_bounds("cue-thumbnail-0").unwrap().top()
+    );
+    assert!(visual.debug_bounds("cue-picture-1").is_none());
+    click(&mut visual, "select-cue-view-truncate-trigger");
+    click(&mut visual, "select-option-1");
+    click(&mut visual, button);
+    show(&mut visual, "view-grid");
+    assert!(visual.debug_bounds("cue-picture-1").is_some());
+    assert!(visual.debug_bounds("cue-copy-1").is_none());
+    click(&mut visual, button);
+    assert!(visual
+        .debug_bounds("select-cue-view-font-trigger")
+        .is_none());
+    click(&mut visual, "cue-view-useThumbnailColor");
+    click(&mut visual, button);
+    show(&mut visual, "view-table");
+    assert!(visual.debug_bounds("cue-picture-1").is_some());
+    assert!(visual.debug_bounds("cue-copy-1").is_some());
+    click(&mut visual, button);
+    assert!(visual
+        .debug_bounds("select-cue-view-font-trigger")
+        .is_some());
+    assert!(visual.debug_bounds("cue-view-useThumbnailColor").is_some());
+    click(&mut visual, button);
+    app.wait(cx, |app, _| {
+        let settings = app.host.invoke("getSettings", vec![]).unwrap();
+        let options = &settings["generalSettings"]["cueViewOptions"];
+        options["easy"]["showMediaAndColors"] == true
+            && options["easy"]["groupSlides"] == true
+            && options["easy"]["truncate"] == "middle"
+            && options["grid"]["useThumbnailColor"] == true
+            && options["table"]["useThumbnailColor"] == false
+    });
+    show(&mut visual, "view-easy");
     assert!(visual.debug_bounds("cue-media-foreground-1").is_some());
     assert!(visual.debug_bounds("cue-media-background-2").is_some());
     assert!(visual.debug_bounds("cue-media-background-0").is_none());

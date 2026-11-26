@@ -1,5 +1,7 @@
 mod arrangement_manager;
+mod preview_text;
 mod slide_menu;
+mod view_options;
 pub use slide_menu::SlideMenuRequest;
 
 use super::{
@@ -66,6 +68,15 @@ enum Mode {
     Easy,
     Grid,
     Table,
+}
+impl Mode {
+    fn key(self) -> &'static str {
+        match self {
+            Self::Easy => "easy",
+            Self::Grid => "grid",
+            Self::Table => "table",
+        }
+    }
 }
 #[derive(Clone)]
 enum FormKind {
@@ -182,6 +193,7 @@ pub struct CueView {
     rows: Vec<(usize, usize, usize)>,
     key: (u64, String, String, Option<usize>, bool, usize),
     mode: Mode,
+    view_options: view_options::ViewOptions,
     columns: usize,
     size: Entity<orbit_ui::controls::SliderState>,
     transitions: Entity<crate::transitions::TransitionDefaults>,
@@ -297,6 +309,7 @@ impl CueView {
             rows: Vec::new(),
             key: (u64::MAX, String::new(), String::new(), None, false, 0),
             mode: Mode::Easy,
+            view_options: Default::default(),
             columns: 5,
             size,
             transitions,
@@ -547,9 +560,27 @@ impl CueView {
         };
         self.rows.clear();
         for (document, item) in self.documents.iter().enumerate() {
-            for start in (0..item.cues.len()).step_by(columns) {
-                self.rows
-                    .push((document, start, (start + columns).min(item.cues.len())));
+            let mut start = 0;
+            let mut group = String::new();
+            for (index, cue) in item.cues.iter().enumerate() {
+                let next_group = if self.view_options.shown.group_slides {
+                    arrangements::slide_group_id(cue)
+                } else {
+                    String::new()
+                };
+                let new_group = !next_group.is_empty() && next_group != group;
+                if index - start == columns
+                    || self.view_options.shown.group_slides && new_group && index > start
+                {
+                    self.rows.push((document, start, index));
+                    start = index;
+                }
+                if new_group {
+                    group = next_group;
+                }
+            }
+            if start < item.cues.len() {
+                self.rows.push((document, start, item.cues.len()));
             }
         }
         let top = self.scroll.logical_scroll_top();
@@ -701,19 +732,20 @@ impl CueView {
         cx.notify();
     }
     pub fn view_mode(&self) -> &'static str {
-        match self.mode {
-            Mode::Easy => "easy",
-            Mode::Grid => "grid",
-            Mode::Table => "table",
-        }
+        self.mode.key()
     }
     pub fn set_view(&mut self, mode: &str, cx: &mut Context<Self>) {
+        let previous = self.mode;
         match mode {
             "continuous" => self.toggle_continuous(cx),
             "easy" => self.mode = Mode::Easy,
             "grid" => self.mode = Mode::Grid,
             "table" => self.mode = Mode::Table,
             _ => return,
+        }
+        if self.mode != previous {
+            self.visible.clear();
+            self.playlist_scroll.reset(self.playlist_rows.len());
         }
         cx.notify();
     }
@@ -942,11 +974,30 @@ impl CueView {
                 } else {
                     self.columns
                 };
-                let next = if key == "up" {
-                    current.saturating_sub(step)
-                } else {
-                    (current + step).min(self.documents[document].cues.len() - 1)
-                };
+                let adjacent = self
+                    .view_options
+                    .shown
+                    .group_slides
+                    .then(|| {
+                        let row = self.rows.iter().position(|(doc, start, end)| {
+                            *doc == document && (*start..*end).contains(&current)
+                        })?;
+                        let target = if key == "up" {
+                            row.checked_sub(1)?
+                        } else {
+                            row + 1
+                        };
+                        let &(doc, start, end) = self.rows.get(target)?;
+                        (doc == document).then(|| (start + current - self.rows[row].1).min(end - 1))
+                    })
+                    .flatten();
+                let next = adjacent.unwrap_or_else(|| {
+                    if key == "up" {
+                        current.saturating_sub(step)
+                    } else {
+                        (current + step).min(self.documents[document].cues.len() - 1)
+                    }
+                });
                 self.selection_item = self.documents[document].item.id.clone();
                 self.selection_entry = self.documents[document].entry.clone();
                 self.selected = model::selected_indices(
@@ -1253,7 +1304,13 @@ impl CueView {
         }
         cx.notify();
     }
-    fn card(&mut self, document: usize, index: usize, cx: &mut Context<Self>) -> AnyElement {
+    fn card(
+        &mut self,
+        document: usize,
+        index: usize,
+        row: std::ops::Range<usize>,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let item = self.documents[document].clone();
         let cue = item.cues[index].clone();
         let theme = *cx.theme();
@@ -1289,7 +1346,15 @@ impl CueView {
             .and_then(|hex| u32::from_str_radix(hex, 16).ok())
             .map(gpui::rgb)
             .unwrap_or(theme.colors.cue_default);
-        let show_preview = self.mode != Mode::Easy || cue["mediaBackgroundId"].is_string();
+        let text_view = self.mode == Mode::Easy;
+        let options = &self.view_options.shown;
+        let thumbnail_color = options.use_thumbnail_color.then(|| {
+            options
+                .thumbnail_color
+                .clone()
+                .unwrap_or_else(|| view_options::color_hex(theme.colors.preview_matte_bg))
+        });
+        let show_preview = !text_view;
         let snapshot = self.runtime.output.read(cx).snapshot.clone();
         let preview = snapshot.filter(|_| show_preview).map(|snapshot| {
             let host = self.runtime.host.clone();
@@ -1300,7 +1365,7 @@ impl CueView {
                 .or_insert_with(|| cx.new(|cx| Preview::new(host, frames, cx)))
                 .clone();
             let key = format!(
-                "{}:{}:{}:{}:{master}:{}",
+                "{}:{}:{}:{}:{master}:{}:{thumbnail_color:?}",
                 self.runtime.content.read(cx).workspace_path,
                 self.loaded_generation,
                 item.item.id,
@@ -1315,6 +1380,7 @@ impl CueView {
                         item: item.item.clone(),
                         index: master,
                         playlist_id: item.playlist.clone(),
+                        background: thumbnail_color,
                     }),
                     Some(screen_size(&cue)),
                     self.loaded_generation,
@@ -1323,7 +1389,6 @@ impl CueView {
             });
             preview
         });
-        let show_text = self.mode == Mode::Easy && preview.is_none();
         let table = self.mode == Mode::Table;
         let row_height = table_height(self.columns);
         let first_in_group = !group.is_empty()
@@ -1345,8 +1410,11 @@ impl CueView {
         } else {
             String::new()
         };
-        let media_layers =
-            slide_menu::connected_visual_layers(&self.runtime.content.read(cx).workspace, &cue);
+        let media_layers = if !text_view || options.show_media_and_colors {
+            slide_menu::connected_visual_layers(&self.runtime.content.read(cx).workspace, &cue)
+        } else {
+            [false; 2]
+        };
         let label = if first_in_group { label } else { String::new() };
         // `.cue-card-label`: the slide's own label, in its own color.
         let label_chip = cue["label"]
@@ -1392,20 +1460,67 @@ impl CueView {
                 })
                 .into_any_element(),
         );
-        let copy = div()
-            .debug_selector(move || format!("cue-copy-{index}"))
-            .flex_1()
-            .min_w_0()
-            .min_h_0()
-            .overflow_hidden()
-            .p(theme.metrics.space_sm)
-            .text_size(if table {
-                theme.metrics.font_md
-            } else {
-                theme.metrics.font_base
-            })
-            .line_height(gpui::relative(1.18))
-            .child(cue["content"].as_str().unwrap_or("").to_string());
+        let base_font = if table {
+            theme.metrics.font_md
+        } else {
+            theme.metrics.font_base
+        };
+        let font_size = options.font_size.map_or(base_font, |size| {
+            theme.metrics.font_base * (f32::from(size) / 14.)
+        });
+        let text_color = options
+            .text_color
+            .as_deref()
+            .and_then(parse_hex_color)
+            .unwrap_or(theme.colors.text);
+        let authored_color =
+            (text_view && options.show_media_and_colors && cue["backgroundEnabled"] != false)
+                .then(|| {
+                    let slide = if cue.get("background").is_some() {
+                        &cue
+                    } else {
+                        &cue["presentationThemeSnapshot"]
+                    };
+                    orbit_host::native_compositor::opaque_canvas_matte(
+                        slide,
+                        orbit_host::native_compositor::CanvasRenderKind::Presentation,
+                    )
+                    .map(gpui::rgb)
+                })
+                .flatten();
+        let background = if table {
+            options
+                .table_color
+                .as_deref()
+                .and_then(parse_hex_color)
+                .unwrap_or(theme.colors.stage_bg)
+        } else if text_view {
+            authored_color
+                .or_else(|| options.thumbnail_color.as_deref().and_then(parse_hex_color))
+                .unwrap_or(theme.colors.preview_matte_bg)
+        } else {
+            theme.colors.preview_matte_bg
+        };
+        let mut copy = (text_view || table).then(|| {
+            div()
+                .debug_selector(move || format!("cue-copy-{index}"))
+                .flex_1()
+                .min_w_0()
+                .min_h_0()
+                .overflow_hidden()
+                .p(theme.metrics.space_sm)
+                .when(
+                    text_view
+                        && (!shortcut.is_empty() || media_layers.into_iter().any(|shown| shown)),
+                    |el| el.pt(theme.metrics.row_height),
+                )
+                .child(preview_text::text(
+                    cue["content"].as_str().unwrap_or("").to_string(),
+                    options,
+                    font_size,
+                    text_color,
+                ))
+        });
         let mut visual = Some(
             div()
                 .debug_selector(move || format!("cue-visual-{index}"))
@@ -1415,10 +1530,16 @@ impl CueView {
                 .flex_none()
                 .overflow_hidden()
                 .when_some(preview, |el, preview| {
-                    el.child(div().absolute().size_full().child(preview))
+                    el.child(
+                        div()
+                            .debug_selector(move || format!("cue-picture-{index}"))
+                            .absolute()
+                            .size_full()
+                            .child(preview),
+                    )
                 })
-                .when(show_text, |el| {
-                    el.child(div().absolute().size_full().flex().child(copy))
+                .when(text_view, |el| {
+                    el.child(div().absolute().size_full().flex().children(copy.take()))
                 })
                 .into_any_element(),
         );
@@ -1466,11 +1587,7 @@ impl CueView {
                 theme.colors.border_soft
             })
             .when(dragging, |el| el.opacity(0.72).cursor_grabbing())
-            .bg(if table {
-                theme.colors.stage_bg
-            } else {
-                theme.colors.preview_matte_bg
-            })
+            .bg(background)
             .text_color(if disabled {
                 theme.colors.disabled_text
             } else {
@@ -1606,16 +1723,7 @@ impl CueView {
                         .flex()
                         .flex_col()
                         .child(footer.take().unwrap())
-                        .child(
-                            div()
-                                .debug_selector(move || format!("cue-copy-{index}"))
-                                .flex_1()
-                                .min_h_0()
-                                .overflow_hidden()
-                                .p(theme.metrics.space_sm)
-                                .text_size(theme.metrics.font_md)
-                                .child(cue["content"].as_str().unwrap_or("").to_string()),
-                        ),
+                        .children(copy.take()),
                 )
             })
             .when(
@@ -1742,9 +1850,8 @@ impl CueView {
             );
         // The tile clips its children, so the drop marker lives on this wrapper, centred in the gap to the neighbour.
         let metrics = theme.metrics;
-        let columns = self.columns;
-        let row_start = index.is_multiple_of(columns);
-        let row_end = (index + 1).is_multiple_of(columns);
+        let row_start = index == row.start;
+        let row_end = index + 1 == row.end;
         let gap_before = if row_start {
             metrics.field_padding_x
         } else {
@@ -1865,6 +1972,14 @@ impl CueView {
                 cx.notify();
             }))
             .when(before_heading, |row| row.pb(theme.metrics.space_sm))
+            .when(
+                self.mode == Mode::Table
+                    && self.view_options.shown.group_slides
+                    && start > 0
+                    && model::effective_group(&self.documents[document].cues, start)
+                        != model::effective_group(&self.documents[document].cues, start - 1),
+                |row| row.pt(theme.metrics.space_sm),
+            )
             .when(selected, |row| row.bg(theme.colors.selected.opacity(0.20)))
             .when_some(occurrence, |row, (playlist, entry)| {
                 row.debug_selector({
@@ -1894,7 +2009,7 @@ impl CueView {
             })
             .children(
                 (start..end)
-                    .map(|index| self.card(document, index, cx))
+                    .map(|index| self.card(document, index, start..end, cx))
                     .collect::<Vec<_>>(),
             )
             .children((end - start..columns).map(|_| div().flex_1().min_w_0()))
@@ -4103,6 +4218,7 @@ impl Focusable for CueView {
 }
 impl Render for CueView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.sync_view_options(cx);
         self.rebuild(cx);
         self.sync_reflow_item(window, cx);
         let request = self.runtime.ui.read(cx).header_editor.clone();
@@ -4374,15 +4490,11 @@ impl Render for CueView {
                     self.mode,
                 )
                 .on_change(move |mode, _, cx| {
-                    weak.update(cx, |view, cx| {
-                        view.mode = mode;
-                        view.visible.clear();
-                        view.playlist_scroll.reset(view.playlist_rows.len());
-                        cx.notify();
-                    })
-                    .ok();
+                    weak.update(cx, |view, cx| view.set_view(mode.key(), cx))
+                        .ok();
                 }),
             )
+            .child(self.view_options_button(window, cx))
             .child(
                 IconButton::new("cue-continuous", "list", t.t("collections.menu.playlist"))
                     .selected(self.continuous)

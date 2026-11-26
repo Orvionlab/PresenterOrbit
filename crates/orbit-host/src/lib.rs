@@ -62,6 +62,7 @@ mod communication_input_config;
 mod communication_midi;
 mod communication_ross_input;
 mod communication_serial;
+pub mod cue_view_options;
 pub mod diagnostics;
 mod display_names;
 pub mod external_presentation;
