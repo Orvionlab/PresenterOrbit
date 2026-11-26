@@ -152,6 +152,11 @@ fn metadata(value: &Value) -> Value {
         ) => Some("SDR"),
         _ => None,
     };
+    let audio = value["streams"].as_array().and_then(|streams| {
+        streams
+            .iter()
+            .find(|stream| stream["codec_type"] == "audio")
+    });
     json!({
         "codec": stream["codec_name"].as_str().filter(|name| !name.trim().is_empty()),
         "width": positive_number(&stream["width"]),
@@ -159,8 +164,7 @@ fn metadata(value: &Value) -> Value {
         "durationSeconds": positive_number(&stream["duration"]).or_else(|| positive_number(&value["format"]["duration"])),
         "fps": fps,
         "dynamicRange": dynamic_range,
-        "hasAudio": value["streams"].as_array().is_some_and(|streams| {
-            streams.iter().any(|stream| stream["codec_type"] == "audio")
-        })
+        "hasAudio": audio.is_some(),
+        "audioChannels": audio.and_then(|stream| stream["channels"].as_u64())
     })
 }

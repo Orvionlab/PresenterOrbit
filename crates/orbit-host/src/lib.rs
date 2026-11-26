@@ -553,7 +553,7 @@ fn search_library_index(state: &AppState, args: &[Value]) -> Result<Value, Strin
 
 /// Windows monitor APIs can return verbatim device names. Keep IDs untouched
 /// for output routing, but remove the prefix from labels shown to users.
-fn strip_windows_verbatim_prefix(value: &str) -> String {
+pub fn strip_windows_verbatim_prefix(value: &str) -> String {
     const VERBATIM_UNC_PREFIX: &str = "\\\\?\\UNC\\";
     const VERBATIM_PREFIX: &str = "\\\\?\\";
     const DEVICE_PREFIX: &str = "\\\\.\\";
@@ -9108,6 +9108,8 @@ fn tick_timeline_soundtrack(app: &Host, state: &AppState) {
     }
 }
 
+const INSPECTOR_PREVIEW_SIZE: (usize, usize) = (960, 540);
+
 fn update_video_thumbnail(
     state: &AppState,
     method: &str,
@@ -9147,8 +9149,8 @@ fn update_video_thumbnail(
         if !seconds.is_finite()
             || seconds < 0.
             || preview.dynamic_media
-            || (preview.width, preview.height) != (480, 270)
-            || preview.pixels.len() != 480 * 270 * 4
+            || (preview.width, preview.height) != INSPECTOR_PREVIEW_SIZE
+            || preview.pixels.len() != preview.width * preview.height * 4
         {
             return Err(
                 "Inspector thumbnail requires a complete preview frame and a valid time.".into(),

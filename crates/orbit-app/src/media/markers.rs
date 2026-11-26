@@ -150,36 +150,83 @@ impl MediaBin {
         .inline()
         .into_any_element()
     }
+    pub(super) fn move_preview_marker(&mut self, id: &str, seconds: f64, cx: &mut Context<Self>) {
+        if self.edits_blocked() {
+            return;
+        }
+        let Some(item) = self.media.iter().find(|item| item["id"] == self.selected) else {
+            return;
+        };
+        let original = item.get("markers").cloned().unwrap_or_else(|| json!([]));
+        self.marker_baseline.get_or_insert_with(|| original.clone());
+        let Some(marker) = self
+            .marker_draft
+            .get_or_insert(original)
+            .as_array_mut()
+            .and_then(|markers| markers.iter_mut().find(|marker| marker["id"] == id))
+        else {
+            return;
+        };
+        marker["timeSeconds"] = json!(seconds);
+        let transport = &item["mediaTransport"];
+        if seconds < transport["inSeconds"].as_f64().unwrap_or(0.)
+            || transport["outSeconds"]
+                .as_f64()
+                .is_some_and(|end| seconds >= end)
+        {
+            marker["repeatOnLoop"] = json!(false);
+        }
+        self.selected_marker = Some(id.to_owned());
+        self.save_markers(cx);
+    }
+
     pub(super) fn save_markers(&mut self, cx: &mut Context<Self>) {
         let Some(item) = self.media.iter().find(|item| item["id"] == self.selected) else {
             return;
         };
         let current = item.get("markers").cloned().unwrap_or_else(|| json!([]));
-        let Some(draft) = self.marker_draft.clone() else {
+        let Some(draft) = self.marker_draft.as_mut() else {
             return;
         };
         if self.marker_baseline.as_ref() != Some(&current) {
-            self.marker_status = "media.markers.failed".into();
-            cx.notify();
+            self.marker_error("media.markers.failed", cx);
             return;
         }
-        if !valid_markers(&draft, item) || !self.marker_actions_valid(&draft) {
-            self.marker_status = "media.markers.incomplete".into();
-            cx.notify();
+        if !valid_markers(draft, item) {
+            self.marker_error("media.markers.incomplete", cx);
+            return;
+        }
+        if let Some(markers) = draft.as_array_mut() {
+            let time = |marker: &Value| marker["timeSeconds"].as_f64().unwrap_or(f64::INFINITY);
+            if !markers.is_sorted_by(|a, b| time(a) <= time(b)) {
+                markers.sort_by(|a, b| time(a).total_cmp(&time(b)));
+                self.inputs.retain(|key, _| !key.starts_with("marker-"));
+            }
+        }
+        let draft = draft.clone();
+        if !self.marker_actions_valid(&draft) {
+            self.marker_error("media.markers.incomplete", cx);
             return;
         }
         if current != draft {
             self.marker_baseline = Some(draft.clone());
             self.patch_asset("markers", draft, cx);
         }
-        self.marker_status.clear();
         cx.notify();
+    }
+
+    fn marker_error(&self, key: &str, cx: &mut Context<Self>) {
+        let message = cx.global::<Translator>().t(key);
+        self.runtime.status.update(cx, |status, cx| {
+            status.message = message;
+            cx.notify();
+        });
     }
 
     pub(super) fn reset_marker_editor(&mut self) {
         self.marker_draft = None;
+        self.preview_marker_drag = None;
         self.marker_baseline = None;
-        self.marker_status.clear();
         self.marker_menu = None;
         self.marker_editor = None;
         self.selected_marker = None;
@@ -602,14 +649,6 @@ impl MediaBin {
             }
         }
         body = body.children(self.marker_menu(&draft, item, cx));
-        if !self.marker_status.is_empty() {
-            body = body.child(
-                div()
-                    .id("marker-status")
-                    .role(gpui::Role::Status)
-                    .child(t.t(&self.marker_status)),
-            );
-        }
         body.into_any_element()
     }
 }

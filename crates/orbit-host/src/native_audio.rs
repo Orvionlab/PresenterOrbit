@@ -1094,20 +1094,25 @@ impl NativeAudioRegistry {
         }
 
         self.remove_layer(source_id, layer);
-        let file = File::open(path).map_err(|error| {
-            format!(
-                "Cannot open native {} audio '{}': {error}",
-                layer.as_str(),
-                path.display()
-            )
-        })?;
-        let decoder = Decoder::try_from(file).map_err(|error| {
-            format!(
-                "Cannot decode native {} audio '{}': {error}",
-                layer.as_str(),
-                path.display()
-            )
-        })?;
+        let decoder: Box<dyn Source + Send> = if layer == PlaybackLayer::Media {
+            let Some(source) = preview::VideoAudio::open_media(path, 0., looping)? else {
+                return native_source_duration(layer, path, None);
+            };
+            Box::new(source)
+        } else {
+            let file = File::open(path).map_err(|error| {
+                format!(
+                    "Cannot open native music audio '{}': {error}",
+                    path.display()
+                )
+            })?;
+            Box::new(Decoder::try_from(file).map_err(|error| {
+                format!(
+                    "Cannot decode native music audio '{}': {error}",
+                    path.display()
+                )
+            })?)
+        };
         let duration = native_source_duration(
             layer,
             path,
@@ -1147,7 +1152,7 @@ impl NativeAudioRegistry {
             } else {
                 player.append(routed.delay(delay));
             }
-        } else if looping {
+        } else if looping && layer == PlaybackLayer::Music {
             let tapped = TappedSource::new(decoder.repeat_infinite().speed(rate), tap_writer);
             let asset = RoutedSource::new(tapped, asset_routing).amplify(asset_gain);
             let routed = RoutedSource::new(asset, routing).metered();

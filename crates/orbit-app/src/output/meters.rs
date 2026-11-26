@@ -120,34 +120,48 @@ fn bar(fill: f32, success: Rgba, danger: Rgba) -> impl IntoElement {
     column
 }
 
+/// Overlay for a preview surface with levels in the host's 0–100 meter scale.
+pub fn overlay(
+    levels: &[f32],
+    bars: usize,
+    gain_db: f32,
+    selector: &'static str,
+    cx: &gpui::App,
+) -> gpui::Div {
+    let colors = cx.theme().colors;
+    div()
+        .absolute()
+        .top_0()
+        .bottom_0()
+        .left(px(4.))
+        .flex()
+        .items_center()
+        .child(
+            div()
+                .debug_selector(move || selector.into())
+                .flex()
+                .gap(px(2.))
+                .h(px(HEIGHT))
+                .max_h_full()
+                .px(px(2.))
+                .pt(px(4.))
+                .pb(px(2.))
+                .bg(colors.preview_matte_bg)
+                .children((0..bars).map(|channel| {
+                    let percent = levels.get(channel).copied().unwrap_or(0.);
+                    bar(bar_fill(percent, gain_db), colors.success, colors.danger)
+                })),
+        )
+}
+
 impl gpui::Render for ProgramMeters {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let colors = cx.theme().colors;
-        div()
-            .absolute()
-            .top_0()
-            .bottom_0()
-            .left(px(4.))
-            .flex()
-            .items_center()
-            .child(
-                div()
-                    .debug_selector(|| "program-audio-meters".into())
-                    .flex()
-                    .gap(px(2.))
-                    .h(px(HEIGHT))
-                    .px(px(2.))
-                    .pt(px(4.))
-                    .pb(px(2.))
-                    .bg(colors.preview_matte_bg)
-                    .children((0..self.bars).map(|channel| {
-                        let percent = self.levels.get(channel).copied().unwrap_or(0.);
-                        bar(
-                            bar_fill(percent, self.gain_db),
-                            colors.success,
-                            colors.danger,
-                        )
-                    })),
-            )
+        overlay(
+            &self.levels,
+            self.bars,
+            self.gain_db,
+            "program-audio-meters",
+            cx,
+        )
     }
 }

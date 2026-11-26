@@ -144,10 +144,8 @@ pub fn pause_on_first_frame(live: &mut Value) {
 /// `applyPreviewMediaAudioSettings`: the monitor of the inspector plays on its own device, level, and routing;
 /// the delay stays the one of the main output.
 pub fn inspector_audio_settings(audio: &Value) -> Value {
-    let mut settings = audio["main"].clone();
-    for key in ["device", "deviceLabel", "level", "routing"] {
-        settings[key] = audio["inspector"][key].clone();
-    }
+    let mut settings = audio["inspector"].clone();
+    settings["delay"] = audio["main"]["delay"].clone();
     settings
 }
 

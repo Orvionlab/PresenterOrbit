@@ -356,6 +356,7 @@ fn reported_duration(line: &str) -> Option<f64> {
 }
 
 struct VideoDecoder {
+    hardware_disabled: bool,
     receiver: mpsc::Receiver<DecodedVideoFrame>,
     /// The source duration in seconds as `f64` bits; zero until FFmpeg reports it.
     duration: Arc<AtomicU64>,
@@ -613,6 +614,7 @@ impl NativeRenderRuntime {
         &mut self,
         path: &Path,
         playback_state: Option<&Map<String, Value>>,
+        hardware_disabled: bool,
     ) -> Result<Option<&DynamicImage>, String> {
         if !self.video_available {
             return Err(
@@ -677,7 +679,9 @@ impl NativeRenderRuntime {
             return Err("Native video decoder timed out before its first frame.".to_string());
         }
         let restart = self.video_decoders.get(path).is_some_and(|decoder| {
-            decoder.clock_revision != clock_revision || decoder.selection_id != selection_id
+            decoder.clock_revision != clock_revision
+                || decoder.selection_id != selection_id
+                || decoder.hardware_disabled != hardware_disabled
         });
         let previous_frame = restart
             .then(|| {
@@ -732,7 +736,10 @@ impl NativeRenderRuntime {
                     clock_revision,
                     self.video_frame_revision,
                     Arc::clone(&self.video_error),
-                    self.video_max_size,
+                    VideoDecodeOptions {
+                        max_size: self.video_max_size,
+                        hardware_disabled,
+                    },
                 )
             };
             let mut decoder = match decoder_result {
@@ -743,6 +750,7 @@ impl NativeRenderRuntime {
                 }
             };
             decoder.selection_id = selection_id;
+            decoder.hardware_disabled = hardware_disabled;
             let prepare_start =
                 if playback_state.is_some_and(|state| state.contains_key("preparedStart")) {
                     std::mem::take(&mut self.prepare_video_start)
@@ -3057,6 +3065,14 @@ fn json_number(value: &Value) -> Option<f64> {
     parsed.is_finite().then_some(parsed)
 }
 
+// Cache a crashed accelerator for this app process so later seeks start directly in software.
+static HARDWARE_DECODER_CRASHED: AtomicBool = AtomicBool::new(false);
+
+struct VideoDecodeOptions {
+    max_size: Option<(u32, u32)>,
+    hardware_disabled: bool,
+}
+
 fn spawn_video_decoder(
     path: PathBuf,
     start_time: f64,
@@ -3065,64 +3081,73 @@ fn spawn_video_decoder(
     clock_revision: u64,
     last_used_frame: u64,
     shared_error: Arc<Mutex<Option<String>>>,
-    max_size: Option<(u32, u32)>,
+    options: VideoDecodeOptions,
 ) -> Result<VideoDecoder, String> {
+    let VideoDecodeOptions {
+        max_size,
+        hardware_disabled,
+    } = options;
     if !path.is_file() {
         return Err(format!("Video media does not exist: {}", path.display()));
     }
-    let mut command = Command::new(ffmpeg_sidecar::paths::ffmpeg_path());
-    command.args([
-        "-hide_banner",
-        "-loglevel",
-        "info",
-        // Native output is live playback, so spending the default multi-second
-        // probe window before the first frame is not acceptable. The stream is
-        // still decoded normally after this small initial probe.
-        "-analyzeduration",
-        "0",
-        "-probesize",
-        "32k",
-        // Frame threading buffers one frame per thread, delaying live output
-        // even when readrate is correct. Slice threading retains intra-frame
-        // parallelism without that extra frame queue.
-        "-thread_type",
-        "slice",
-    ]);
-    if start_time > 0.0 {
-        command.arg("-ss").arg(format!("{start_time:.3}"));
-    }
-    command.arg("-readrate").arg(format!("{rate:.3}"));
-    if loop_input {
-        command.args(["-stream_loop", "-1"]);
-    }
-    command.arg("-i").arg(&path);
-    let filter = max_size.map_or_else(
-        || "showinfo".to_string(),
-        |(width, height)| {
-            format!("scale={width}:{height}:force_original_aspect_ratio=decrease,showinfo")
-        },
-    );
-    command.args(["-vf", &filter, "-fps_mode", "passthrough"]);
-    command
-        .args([
-            "-an",
-            "-sn",
-            "-f",
-            "image2pipe",
-            "-vcodec",
-            "ppm",
-            "-pix_fmt",
-            "rgb24",
-            "pipe:1",
-        ])
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        command.creation_flags(0x0800_0000);
-    }
+    let command_path = path.clone();
+    let command = move |software| {
+        let mut command = Command::new(ffmpeg_sidecar::paths::ffmpeg_path());
+        command.args([
+            "-hide_banner",
+            "-loglevel",
+            "info",
+            // Native output is live playback, so spending the default multi-second
+            // probe window before the first frame is not acceptable. The stream is
+            // still decoded normally after this small initial probe.
+            "-analyzeduration",
+            "0",
+            "-probesize",
+            "32k",
+            // Frame threading buffers one frame per thread, delaying live output
+            // even when readrate is correct. Slice threading retains intra-frame
+            // parallelism without that extra frame queue.
+            "-thread_type",
+            "slice",
+        ]);
+        if start_time > 0.0 {
+            command.arg("-ss").arg(format!("{start_time:.3}"));
+        }
+        command.arg("-readrate").arg(format!("{rate:.3}"));
+        if loop_input {
+            command.args(["-stream_loop", "-1"]);
+        }
+        command.args(["-hwaccel", if software { "none" } else { "auto" }]);
+        command.arg("-i").arg(&command_path);
+        let filter = max_size.map_or_else(
+            || "showinfo".to_string(),
+            |(width, height)| {
+                format!("scale={width}:{height}:force_original_aspect_ratio=decrease,showinfo")
+            },
+        );
+        command.args(["-vf", &filter, "-fps_mode", "passthrough"]);
+        command
+            .args([
+                "-an",
+                "-sn",
+                "-f",
+                "image2pipe",
+                "-vcodec",
+                "ppm",
+                "-pix_fmt",
+                "rgb24",
+                "pipe:1",
+            ])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            command.creation_flags(0x0800_0000);
+        }
+        command
+    };
     let duration = Arc::new(AtomicU64::new(0));
     let decoder_duration = duration.clone();
     let child: Arc<Mutex<Option<Child>>> = Arc::new(Mutex::new(None));
@@ -3138,100 +3163,129 @@ fn spawn_video_decoder(
     let worker = thread::Builder::new()
         .name("presenter-orbit-video-decoder".to_string())
         .spawn(move || {
-            let result = (|| {
-                if thread_cancellation.load(Ordering::Acquire) {
-                    return Ok(());
-                }
-                let duration = decoder_duration;
-                let mut process = command.spawn().map_err(|error| {
-                    format!("Could not launch FFmpeg for {}: {error}", path.display())
-                })?;
-                let Some(stdout) = process.stdout.take() else {
-                    let _ = process.kill();
-                    let _ = process.wait();
-                    return Err("FFmpeg did not expose its decoded video stream.".to_string());
-                };
-                let Some(stderr) = process.stderr.take() else {
-                    let _ = process.kill();
-                    let _ = process.wait();
-                    return Err("FFmpeg did not expose decoded frame timestamps.".to_string());
-                };
-                let (timestamp_sender, timestamps) = mpsc::sync_channel(8);
-                let reported = Arc::clone(&duration);
-                if let Err(error) = thread::Builder::new()
-                    .name("presenter-orbit-video-timestamps".to_string())
-                    .spawn(move || {
-                        for line in BufReader::new(stderr).lines() {
-                            let Ok(line) = line else {
-                                break;
-                            };
-                            if let Some(seconds) = reported_duration(&line) {
-                                reported.store(seconds.to_bits(), Ordering::Release);
-                            }
-                            if let Some(position) = decoded_frame_position(&line) {
-                                if timestamp_sender.send(position + start_time).is_err() {
-                                    break;
-                                }
-                            }
-                        }
-                    })
-                {
-                    let _ = process.kill();
-                    let _ = process.wait();
-                    return Err(format!("Could not start video timestamp reader: {error}"));
-                }
-
-                {
-                    let mut slot = match thread_child.lock() {
-                        Ok(slot) => slot,
-                        Err(_) => {
-                            let _ = process.kill();
-                            let _ = process.wait();
-                            return Err("Video decoder process state is unavailable.".into());
-                        }
-                    };
+            for software in [
+                hardware_disabled || HARDWARE_DECODER_CRASHED.load(Ordering::Relaxed),
+                true,
+            ] {
+                let mut emitted = false;
+                let result = (|| {
                     if thread_cancellation.load(Ordering::Acquire) {
-                        drop(slot);
-                        let _ = process.kill();
-                        let _ = process.wait();
                         return Ok(());
                     }
-                    *slot = Some(process);
-                }
-                decode_video_loop(
-                    BufReader::new(stdout),
-                    sender,
-                    timestamps,
-                    &thread_cancellation,
-                )
-            })();
-            let process = thread_child.lock().ok().and_then(|mut slot| slot.take());
-            if let Some(mut process) = process {
-                if thread_cancellation.load(Ordering::Acquire) || result.is_err() {
-                    let _ = process.kill();
-                }
-                if let Ok(status) = process.wait() {
-                    if result.is_ok()
-                        && status.success()
-                        && !thread_cancellation.load(Ordering::Acquire)
+                    let duration = decoder_duration.clone();
+                    let mut process = command(software).spawn().map_err(|error| {
+                        format!("Could not launch FFmpeg for {}: {error}", path.display())
+                    })?;
+                    let Some(stdout) = process.stdout.take() else {
+                        let _ = process.kill();
+                        let _ = process.wait();
+                        return Err("FFmpeg did not expose its decoded video stream.".to_string());
+                    };
+                    let Some(stderr) = process.stderr.take() else {
+                        let _ = process.kill();
+                        let _ = process.wait();
+                        return Err("FFmpeg did not expose decoded frame timestamps.".to_string());
+                    };
+                    let (timestamp_sender, timestamps) = mpsc::sync_channel(8);
+                    let reported = Arc::clone(&duration);
+                    if let Err(error) = thread::Builder::new()
+                        .name("presenter-orbit-video-timestamps".to_string())
+                        .spawn(move || {
+                            for line in BufReader::new(stderr).lines() {
+                                let Ok(line) = line else {
+                                    break;
+                                };
+                                if let Some(seconds) = reported_duration(&line) {
+                                    reported.store(seconds.to_bits(), Ordering::Release);
+                                }
+                                if let Some(position) = decoded_frame_position(&line) {
+                                    if timestamp_sender.send(position + start_time).is_err() {
+                                        break;
+                                    }
+                                }
+                            }
+                        })
                     {
-                        thread_eof.store(true, Ordering::Release);
+                        let _ = process.kill();
+                        let _ = process.wait();
+                        return Err(format!("Could not start video timestamp reader: {error}"));
+                    }
+
+                    {
+                        let mut slot = match thread_child.lock() {
+                            Ok(slot) => slot,
+                            Err(_) => {
+                                let _ = process.kill();
+                                let _ = process.wait();
+                                return Err("Video decoder process state is unavailable.".into());
+                            }
+                        };
+                        if thread_cancellation.load(Ordering::Acquire) {
+                            drop(slot);
+                            let _ = process.kill();
+                            let _ = process.wait();
+                            return Ok(());
+                        }
+                        *slot = Some(process);
+                    }
+                    decode_video_loop(
+                        BufReader::new(stdout),
+                        sender.clone(),
+                        timestamps,
+                        &thread_cancellation,
+                        &mut emitted,
+                    )
+                })();
+                let process = thread_child.lock().ok().and_then(|mut slot| slot.take());
+                let result = if let Some(mut process) = process {
+                    if thread_cancellation.load(Ordering::Acquire) || result.is_err() {
+                        let _ = process.kill();
+                    }
+                    let status = process.wait();
+                    #[cfg(windows)]
+                    if !software
+                        && status
+                            .as_ref()
+                            .ok()
+                            .and_then(std::process::ExitStatus::code)
+                            == Some(-1_073_741_819)
+                    {
+                        HARDWARE_DECODER_CRASHED.store(true, Ordering::Relaxed);
+                    }
+                    result.and_then(|()| {
+                        let status =
+                            status.map_err(|error| format!("Cannot wait for FFmpeg: {error}"))?;
+                        if status.success() {
+                            Ok(())
+                        } else {
+                            Err(format!("FFmpeg video decoder exited with {status}."))
+                        }
+                    })
+                } else {
+                    result
+                };
+                if thread_cancellation.load(Ordering::Acquire) {
+                    return;
+                }
+                match result {
+                    Ok(()) => thread_eof.store(true, Ordering::Release),
+                    // An unavailable or faulty hardware backend can fail before producing any picture.
+                    Err(_) if !software && !emitted => continue,
+                    Err(error) => {
+                        if let Ok(mut target) = thread_decode_error.lock() {
+                            *target = Some(error.clone());
+                        }
+                        if let Ok(mut target) = shared_error.lock() {
+                            *target = Some(error);
+                        }
                     }
                 }
-            }
-            if !thread_cancellation.load(Ordering::Acquire) {
-                if let Err(error) = result {
-                    if let Ok(mut target) = thread_decode_error.lock() {
-                        *target = Some(error.clone());
-                    }
-                    if let Ok(mut target) = shared_error.lock() {
-                        *target = Some(error);
-                    }
-                }
+                break;
             }
         })
         .map_err(|error| format!("Could not start video decoder: {error}"))?;
     Ok(VideoDecoder {
+        hardware_disabled: false,
         receiver,
         duration,
         ended: false,
@@ -3305,6 +3359,7 @@ fn spawn_reverse_video_decoder(
         .map_err(|error| format!("Could not start reverse video sampler: {error}"))?;
 
     Ok(VideoDecoder {
+        hardware_disabled: false,
         receiver,
         duration,
         ended: false,
@@ -3589,6 +3644,7 @@ fn decode_video_loop(
     sender: mpsc::SyncSender<DecodedVideoFrame>,
     timestamps: mpsc::Receiver<f64>,
     cancellation: &AtomicBool,
+    emitted: &mut bool,
 ) -> Result<(), String> {
     let mut pending_frame = None;
     while !cancellation.load(Ordering::Acquire) {
@@ -3618,7 +3674,10 @@ fn decode_video_loop(
             .recv_timeout(FIRST_VIDEO_FRAME_TIMEOUT)
             .map_err(|error| format!("Decoded video frame timestamp is unavailable: {error}"))?;
         match sender.try_send(DecodedVideoFrame { image, position }) {
-            Ok(()) => pending_frame = None,
+            Ok(()) => {
+                *emitted = true;
+                pending_frame = None;
+            }
             Err(mpsc::TrySendError::Full(frame)) => pending_frame = Some(frame),
             Err(mpsc::TrySendError::Disconnected(_)) => return Ok(()),
         }

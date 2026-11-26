@@ -69,10 +69,11 @@ EOF
   fi
   "$CC" --version > "$source_dir/compiler-version.txt"
   x264_flags+=(--host="${cross_prefix%-}" --cross-prefix="$cross_prefix" --extra-ldflags=-static)
-  ffmpeg_flags+=(--target-os=mingw32 --arch="$cpu" --cc="$CC" --enable-cross-compile --cross-prefix="$cross_prefix" --disable-pthreads --enable-w32threads --extra-ldflags=-static)
+  ffmpeg_flags+=(--target-os=mingw32 --enable-d3d11va --arch="$cpu" --cc="$CC" --enable-cross-compile --cross-prefix="$cross_prefix" --disable-pthreads --enable-w32threads --extra-ldflags=-static)
 elif [[ "$platform" == macos ]]; then
   [[ $(uname -s) == Darwin ]] || { echo 'macOS FFmpeg must be built on macOS.' >&2; exit 1; }
   export MACOSX_DEPLOYMENT_TARGET=10.15
+  ffmpeg_flags+=(--enable-videotoolbox)
   clang --version > "$source_dir/compiler-version.txt"
   if [[ "$architecture" == arm64 ]]; then
     export MACOSX_DEPLOYMENT_TARGET=11.0

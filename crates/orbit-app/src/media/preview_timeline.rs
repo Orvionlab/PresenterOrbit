@@ -21,6 +21,13 @@ pub(super) struct TrimDrag {
     range: TrimRange,
 }
 
+pub(super) struct MarkerDrag {
+    id: String,
+    origin: Pixels,
+    initial: f64,
+    position: Option<f64>,
+}
+
 impl TrimRange {
     pub(super) fn from_asset(item: &Value, duration: f64) -> Self {
         let trim = &item[trim_field(item)];
@@ -112,13 +119,6 @@ impl MediaBin {
         };
         self.inputs.remove("preview-in-point");
         self.inputs.remove("preview-out-point");
-        if field == "mediaTransport" {
-            if let Some(draft) = &mut self.transport_draft {
-                draft["inSeconds"] = updated["inSeconds"].clone();
-                draft["outSeconds"] = updated["outSeconds"].clone();
-                self.transport_baseline = Some(updated.clone());
-            }
-        }
         self.patch_asset(field, updated, cx);
         self.preview_seek(self.preview_position.clamp(range.start, range.end), cx);
     }
@@ -127,6 +127,18 @@ impl MediaBin {
         self.preview_trim_drag
             .as_ref()
             .map_or_else(|| TrimRange::from_asset(item, duration), |drag| drag.range)
+    }
+
+    fn finish_marker_drag(&mut self, cx: &mut Context<Self>) {
+        let Some(drag) = self.preview_marker_drag.take() else {
+            return;
+        };
+        if let Some(seconds) = drag.position {
+            self.move_preview_marker(&drag.id, seconds, cx);
+        } else {
+            self.preview_seek(drag.initial, cx);
+        }
+        cx.notify();
     }
 
     pub(super) fn preview_timeline(
@@ -138,10 +150,12 @@ impl MediaBin {
         let t = *cx.global::<Translator>();
         let theme = *cx.theme();
         let m = theme.metrics;
+        let marker_size = m.space_lg + m.space_xs;
         let saved = TrimRange::from_asset(item, duration);
         let range = self.displayed_preview_trim(item, duration);
         let percent = |seconds: f64| gpui::relative((seconds / duration).clamp(0., 1.) as f32);
-        let bounds = Rc::new(Cell::new(None));
+        let bounds = Rc::new(Cell::new(None::<Bounds<Pixels>>));
+        let motion_marker = bounds.clone();
         let (paint, press, motion, release, release_out) = (
             bounds.clone(),
             bounds.clone(),
@@ -158,13 +172,20 @@ impl MediaBin {
             .flatten()
             .enumerate()
             .filter_map(|(index, marker)| {
+                let id = text(marker, "id").to_owned();
                 let seconds = marker["timeSeconds"]
                     .as_f64()
                     .filter(|seconds| (0. ..=duration).contains(seconds))?;
+                let display_time = self
+                    .preview_marker_drag
+                    .as_ref()
+                    .filter(|drag| drag.id == id)
+                    .and_then(|drag| drag.position)
+                    .unwrap_or(seconds);
                 let label = format!(
                     "{} ({})",
                     text(marker, "title"),
-                    crate::automation::form::format_time(seconds)
+                    crate::automation::form::format_time(display_time)
                 );
                 let color = marker["color"]
                     .as_str()
@@ -172,24 +193,33 @@ impl MediaBin {
                     .unwrap_or(theme.colors.accent);
                 Some(
                     div()
-                        .id(("preview-marker", index))
+                        .id(SharedString::from(format!("preview-marker-{id}")))
                         .debug_selector(move || format!("preview-marker-{index}"))
                         .absolute()
-                        .left(percent(seconds))
+                        .left(percent(display_time))
                         .top_0()
-                        .ml(-m.space_md / 2.)
-                        .size(m.space_md)
+                        .ml(-marker_size / 2.)
+                        .size(marker_size)
                         .cursor_pointer()
                         .child(
                             orbit_ui::icon("media-marker-tag")
-                                .size(m.space_md)
+                                .size(marker_size)
                                 .text_color(color),
                         )
                         .tooltip(tooltip_text(label))
                         .on_mouse_down(
                             MouseButton::Left,
-                            cx.listener(move |this, _, _, cx| {
-                                this.preview_seek(seconds, cx);
+                            cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
+                                if this.edits_blocked() {
+                                    this.preview_seek(seconds, cx);
+                                } else {
+                                    this.preview_marker_drag = Some(MarkerDrag {
+                                        id: id.clone(),
+                                        origin: event.position.x,
+                                        initial: seconds,
+                                        position: None,
+                                    });
+                                }
                                 cx.stop_propagation();
                             }),
                         ),
@@ -197,11 +227,44 @@ impl MediaBin {
             })
             .collect::<Vec<_>>();
         div()
+            .id("preview-timeline-controls")
             .flex_none()
             .flex()
             .flex_col()
             .mx(m.space_xs)
-            .child(div().relative().h(m.space_md).children(markers))
+            .on_mouse_move(
+                cx.listener(move |this, event: &gpui::MouseMoveEvent, _, cx| {
+                    let Some(drag) = this.preview_marker_drag.as_mut() else {
+                        return;
+                    };
+                    if event.pressed_button != Some(MouseButton::Left) {
+                        this.preview_marker_drag = None;
+                        cx.notify();
+                        return;
+                    }
+                    let Some(area) = motion_marker.get() else {
+                        return;
+                    };
+                    let delta = event.position.x - drag.origin;
+                    if area.size.width > gpui::px(0.)
+                        && (drag.position.is_some() || delta.abs() >= m.space_2xs)
+                    {
+                        let fraction = f64::from(f32::from(delta) / f32::from(area.size.width));
+                        drag.position =
+                            Some((drag.initial + duration * fraction).clamp(0., duration));
+                        cx.notify();
+                    }
+                }),
+            )
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|this, _, _, cx| this.finish_marker_drag(cx)),
+            )
+            .on_mouse_up_out(
+                MouseButton::Left,
+                cx.listener(|this, _, _, cx| this.finish_marker_drag(cx)),
+            )
+            .child(div().relative().h(marker_size).children(markers))
             .child(
                 div()
                     .id("preview-timeline")

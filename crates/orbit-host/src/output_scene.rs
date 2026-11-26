@@ -150,6 +150,8 @@ pub struct OutputScene {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub background_media_type: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub background_media_hardware_decoding: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub background_desaturate: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub background_brightness: Option<f64>,
@@ -1649,6 +1651,7 @@ fn build_screen_scene_base(
         },
         background: stage_background,
         background_media_type: Some(background.media_type),
+        background_media_hardware_decoding: background.hardware_decoding,
         background_desaturate: background.desaturate,
         background_brightness: background.brightness,
         background_contrast: background.contrast,
@@ -1763,6 +1766,7 @@ struct BackgroundOutput {
     transport: Option<Value>,
     css: String,
     media_type: String,
+    hardware_decoding: Option<String>,
     media_path: String,
     media_url: String,
     selection_id: Value,
@@ -1836,6 +1840,7 @@ fn build_background_output(input: &OutputSceneStateInput, media_visible: bool) -
             transport: None,
             css: "#000".to_string(),
             media_type: String::new(),
+            hardware_decoding: None,
             media_path: String::new(),
             media_url: String::new(),
             selection_id: json!(""),
@@ -1999,6 +2004,10 @@ fn build_background_output(input: &OutputSceneStateInput, media_visible: bool) -
         transport,
         css,
         media_type,
+        hardware_decoding: background_id
+            .as_deref()
+            .and_then(|id| input.media.iter().find(|media| media["id"] == id))
+            .and_then(|media| string_field(media, "mediaHardwareDecoding")),
         media_path,
         media_url,
         selection_id,

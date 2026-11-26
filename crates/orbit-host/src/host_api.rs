@@ -56,6 +56,8 @@ impl Host {
         workspace: &str,
         mut item: Value,
         seconds: f64,
+        stream: &mut Option<native_compositor::NativeCompositor>,
+        clock_revision: Option<u64>,
     ) -> Result<native_compositor::NativeFrame, String> {
         if !seconds.is_finite() || seconds < 0. {
             return Err("Preview position must be finite and non-negative.".into());
@@ -69,14 +71,22 @@ impl Host {
         }
         item["type"] = json!(if video { "Video" } else { "Image" });
         item["mediaType"] = json!(if video { "video" } else { "image" });
-        item["bounds"] = json!({"x":0,"y":0,"width":480,"height":270});
-        item["mediaPlaybackState"] =
-            json!({"status":"paused","currentTime":seconds,"clockRevision":seconds.to_bits()});
-        let scene = json!({"backgroundCss":"#000000","presentationThemeSlide":{"width":480,"height":270,"layers":[item]}});
-        let mut compositor = native_compositor::NativeCompositor::new_static_preview();
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        let (width, height) = INSPECTOR_PREVIEW_SIZE;
+        item["bounds"] = json!({"x":0,"y":0,"width":width,"height":height});
+        item["mediaPlaybackState"] = json!({
+            "status": if clock_revision.is_some() { "playing" } else { "paused" },
+            "currentTime": seconds,
+            "clockRevision": clock_revision.unwrap_or_else(|| seconds.to_bits())
+        });
+        let scene = json!({"backgroundCss":"#000000","presentationThemeSlide":{"width":width,"height":height,"layers":[item]}});
+        if clock_revision.is_none() {
+            *stream = None;
+        }
+        let compositor =
+            stream.get_or_insert_with(native_compositor::NativeCompositor::new_static_preview);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
         loop {
-            let frame = compositor.try_render_preview_for("media-asset", &scene, 480, 270)?;
+            let frame = compositor.try_render_preview_for("media-asset", &scene, width, height)?;
             if !frame.dynamic_media {
                 return Ok(frame);
             }

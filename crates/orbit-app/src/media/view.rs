@@ -77,7 +77,6 @@ pub struct MediaBin {
     maintenance_error: String,
     marker_draft: Option<Value>,
     marker_baseline: Option<Value>,
-    marker_status: String,
     marker_menu: Option<(Option<String>, gpui::Point<gpui::Pixels>)>,
     marker_editor: Option<(String, markers::MarkerEditor)>,
     selected_marker: Option<String>,
@@ -89,6 +88,7 @@ pub struct MediaBin {
     inspector_transition: Option<Entity<crate::transitions::TransitionDefaults>>,
     preview_position: f64,
     preview_trim_drag: Option<preview_timeline::TrimDrag>,
+    preview_marker_drag: Option<preview_timeline::MarkerDrag>,
     details: std::collections::HashMap<String, assets::AssetDetails>,
     preparation: preload::Preparation,
     grid_columns: usize,
@@ -101,15 +101,14 @@ pub struct MediaBin {
     library_menu: Option<(gpui::Point<gpui::Pixels>, bool)>,
     library_menu_id: Option<String>,
     library_drop: Option<(String, String)>,
-    transport_draft: Option<Value>,
     transport_rate_slider: Option<(Entity<orbit_ui::controls::SliderState>, Subscription)>,
-    transport_baseline: Option<Value>,
     menu_position: Option<gpui::Point<gpui::Pixels>>,
     clipboard: Option<Value>,
     graphics_drop: Option<(String, bool, String)>,
     effect_preview: Entity<orbit_ui::FrameView>,
     effect_preview_key: Value,
     rendered_media_preview: Option<effects::MediaPreviewFrame>,
+    queued_thumbnail: Option<effects::ThumbnailCapture>,
     pending_thumbnail: Option<(String, Option<std::sync::Arc<gpui::RenderImage>>)>,
     maintenance: Option<(bool, Value)>,
     maintenance_request: u64,
@@ -118,6 +117,7 @@ pub struct MediaBin {
     effect_catalog: Vec<Value>,
     inputs: inspector::Inputs,
     preview: Arc<Mutex<orbit_host::PreviewAudio>>,
+    preview_stream: Arc<Mutex<Option<orbit_host::native_compositor::NativeCompositor>>>,
     preview_generation: Arc<AtomicU64>,
     runtime: Runtime,
     grid: bool,
@@ -211,7 +211,7 @@ impl MediaBin {
         let meter = preview.clone();
         cx.spawn(async move |this, cx| loop {
             cx.background_executor()
-                .timer(Duration::from_millis(50))
+                .timer(Duration::from_millis(33))
                 .await;
             if this.upgrade().is_none() {
                 cx.background_spawn(async move {
@@ -291,7 +291,6 @@ impl MediaBin {
             maintenance_error: String::new(),
             marker_draft: None,
             marker_baseline: None,
-            marker_status: String::new(),
             marker_menu: None,
             marker_editor: None,
             selected_marker: None,
@@ -303,6 +302,7 @@ impl MediaBin {
             inspector_transition: None,
             preview_position: 0.,
             preview_trim_drag: None,
+            preview_marker_drag: None,
             details: Default::default(),
             preparation: Default::default(),
             grid_columns: 7,
@@ -323,9 +323,7 @@ impl MediaBin {
             library_menu: None,
             library_drop: None,
             library_menu_id: None,
-            transport_draft: None,
             transport_rate_slider: None,
-            transport_baseline: None,
             menu_position: None,
             clipboard: None,
             graphics_drop: None,
@@ -333,6 +331,7 @@ impl MediaBin {
             effect_preview: cx.new(|cx| orbit_ui::FrameView::new(|_, _| {}, cx)),
             effect_preview_key: Value::Null,
             rendered_media_preview: None,
+            queued_thumbnail: None,
             pending_thumbnail: None,
             maintenance: None,
             maintenance_request: 0,
@@ -342,6 +341,7 @@ impl MediaBin {
             inputs: Default::default(),
             preview,
             preview_generation: Arc::new(AtomicU64::new(0)),
+            preview_stream: Arc::default(),
             runtime,
             grid: true,
             audio: false,
@@ -415,12 +415,11 @@ impl MediaBin {
             self.effect_preview_key = Value::Null;
             self.rendered_media_preview = None;
             self.pending_thumbnail = None;
+            self.queued_thumbnail = None;
             self.maintenance_request += 1;
             self.effect_menu = None;
             self.effect_preset_dialog = None;
-            self.transport_draft = None;
             self.transport_rate_slider = None;
-            self.transport_baseline = None;
             for (_, details) in self.details.drain() {
                 if let Some(image) = details.image {
                     cx.drop_image(image, None);
@@ -467,16 +466,6 @@ impl MediaBin {
             return;
         }
         self.media = media.clone();
-        if let Some(draft) = self.transport_draft.as_ref() {
-            if self
-                .media
-                .iter()
-                .find(|item| item["id"] == self.selected)
-                .is_some_and(|item| &item["mediaTransport"] == draft)
-            {
-                self.transport_baseline = Some(draft.clone());
-            }
-        }
         self.libraries = libraries.clone();
         self.file_unassigned(cx);
         self.rebuild();
@@ -502,9 +491,7 @@ impl MediaBin {
         self.preview_position = 0.;
         self.effect_preview_key = Value::Null;
         self.inputs.clear();
-        self.transport_draft = None;
         self.transport_rate_slider = None;
-        self.transport_baseline = None;
         self.reset_marker_editor();
         self.effect_menu = None;
         self.effect_preset_dialog = None;
@@ -649,7 +636,7 @@ impl MediaBin {
     pub(super) fn mutate_saved(
         &mut self,
         method: &'static str,
-        mut args: Vec<Value>,
+        args: Vec<Value>,
         cx: &mut Context<Self>,
     ) {
         if self.busy || self.workspace.is_empty() {
@@ -669,28 +656,19 @@ impl MediaBin {
         let previous_libraries = self.libraries.clone();
         self.busy = true;
         let thumbnail = matches!(method, "setVideoThumbnail" | "resetVideoThumbnail");
-        let captured = self
-            .rendered_media_preview
-            .as_ref()
-            .filter(|frame| {
-                method == "setVideoThumbnail"
-                    && frame.key[0] == self.workspace
-                    && args
-                        .get(1)
-                        .is_some_and(|seconds| self.preview_playing || frame.key[2] == *seconds)
-                    && self
-                        .media
-                        .iter()
-                        .find(|asset| asset["id"] == self.selected)
-                        .is_some_and(|asset| frame.key[1] == effects::visual_asset(asset))
-            })
-            .cloned();
-        if let Some(frame) = &captured {
-            args[1] = frame.key[2].clone();
-        }
+        let captured = if method == "setVideoThumbnail" {
+            self.queued_thumbnail
+                .take()
+                .and_then(|capture| capture.frame)
+        } else {
+            None
+        };
         if thumbnail {
             self.pending_thumbnail = Some((
-                self.selected.clone(),
+                args.first()
+                    .and_then(Value::as_str)
+                    .unwrap_or(&self.selected)
+                    .to_owned(),
                 captured.as_ref().map(|frame| frame.image.clone()),
             ));
             if captured.is_some() {
@@ -953,7 +931,6 @@ impl MediaBin {
                                 })
                             {
                                 this.marker_baseline = Some(draft.clone());
-                                this.marker_status = "media.markers.saved".into();
                             }
                         }
                         if let Some(id) = response["selectedMediaLibraryId"]
@@ -1017,7 +994,6 @@ impl MediaBin {
                                     .map(|item| {
                                         item.get("markers").cloned().unwrap_or_else(|| json!([]))
                                     });
-                                this.marker_status = "media.markers.failed".into();
                             }
                             if matches!(method, "setVideoThumbnail" | "resetVideoThumbnail") {
                                 this.thumbnail_status = format!(
@@ -1042,6 +1018,7 @@ impl MediaBin {
                         });
                     }
                 }
+                this.flush_thumbnail(cx);
                 cx.notify();
             });
         })
@@ -1070,14 +1047,30 @@ impl MediaBin {
             .find(|item| item["id"] == self.selected)
             .cloned();
         let preview = self.preview.clone();
-        let settings = model::inspector_audio_settings(
-            &self.runtime.output.read(cx).settings["audioSettings"],
+        let stream = self.preview_stream.clone();
+        let audio = crate::settings::audio_logic::get_audio_settings(
+            &self.runtime.output.read(cx).settings,
         );
+        let settings = model::inspector_audio_settings(&audio);
+        let silent_video = source
+            .as_ref()
+            .is_some_and(|source| source["type"] == "video")
+            && self
+                .details
+                .get(&self.selected)
+                .is_some_and(|details| details.metadata["hasAudio"] == false);
         let guard = self.preview_generation.clone();
         let generation = guard.fetch_add(1, Ordering::AcqRel) + 1;
         cx.spawn(async move |this, cx| {
             let result = cx
                 .background_spawn(async move {
+                    if !play && guard.load(Ordering::Acquire) == generation {
+                        if let Ok(mut stream) = stream.lock() {
+                            if guard.load(Ordering::Acquire) == generation {
+                                *stream = None;
+                            }
+                        }
+                    }
                     let mut preview = preview
                         .lock()
                         .map_err(|_| "Preview audio is unavailable.".to_string())?;
@@ -1085,7 +1078,7 @@ impl MediaBin {
                         return Ok(());
                     }
                     preview.stop();
-                    if !play {
+                    if !play || silent_video {
                         return Ok(());
                     }
                     let source = source.ok_or("Select media to preview.")?;
@@ -1098,6 +1091,7 @@ impl MediaBin {
                         source.get("audioRouting"),
                         seconds,
                         end,
+                        source["type"] == "video",
                     )
                 })
                 .await;
@@ -1759,9 +1753,7 @@ impl MediaBin {
                     this.effect_preview_key = Value::Null;
                     this.select_asset(&menu_id, cx);
                     this.inputs.clear();
-                    this.transport_draft = None;
                     this.transport_rate_slider = None;
-                    this.transport_baseline = None;
                     this.thumbnail_status.clear();
                     this.reset_marker_editor();
                     this.menu_position = Some(event.position);
@@ -1800,9 +1792,7 @@ impl MediaBin {
                     }
                 }
                 this.inputs.clear();
-                this.transport_draft = None;
                 this.transport_rate_slider = None;
-                this.transport_baseline = None;
                 this.reset_marker_editor();
                 this.audition(false, cx);
                 this.preview_position = 0.;

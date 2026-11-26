@@ -2995,14 +2995,32 @@ fn audio_inspector_trim_reopens_and_preview_jumps_respect_the_range(cx: &mut Tes
 fn media_inspector_keeps_tabs_and_close_visible_while_audio_routing_scrolls(
     cx: &mut TestAppContext,
 ) {
+    let files = support::Folder::new();
+    let wav = files.0.join("Inspector audio.wav");
+    audio_fixture(&wav, 440.);
+    let source = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tests/fixtures/propresenter/orbit-int12-video.mp4");
+    let video = files.0.join("Inspector video.mp4");
+    let muxed = std::process::Command::new("ffmpeg")
+        .args(["-v", "error", "-i"])
+        .arg(source)
+        .arg("-i")
+        .arg(wav)
+        .args(["-c:v", "copy", "-c:a", "aac", "-shortest"])
+        .arg(&video)
+        .output()
+        .unwrap();
+    assert!(
+        muxed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&muxed.stderr)
+    );
     let mut app = Scenario::new(cx, false, |host| {
         let path =
             host.invoke("getSettings", vec![]).unwrap()["presenterOrbitWorkspacePath"].clone();
         let snapshot = host
             .invoke("readWorkspaceSnapshot", vec![path.clone()])
             .unwrap();
-        let video = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../tests/fixtures/propresenter/orbit-int12-video.mp4");
         let channels: Vec<_> = (1..=6)
             .map(|source| json!({"sourceChannel":source,"outputs":[1],"muted":false}))
             .collect();
@@ -3012,6 +3030,7 @@ fn media_inspector_keeps_tabs_and_close_visible_while_audio_routing_scrolls(
                 path,
                 json!([{
                     "id":"inspector-video","title":"Inspector video","type":"video",
+                    "mediaTransport":{"inSeconds":0,"outSeconds":null,"rate":1,"delaySeconds":10,"retrigger":"automatic"},
                     "libraryId":"default-graphics","sourcePath":video,
                     "audioRouting":{"gainDb":0,"channels":channels},
                     "markers":[{"id":"inspector-marker","title":"Beat","timeSeconds":1.5,"repeatOnLoop":false,"actions":[]}]
@@ -3027,6 +3046,11 @@ fn media_inspector_keeps_tabs_and_close_visible_while_audio_routing_scrolls(
     context(&mut visual, "media-item-inspector-video");
     click(&mut visual, "menu-item-Inspector...");
 
+    app.wait(cx, |app, cx| {
+        app.visual(cx)
+            .debug_bounds("inspector-audio-meters")
+            .is_some()
+    });
     let tabs = visual.debug_bounds("media-inspector-tab-bar").unwrap();
     let close = visual.debug_bounds("dialog-close").unwrap();
     let viewport = visual.update(|window, _| window.viewport_size());
@@ -3075,14 +3099,33 @@ fn media_inspector_keeps_tabs_and_close_visible_while_audio_routing_scrolls(
                 && workspace["layerTransitions"] == initial_defaults
         })
     });
-    click(&mut visual, "transition-use-default");
+    visual.simulate_keystrokes("escape");
+    visual.run_until_parked();
+    let slider = visual.debug_bounds("media-transition-duration").unwrap();
+    let position = gpui::point(slider.left() + slider.size.width * 0.55, slider.center().y);
+    visual.simulate_click(position, Default::default());
+    app.wait(cx, |_, cx| {
+        cx.update(|cx| {
+            runtime.content.read(cx).workspace["media"][0]["backgroundTransition"]
+                .as_str()
+                .and_then(|value| {
+                    orbit_host::native_transitions::media_transition(value)
+                        .ok()
+                        .flatten()
+                })
+                .is_some_and(|transition| {
+                    transition["durationSeconds"]
+                        .as_f64()
+                        .is_some_and(|duration| duration > 2.)
+                })
+        })
+    });
+    click(&mut visual, "button-media-transition-clear");
     app.wait(cx, |_, cx| {
         cx.update(|cx| {
             runtime.content.read(cx).workspace["media"][0]["backgroundTransition"] == "none"
         })
     });
-    visual.simulate_keystrokes("escape");
-    visual.run_until_parked();
     tab(&mut visual, 1.);
     assert_eq!(visual.debug_bounds("media-inspector-tab-bar"), Some(tabs));
     tab(&mut visual, 4.);
@@ -3164,14 +3207,30 @@ fn media_inspector_keeps_tabs_and_close_visible_while_audio_routing_scrolls(
             .debug_bounds("media-inspector-current-frame")
             .is_some()
     });
+    let release_writes = support::hold_workspace_writes(&app, cx);
     click(&mut visual, "button-media.thumbnail.capture");
     assert_eq!(visual.debug_bounds("preview-timeline"), Some(timeline));
+    visual.simulate_click(
+        gpui::point(
+            timeline.left() + timeline.size.width * 0.6,
+            timeline.center().y,
+        ),
+        Default::default(),
+    );
+    visual.run_until_parked();
+    app.wait(cx, |app, cx| {
+        app.visual(cx)
+            .debug_bounds("media-inspector-current-frame")
+            .is_some()
+    });
+    click(&mut visual, "button-media.thumbnail.capture");
+    release_writes.send(()).unwrap();
     app.wait(cx, |app, cx| {
         cx.update(|cx| {
             let workspace = &runtime.content.read(cx).workspace;
             workspace["media"][0]["thumbnailTimeSeconds"]
                 .as_f64()
-                .is_some_and(|seconds| (seconds - 1.2).abs() < 0.01)
+                .is_some_and(|seconds| (seconds - 2.4).abs() < 0.01)
                 && workspace["media"][0]["thumbnailFile"].is_string()
         }) && app
             .visual(cx)
@@ -3187,8 +3246,8 @@ fn media_inspector_keeps_tabs_and_close_visible_while_audio_routing_scrolls(
             .unwrap()
             .join("Media")
             .join(saved["media"][0]["thumbnailFile"].as_str().unwrap());
-    assert_eq!(image::image_dimensions(thumbnail).unwrap(), (480, 270));
-    assert!((saved["media"][0]["thumbnailTimeSeconds"].as_f64().unwrap() - 1.2).abs() < 0.01);
+    assert_eq!(image::image_dimensions(thumbnail).unwrap(), (960, 540));
+    assert!((saved["media"][0]["thumbnailTimeSeconds"].as_f64().unwrap() - 2.4).abs() < 0.01);
     assert!(visual.debug_bounds("preview-marker-0").is_some());
     let timeline = visual.debug_bounds("preview-timeline").unwrap();
     for (edge, fraction) in [("preview-trim-start", 0.25), ("preview-trim-end", 0.75)] {
@@ -3219,6 +3278,33 @@ fn media_inspector_keeps_tabs_and_close_visible_while_audio_routing_scrolls(
         });
     }
     tab(&mut visual, 1.);
+    assert!(visual.debug_bounds("button-transport-save").is_none());
+    let scroll = visual.debug_bounds("media-inspector-scroll").unwrap();
+    visual.simulate_event(gpui::ScrollEvent {
+        position: scroll.center(),
+        delta: gpui::ScrollDelta::Pixels(gpui::point(gpui::px(0.), gpui::px(-200.))),
+        modifiers: Default::default(),
+        touch_phase: gpui::TouchPhase::Moved,
+        source: gpui::ScrollSource::Pointer,
+    });
+    visual.run_until_parked();
+    assert!(scroll.contains(
+        &visual
+            .debug_bounds("mediaTransport.delaySeconds")
+            .unwrap()
+            .center()
+    ));
+    click(&mut visual, "mediaTransport.delaySeconds");
+    support::primary_shortcut(&mut visual, "a");
+    visual.simulate_keystrokes("backspace");
+    click(&mut visual, "preview-in-point");
+    app.wait(cx, |_, cx| {
+        cx.update(|cx| {
+            let content = runtime.content.read(cx);
+            let transport = &content.workspace["media"][0]["mediaTransport"];
+            transport["delaySeconds"] == 0. && transport["retrigger"] == "automatic"
+        })
+    });
     click(&mut visual, "preview-in-point");
     support::primary_shortcut(&mut visual, "a");
     visual.simulate_input("00:00:00.500");
@@ -3293,7 +3379,15 @@ fn media_inspector_keeps_tabs_and_close_visible_while_audio_routing_scrolls(
         })
     });
     assert_eq!(app.snapshot()["media"][0]["markers"][0]["title"], "Chorus");
-    for count in 2..=3 {
+    for (count, fraction) in [(2, 0.35), (3, 0.5)] {
+        visual.simulate_click(
+            gpui::point(
+                timeline.left() + timeline.size.width * fraction,
+                timeline.center().y,
+            ),
+            Default::default(),
+        );
+        visual.run_until_parked();
         click(&mut visual, "button-marker-add");
         app.wait(cx, |_, cx| {
             cx.update(|cx| {
@@ -3305,8 +3399,25 @@ fn media_inspector_keeps_tabs_and_close_visible_while_audio_routing_scrolls(
     }
     let saved = app.snapshot();
     let markers = saved["media"][0]["markers"].as_array().unwrap();
-    assert!(markers[1]["color"].is_string() && markers[2]["color"].is_string());
-    assert_ne!(markers[1]["color"], markers[2]["color"]);
+    assert!(markers[0]["color"].is_string() && markers[1]["color"].is_string());
+    assert_ne!(markers[0]["color"], markers[1]["color"]);
+    let from = visual.debug_bounds("preview-marker-2").unwrap().center();
+    let to = gpui::point(timeline.left() + timeline.size.width * 0.25, from.y);
+    visual.simulate_mouse_down(from, gpui::MouseButton::Left, Default::default());
+    visual.simulate_mouse_move(to, Some(gpui::MouseButton::Left), Default::default());
+    visual.simulate_mouse_up(to, gpui::MouseButton::Left, Default::default());
+    app.wait(cx, |_, cx| {
+        cx.update(|cx| {
+            let content = runtime.content.read(cx);
+            let markers = content.workspace["media"][0]["markers"].as_array().unwrap();
+            markers[0]["id"] == "inspector-marker"
+                && markers[0]["timeSeconds"]
+                    .as_f64()
+                    .is_some_and(|time| (time - 1.).abs() < 0.04)
+                && markers
+                    .is_sorted_by_key(|marker| marker["timeSeconds"].as_f64().unwrap().to_bits())
+        })
+    });
 }
 
 #[gpui::test]
@@ -3360,6 +3471,16 @@ fn media_inspector_adds_edits_and_manages_linked_effect_presets(cx: &mut TestApp
         stored(cx)["media"][0]["mediaEffects"][0]["enabled"] == true
     });
 
+    let slider = visual
+        .debug_bounds("effect-slider-effect:0:amount")
+        .unwrap();
+    let position = gpui::point(slider.left() + slider.size.width * 0.55, slider.center().y);
+    visual.simulate_click(position, Default::default());
+    app.wait(cx, |_, cx| {
+        stored(cx)["media"][0]["mediaEffects"][0]["variables"]["amount"]
+            .as_f64()
+            .is_some_and(|amount| (0.4..0.7).contains(&amount))
+    });
     click(&mut visual, "button-media-preset");
     click(&mut visual, "menu-item-Save as…");
     click(&mut visual, "effect-preset-name");
@@ -3377,6 +3498,20 @@ fn media_inspector_adds_edits_and_manages_linked_effect_presets(cx: &mut TestApp
         stored(cx)["media"][0]["mediaEffects"]
             .as_array()
             .is_some_and(|effects| effects.len() == 2)
+    });
+    let original = stored(cx)["media"][0]["mediaEffects"][0]["effectId"].clone();
+    let from = visual.debug_bounds("media-effect-drag-0").unwrap().center();
+    let to = visual.debug_bounds("media-effect-row-1").unwrap().center();
+    visual.simulate_mouse_down(from, gpui::MouseButton::Left, Default::default());
+    visual.simulate_mouse_move(
+        from + gpui::point(gpui::px(10.), gpui::px(0.)),
+        Some(gpui::MouseButton::Left),
+        Default::default(),
+    );
+    visual.simulate_mouse_move(to, Some(gpui::MouseButton::Left), Default::default());
+    visual.simulate_mouse_up(to, gpui::MouseButton::Left, Default::default());
+    app.wait(cx, |_, cx| {
+        stored(cx)["media"][0]["mediaEffects"][1]["effectId"] == original
     });
     click(&mut visual, "button-media-preset");
     click(&mut visual, "menu-item-Save");
@@ -3427,6 +3562,13 @@ fn media_inspector_adds_edits_and_manages_linked_effect_presets(cx: &mut TestApp
             && saved["media"][0]["mediaEffects"]
                 .as_array()
                 .is_some_and(|effects| effects.len() == 2)
+    });
+    context(&mut visual, "media-effect-row-0");
+    click(&mut visual, "menu-item-Remove");
+    app.wait(cx, |_, cx| {
+        stored(cx)["media"][0]["mediaEffects"]
+            .as_array()
+            .is_some_and(|effects| effects.len() == 1)
     });
     click(&mut visual, "button-media-preset");
     click(&mut visual, "menu-item-Clear effects");
@@ -3867,6 +4009,7 @@ fn media_thumbnails_and_video_start_preserve_the_outgoing_picture(cx: &mut TestA
     clip["thumbnailTimeSeconds"] = json!(0.2);
     clip["backgroundTransition"] = json!("fade:0.5:Dissolve");
     clip["backgroundPlayback"] = json!("loop");
+    clip["mediaHardwareDecoding"] = json!("disabled");
     clip["mediaTransport"] = json!({"inSeconds":0.2,"outSeconds":4.000005,"rate":1,"delaySeconds":1,"retrigger":"restart"});
     app.host
         .invoke(
@@ -4188,6 +4331,10 @@ fn media_thumbnails_and_video_start_preserve_the_outgoing_picture(cx: &mut TestA
     app.wait_animated(cx, |app, _| {
         scene(app).is_ok_and(|scene| scene["backgroundMediaType"] == "video")
     });
+    assert_eq!(
+        scene(&app).unwrap()["backgroundMediaHardwareDecoding"],
+        "disabled"
+    );
     let playback = scene(&app).unwrap()["backgroundPlaybackState"].clone();
     assert_eq!(playback["outSeconds"], 4.);
     assert!(playback["error"].is_null());

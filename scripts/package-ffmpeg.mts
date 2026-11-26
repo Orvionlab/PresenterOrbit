@@ -178,6 +178,12 @@ export async function verifyBundledFfmpeg(
     if (options.execute !== false) {
       if (name === "ffmpeg" && !/^\s*V\S*\s+libdav1d\s/mu.test(await run(path, ["-hide_banner", "-decoders"])))
         throw new Error("Bundled FFmpeg is missing the AV1 software decoder.");
+      if (name === "ffmpeg") {
+        const backend = platform === "windows" ? "d3d11va" : "videotoolbox";
+        const accelerators = await run(path, ["-hide_banner", "-hwaccels"]);
+        if (!accelerators.split(/\r?\n/u).includes(backend))
+          throw new Error("Bundled FFmpeg is missing its platform hardware decoder.");
+      }
       const version = await run(path, ["-version"]);
       if (
         !version.startsWith(`${name} version ${ffmpegSources.ffmpeg.version}`) ||

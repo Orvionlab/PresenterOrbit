@@ -4,8 +4,8 @@
 //! transition set on a slide, presentation, media selection or prop still wins; the output resolves that.
 
 use gpui::{
-    div, prelude::*, Anchor, App, Context, Entity, IntoElement, Render, SharedString, Subscription,
-    Window,
+    div, prelude::*, Anchor, App, Context, Entity, Focusable, IntoElement, Render, SharedString,
+    Subscription, Window,
 };
 use orbit_host::native_transitions::{CUT_ID, DISSOLVE_ID, LIBRARY_DURATION_SECONDS};
 use orbit_ui::{
@@ -468,7 +468,94 @@ impl Render for TransitionDefaults {
             if self.picker.open {
                 popover = popover.content(self.picker_panel(active, window, cx));
             }
-            return div().child(popover).into_any_element();
+            let mut controls = div().flex().flex_col().gap(theme.metrics.space_sm).child(
+                orbit_ui::controls::Field::new(t.t("transition.title"), popover)
+                    .inline()
+                    .label_width(theme.metrics.space_lg * 6.),
+            );
+            if !transition.is_null() {
+                self.start_thumbs(cx);
+                if let Some(image) = self.picker.thumbs.get(effect) {
+                    controls = controls.child(
+                        gpui::img(image.clone())
+                            .w_full()
+                            .aspect_ratio(16. / 9.)
+                            .object_fit(gpui::ObjectFit::Contain),
+                    );
+                }
+                if shows_duration(active) && !self.picker.open {
+                    let label = t.t("transition.picker.duration");
+                    let input = self.duration_input(window, cx);
+                    let seconds = seconds_of(&self.duration, cx);
+                    if !input.focus_handle(cx).is_focused(window) {
+                        let value = format!("{seconds:.1}");
+                        if input.read(cx).value().as_ref() != value {
+                            input.update(cx, |input, cx| input.set_value(value, window, cx));
+                        }
+                    }
+                    let owner = cx.weak_entity();
+                    controls = controls
+                        .child(
+                            orbit_ui::controls::Field::new(
+                                label.clone(),
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap(theme.metrics.space_xs)
+                                    .child(
+                                        div()
+                                            .flex_1()
+                                            .min_w_0()
+                                            .debug_selector(|| "media-transition-duration".into())
+                                            .child(RangeInput::new(&self.duration).label(label)),
+                                    )
+                                    .child(
+                                        div().w(theme.metrics.control_height * 2.).child(
+                                            orbit_ui::controls::NumberInput::new(
+                                                "media-transition-seconds",
+                                                &input,
+                                            )
+                                            .label(t.t("transition.picker.durationValue"))
+                                            .range(0., 5.)
+                                            .step(0.1)
+                                            .stepper()
+                                            .on_step(
+                                                move |value, window, cx| {
+                                                    let _ = owner.update(cx, |this, cx| {
+                                                        this.set_duration(value, window, cx)
+                                                    });
+                                                },
+                                            ),
+                                        ),
+                                    ),
+                            )
+                            .inline(),
+                        )
+                        .child(
+                            ActionButton::new(
+                                "media-transition-duration-reset",
+                                t.t("transition.picker.reset"),
+                            )
+                            .compact()
+                            .variant(ButtonVariant::Ghost)
+                            .disabled((seconds - LIBRARY_DURATION_SECONDS).abs() < 0.05)
+                            .on_click(cx.listener(
+                                |this, _, window, cx| {
+                                    this.set_duration(LIBRARY_DURATION_SECONDS, window, cx)
+                                },
+                            )),
+                        );
+                }
+                controls = controls.child(
+                    orbit_ui::controls::IconButton::new(
+                        "media-transition-clear",
+                        "trash",
+                        t.t("transition.presentation.default"),
+                    )
+                    .on_click(cx.listener(|this, _, _, cx| this.save(Value::Null, cx))),
+                );
+            }
+            return controls.into_any_element();
         }
         let id = match (&self.item_id, self.kind) {
             (Some(_), _) => "item",

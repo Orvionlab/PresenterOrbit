@@ -9113,6 +9113,7 @@ fn store_media_background_settings(
         "mediaDesaturate",
         "mediaEffects",
         "mediaEffectPresetId",
+        "mediaHardwareDecoding",
         "mediaBrightness",
         "mediaContrast",
         "mediaHue",
@@ -9144,6 +9145,7 @@ fn store_media_background_settings(
         "mediaDesaturate",
         "mediaEffects",
         "mediaEffectPresetId",
+        "mediaHardwareDecoding",
         "mediaBrightness",
         "mediaContrast",
         "mediaHue",
@@ -9830,6 +9832,12 @@ fn validate_audio_marker_dependencies(document: &Map<String, Value>) -> Result<(
 }
 
 fn validate_media_runtime_settings(media: &Value) -> Result<(), String> {
+    if media
+        .get("mediaHardwareDecoding")
+        .is_some_and(|mode| !matches!(mode.as_str(), Some("automatic" | "disabled")))
+    {
+        return Err("Media hardware decoding must be automatic or disabled.".into());
+    }
     if media
         .get("mediaEffectPresetId")
         .is_some_and(|id| !id.as_str().is_some_and(|id| !id.trim().is_empty()))

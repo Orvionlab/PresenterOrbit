@@ -96,7 +96,7 @@ pub(super) struct Picker {
     category: String,
     pub(super) highlighted: String,
     /// Thumbnails stay cached for the footer's life; a preview never depends on the workspace.
-    thumbs: HashMap<String, Arc<RenderImage>>,
+    pub(super) thumbs: HashMap<String, Arc<RenderImage>>,
     thumbs_running: bool,
     pub(super) frames: HashMap<String, Vec<Arc<RenderImage>>>,
     requested: HashSet<String>,
@@ -185,34 +185,45 @@ impl TransitionDefaults {
         self.picker.step = 0;
         if self.picker.filter.is_none() {
             let filter = input_state("", window, cx);
-            let number = input_state("", window, cx);
-            let commit = cx.subscribe_in(
-                &number,
-                window,
-                |this, state, event: &InputEvent, window, cx| {
-                    if !matches!(event, InputEvent::Blur | InputEvent::PressEnter { .. }) {
-                        return;
-                    }
-                    match state.read(cx).value().trim().parse::<f64>() {
-                        Ok(seconds) if seconds.is_finite() => {
-                            this.set_duration(seconds, window, cx)
-                        }
-                        // Unreadable text goes back to the current duration on the next render.
-                        _ => cx.notify(),
-                    }
-                },
-            );
             let refresh = cx.observe(&filter, |_, _, cx| cx.notify());
-            self.picker.subscriptions = vec![commit, refresh];
+            self.picker.subscriptions.push(refresh);
             self.picker.filter = Some(filter);
-            self.picker.number = Some(number);
         }
         if let Some(filter) = &self.picker.filter {
             filter.update(cx, |state, cx| state.set_value("", window, cx));
             filter.focus_handle(cx).focus(window, cx);
         }
+        self.duration_input(window, cx);
         self.start_previews(cx);
         cx.notify();
+    }
+
+    pub(super) fn duration_input(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Entity<InputState> {
+        if let Some(number) = &self.picker.number {
+            return number.clone();
+        }
+        let number = input_state("", window, cx);
+        let commit = cx.subscribe_in(
+            &number,
+            window,
+            |this, state, event: &InputEvent, window, cx| {
+                if !matches!(event, InputEvent::Blur | InputEvent::PressEnter { .. }) {
+                    return;
+                }
+                match state.read(cx).value().trim().parse::<f64>() {
+                    Ok(seconds) if seconds.is_finite() => this.set_duration(seconds, window, cx),
+                    // Unreadable text goes back to the current duration on the next render.
+                    _ => cx.notify(),
+                }
+            },
+        );
+        self.picker.subscriptions.push(commit);
+        self.picker.number = Some(number.clone());
+        number
     }
 
     /// Renders what the open picker shows and the loop that steps through the highlighted effect.

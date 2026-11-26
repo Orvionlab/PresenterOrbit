@@ -3803,6 +3803,7 @@ fn paint_background_media(
                     content
                         .get("backgroundPlaybackState")
                         .and_then(Value::as_object),
+                    content["backgroundMediaHardwareDecoding"] == "disabled",
                 )
                 .ok()
                 .flatten()
@@ -4874,6 +4875,7 @@ fn draw_slide_media_in_bounds(
                 .video_frame_with_clock(
                     &path,
                     layer.get("mediaPlaybackState").and_then(Value::as_object),
+                    layer.get("mediaHardwareDecoding").and_then(Value::as_str) == Some("disabled"),
                 )
                 .ok()
                 .flatten()
@@ -6725,6 +6727,7 @@ fn text_media_fill_image(
                 style
                     .get("mediaFillPlaybackState")
                     .and_then(Value::as_object),
+                style.get("mediaHardwareDecoding").and_then(Value::as_str) == Some("disabled"),
             )
             .ok()
             .flatten()

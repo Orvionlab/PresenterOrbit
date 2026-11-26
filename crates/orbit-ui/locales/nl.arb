@@ -2745,6 +2745,8 @@
   "@ticker.loopDelaySeconds": {
     "description": "Configure the blank interval between ticker repetitions."
   },
+  "media.effects.actions": "Effectacties",
+  "@media.effects.actions": {"description":"Inspector effect row context menu button."},
   "media.effects.title": "Effecten",
   "@media.effects.title": {
     "description": "Supported per-asset media effects"

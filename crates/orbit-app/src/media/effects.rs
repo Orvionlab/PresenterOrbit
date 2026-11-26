@@ -1,12 +1,14 @@
 use super::*;
 use orbit_ui::controls::{
-    CheckboxField, ColorPicker, ContextMenu, Field, InputEvent, MenuEntry, MenuItem,
+    range_state, CheckboxField, ColorPicker, ContextMenu, Field, InputEvent, MenuEntry, MenuItem,
+    RangeInput, SliderEvent,
 };
 
 #[derive(Clone, Copy)]
 pub(super) enum EffectMenu {
     Presets,
     Add,
+    Row(usize),
 }
 
 pub(super) enum PresetDialog {
@@ -18,8 +20,16 @@ pub(super) enum PresetDialog {
     Delete(String),
 }
 
+#[derive(Clone)]
+struct EffectDrag {
+    owner: String,
+    index: usize,
+    title: String,
+}
+
 enum EffectAction {
-    Add(String),
+    Add(String, Option<usize>),
+    Remove(usize),
     Apply(String),
     Clear,
     Unlink,
@@ -148,68 +158,111 @@ impl MediaBin {
                 .to_string();
             let weak = cx.weak_entity();
             let enabled = effect["enabled"] == true;
+            let drag = EffectDrag {
+                owner: self.selected.clone(),
+                index,
+                title: title.clone(),
+            };
+            let menu = move |this: &mut Self, position, cx: &mut Context<Self>| {
+                if !this.edits_blocked() {
+                    this.effect_menu = Some((EffectMenu::Row(index), position));
+                    cx.notify();
+                }
+            };
             body = body.child(
-                CheckboxField::new(
-                    SharedString::from(format!("effect-enabled-{index}")),
-                    title,
-                    enabled,
-                )
-                .disabled(self.edits_blocked())
-                .on_change(move |enabled, _, cx| {
-                    let _ = weak.update(cx, |this, cx| {
-                        let mut chain = this
+                div()
+                    .id(("media-effect-row", index))
+                    .debug_selector(move || format!("media-effect-row-{index}"))
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .border_b_1()
+                    .border_color(theme.colors.border_soft)
+                    .on_mouse_down(
+                        gpui::MouseButton::Right,
+                        cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
+                            menu(this, event.position, cx);
+                            cx.stop_propagation();
+                        }),
+                    )
+                    .on_drop::<EffectDrag>(cx.listener(move |this, drag: &EffectDrag, _, cx| {
+                        if drag.owner != this.selected
+                            || drag.index == index
+                            || this.edits_blocked()
+                        {
+                            return;
+                        }
+                        let mut effects = this
                             .media
                             .iter()
-                            .find(|item| item["id"] == this.selected)
-                            .and_then(|item| item["mediaEffects"].as_array())
-                            .cloned()
-                            .unwrap_or_default();
-                        if let Some(effect) = chain.get_mut(index) {
-                            effect["enabled"] = json!(enabled);
-                            this.patch_asset("mediaEffects", json!(chain), cx);
+                            .find(|item| item["id"] == drag.owner)
+                            .map_or_else(Vec::new, |item| chain(item).to_vec());
+                        if index < effects.len() && drag.index < effects.len() {
+                            let effect = effects.remove(drag.index);
+                            effects.insert(index, effect);
+                            this.inputs.retain(|key, _| !key.starts_with("effect:"));
+                            this.patch_asset("mediaEffects", json!(effects), cx);
                         }
-                    });
-                }),
-            );
-            let mut actions = div().flex().gap(theme.metrics.space_xs);
-            for (offset, key) in [
-                (-1, "media.effectChain.up"),
-                (1, "media.effectChain.down"),
-                (0, "media.effectChain.remove"),
-            ] {
-                actions = actions.child(
-                    ActionButton::new(SharedString::from(format!("{key}-{index}")), t.t(key))
-                        .variant(ButtonVariant::Ghost)
-                        .disabled(
-                            self.edits_blocked()
-                                || offset < 0 && index == 0
-                                || offset > 0 && index + 1 == effects.len(),
+                    }))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .child(
+                                CheckboxField::new(
+                                    SharedString::from(format!("effect-enabled-{index}")),
+                                    title.clone(),
+                                    enabled,
+                                )
+                                .bare()
+                                .disabled(self.edits_blocked())
+                                .on_change(
+                                    move |enabled, _, cx| {
+                                        let _ = weak.update(cx, |this, cx| {
+                                            let mut chain = this
+                                                .media
+                                                .iter()
+                                                .find(|item| item["id"] == this.selected)
+                                                .and_then(|item| item["mediaEffects"].as_array())
+                                                .cloned()
+                                                .unwrap_or_default();
+                                            if let Some(effect) = chain.get_mut(index) {
+                                                effect["enabled"] = json!(enabled);
+                                                this.patch_asset("mediaEffects", json!(chain), cx);
+                                            }
+                                        });
+                                    },
+                                ),
+                            )
+                            .child(
+                                div()
+                                    .id(("media-effect-drag", index))
+                                    .debug_selector(move || format!("media-effect-drag-{index}"))
+                                    .cursor(gpui::CursorStyle::OpenHand)
+                                    .p(theme.metrics.space_xs)
+                                    .on_drag(drag, |drag, _, _, cx| {
+                                        cx.new(|_| super::tree::DragLabel(drag.title.clone()))
+                                    })
+                                    .child(title),
+                            ),
+                    )
+                    .child(
+                        IconButton::new(
+                            ("media-effect-menu", index),
+                            "chevron-down",
+                            t.t("media.effects.actions"),
                         )
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            let mut chain = this
-                                .media
-                                .iter()
-                                .find(|item| item["id"] == this.selected)
-                                .and_then(|item| item["mediaEffects"].as_array())
-                                .cloned()
-                                .unwrap_or_default();
-                            if index >= chain.len() {
-                                return;
-                            }
-                            if offset == 0 {
-                                chain.remove(index);
-                            } else if let Some(target) = index.checked_add_signed(offset) {
-                                if target >= chain.len() {
-                                    return;
-                                }
-                                chain.swap(index, target);
-                            }
-                            this.inputs.clear();
-                            this.patch_asset("mediaEffects", json!(chain), cx);
-                        })),
-                );
+                        .disabled(self.edits_blocked())
+                        .on_click(cx.listener(
+                            move |this, event: &gpui::ClickEvent, _, cx| {
+                                menu(this, event.position(), cx)
+                            },
+                        )),
+                    ),
+            );
+            if !enabled {
+                continue;
             }
-            body = body.child(actions);
             if let Some(variables) = entry
                 .as_ref()
                 .and_then(|entry| entry["variables"].as_array())
@@ -247,7 +300,7 @@ impl MediaBin {
                         variable["min"].as_f64(),
                         variable["max"].as_f64(),
                     ) {
-                        body = body.child(self.numeric(
+                        body = body.child(self.effect_numeric(
                             &key,
                             text(variable, "label"),
                             value,
@@ -262,6 +315,8 @@ impl MediaBin {
         body.child(
             div().flex().justify_center().child(
                 IconButton::new("effect-add", "plus", t.t("media.effectChain.add"))
+                    .full_height()
+                    .large_icon()
                     .disabled(self.edits_blocked() || self.effect_catalog.is_empty())
                     .on_click(cx.listener(|this, event: &gpui::ClickEvent, _, cx| {
                         this.effect_menu = Some((EffectMenu::Add, event.position()));
@@ -270,6 +325,81 @@ impl MediaBin {
             ),
         )
         .into_any_element()
+    }
+
+    fn effect_numeric(
+        &mut self,
+        key: &str,
+        label: &str,
+        value: f64,
+        (min, max): (f64, f64),
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let field = key.to_owned();
+        let owner = self.selected.clone();
+        let state = window.use_keyed_state(
+            SharedString::from(format!("effect-slider-{owner}-{field}")),
+            cx,
+            |_, cx| {
+                let slider = range_state(
+                    min as f32,
+                    max as f32,
+                    ((max - min) / 100.).max(0.001) as f32,
+                    value as f32,
+                    cx,
+                );
+                (slider, value, None::<Subscription>)
+            },
+        );
+        let slider = state.read(cx).0.clone();
+        if state.read(cx).2.is_none() {
+            let subscription = cx.subscribe(&slider, move |this, _, event: &SliderEvent, cx| {
+                if this.selected == owner {
+                    if let SliderEvent::Release(value) = event {
+                        this.inputs.remove(&field);
+                        this.effect_variable(
+                            &field,
+                            json!(f64::from(value.end()).clamp(min, max)),
+                            cx,
+                        );
+                    }
+                }
+            });
+            state.update(cx, |state, _| state.2 = Some(subscription));
+        }
+        if state.read(cx).1 != value {
+            state.update(cx, |state, _| state.1 = value);
+            slider.update(cx, |slider, cx| slider.set_value(value as f32, window, cx));
+        }
+        let width = cx.theme().metrics.control_height * 2.;
+        let gap = cx.theme().metrics.space_xs;
+        let input = self
+            .numeric_input(key, value, (min, max), window, cx)
+            .label(label.to_owned());
+        Field::new(
+            label.to_owned(),
+            div()
+                .flex()
+                .items_center()
+                .gap(gap)
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .debug_selector({
+                            let key = key.to_owned();
+                            move || format!("effect-slider-{key}")
+                        })
+                        .child(
+                            RangeInput::new(&slider)
+                                .label(label.to_owned())
+                                .disabled(self.edits_blocked()),
+                        ),
+                )
+                .child(div().flex_none().w(width).child(input)),
+        )
+        .inline()
     }
 
     fn effect_presets(&self) -> &[Value] {
@@ -295,17 +425,27 @@ impl MediaBin {
             })
         };
         let entries = match menu {
-            EffectMenu::Add => self
-                .effect_catalog
-                .iter()
-                .map(|entry| {
+            EffectMenu::Add | EffectMenu::Row(_) => {
+                let index = match menu {
+                    EffectMenu::Row(index) => Some(index),
+                    _ => None,
+                };
+                let mut entries = Vec::new();
+                if let Some(index) = index {
+                    entries.push(
+                        action(t.t("media.effectChain.remove"), EffectAction::Remove(index)).into(),
+                    );
+                    entries.push(MenuEntry::Separator);
+                }
+                entries.extend(self.effect_catalog.iter().map(|entry| {
                     action(
                         text(entry, "name").to_owned(),
-                        EffectAction::Add(text(entry, "id").to_owned()),
+                        EffectAction::Add(text(entry, "id").to_owned(), index),
                     )
                     .into()
-                })
-                .collect(),
+                }));
+                entries
+            }
             EffectMenu::Presets => {
                 let preset = self.effect_preset(item);
                 let has_effects = !matches_preset(item, &Value::Null);
@@ -394,9 +534,19 @@ impl MediaBin {
                     return;
                 };
                 match action {
-                    EffectAction::Add(id) => {
+                    EffectAction::Add(id, after) => {
                         let mut effects = chain(item).to_vec();
-                        effects.push(json!({"effectId":id,"enabled":true}));
+                        let index =
+                            after.map_or(effects.len(), |index| (index + 1).min(effects.len()));
+                        effects.insert(index, json!({"effectId":id,"enabled":true}));
+                        item["mediaEffects"] = json!(effects);
+                    }
+                    EffectAction::Remove(index) => {
+                        let mut effects = chain(item).to_vec();
+                        if *index >= effects.len() {
+                            return;
+                        }
+                        effects.remove(*index);
                         item["mediaEffects"] = json!(effects);
                     }
                     EffectAction::Apply(id) => {
@@ -646,11 +796,62 @@ pub(super) fn visual_asset(item: &Value) -> Value {
     )
 }
 
+pub(super) struct ThumbnailCapture {
+    pub id: String,
+    pub frame: Option<MediaPreviewFrame>,
+    seconds: f64,
+}
+
+impl MediaBin {
+    pub(super) fn capture_thumbnail(&mut self, cx: &mut Context<Self>) {
+        let seconds = self.preview_frame_time();
+        let frame = self
+            .rendered_media_preview
+            .as_ref()
+            .filter(|frame| {
+                frame.key[0] == self.workspace
+                    && (self.preview_playing || frame.key[2].as_f64() == Some(seconds))
+                    && self
+                        .media
+                        .iter()
+                        .find(|asset| asset["id"] == self.selected)
+                        .is_some_and(|asset| frame.key[1] == visual_asset(asset))
+            })
+            .cloned();
+        let seconds = frame
+            .as_ref()
+            .and_then(|frame| frame.key[2].as_f64())
+            .unwrap_or(seconds);
+        self.queued_thumbnail = Some(ThumbnailCapture {
+            id: self.selected.clone(),
+            frame,
+            seconds,
+        });
+        self.flush_thumbnail(cx);
+        cx.notify();
+    }
+
+    pub(super) fn flush_thumbnail(&mut self, cx: &mut Context<Self>) {
+        if !self.busy {
+            if let Some(capture) = self.queued_thumbnail.as_ref() {
+                self.mutate_saved(
+                    "setVideoThumbnail",
+                    vec![json!(capture.id), json!(capture.seconds)],
+                    cx,
+                );
+            }
+        }
+    }
+}
+
 impl MediaBin {
     pub(super) fn request_effect_preview(&mut self, item: &Value, cx: &mut Context<Self>) {
         let seconds = self.preview_frame_time();
         let item = visual_asset(item);
-        let key = json!([self.workspace, item, seconds]);
+        let clock_revision = self
+            .preview_playing
+            .then(|| self.preview_generation.load(Ordering::Acquire));
+        let key = json!([self.workspace, item, seconds, clock_revision]);
         if self.asset_preview_busy || self.effect_preview_key == key {
             return;
         }
@@ -658,10 +859,20 @@ impl MediaBin {
         self.effect_preview_key = key.clone();
         let host = self.runtime.host.clone();
         let workspace = self.workspace.clone();
+        let stream = self.preview_stream.clone();
         cx.spawn(async move |this, cx| {
             let result = cx
                 .background_spawn(async move {
-                    let image = host.render_media_asset_preview(&workspace, item, seconds)?;
+                    let mut stream = stream
+                        .lock()
+                        .map_err(|_| "Inspector video decoder is unavailable.")?;
+                    let image = host.render_media_asset_preview(
+                        &workspace,
+                        item,
+                        seconds,
+                        &mut stream,
+                        clock_revision,
+                    )?;
                     let size = orbit_ui::FrameSize {
                         width: image.width as u32,
                         height: image.height as u32,

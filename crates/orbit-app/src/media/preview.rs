@@ -117,6 +117,7 @@ impl MediaBin {
             .unwrap_or_else(|| t.t("common.unknown"));
         let icon_button = |id, icon, label, jump| {
             IconButton::new(id, icon, t.t(label))
+                .large_icon()
                 .disabled(range.is_none())
                 .on_click(cx.listener(move |this, _, _, cx| this.preview_jump(&jump, cx)))
         };
@@ -150,6 +151,7 @@ impl MediaBin {
                         "automation.macros.play"
                     }),
                 )
+                .large_icon()
                 .on_click(cx.listener(|this, _, _, cx| this.preview_toggle(cx))),
             )
             .child(icon_button(
@@ -186,7 +188,15 @@ impl MediaBin {
             .border_t_1()
             .border_color(theme.colors.border_soft)
             .pt(theme.metrics.space_xs)
-            .child(div().flex_1().min_w_0())
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .text_size(theme.metrics.font_sm)
+                    .text_color(theme.colors.text_muted)
+                    .child(clock(self.preview_position)),
+            )
             .child(commands)
             .child(
                 div()
@@ -196,7 +206,7 @@ impl MediaBin {
                     .text_right()
                     .text_size(theme.metrics.font_sm)
                     .text_color(theme.colors.text_muted)
-                    .child(format!("{} / {remaining}", clock(self.preview_position))),
+                    .child(remaining),
             );
         let timeline = duration.map(|duration| self.preview_timeline(item, duration, cx));
         div()

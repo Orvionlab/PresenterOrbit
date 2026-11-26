@@ -8,54 +8,32 @@ pub(super) type Inputs = HashMap<String, (Entity<InputState>, Subscription)>;
 
 impl MediaBin {
     pub(super) fn patch_asset(&mut self, key: &str, value: Value, cx: &mut Context<Self>) {
-        if let Some(field) = key.strip_prefix("mediaTransport.") {
-            let Some(item) = self.media.iter().find(|item| item["id"] == self.selected) else {
-                return;
-            };
-            self.transport_baseline
-                .get_or_insert_with(|| item["mediaTransport"].clone());
-            let draft = self.transport_draft.get_or_insert_with(|| {
-                item.get("mediaTransport").cloned().unwrap_or_else(|| json!({
-                    "inSeconds":0,"outSeconds":null,"rate":1,"delaySeconds":0,"retrigger":"restart"
-                }))
-            });
-            draft[field] = value;
-            cx.notify();
-            return;
-        }
         let mut media = self.media.clone();
         let Some(item) = media.iter_mut().find(|item| item["id"] == self.selected) else {
             return;
         };
-        item[key] = value;
-        self.mutate("saveMediaSettings", vec![json!(media)], cx);
-    }
-    pub(super) fn save_transport(&mut self, cx: &mut Context<Self>) {
-        let Some(item) = self.media.iter().find(|item| item["id"] == self.selected) else {
-            return;
-        };
-        if self
-            .transport_baseline
-            .as_ref()
-            .is_some_and(|baseline| baseline != &item["mediaTransport"])
-        {
-            this_status(
-                self,
-                cx,
-                cx.global::<Translator>().t("media.transport.invalid"),
-            );
-            return;
+        let (key, value) =
+            if let Some(field) = key.strip_prefix("mediaTransport.") {
+                let mut transport = item.get("mediaTransport").cloned().unwrap_or_else(|| json!({
+                "inSeconds":0,"outSeconds":null,"rate":1,"delaySeconds":0,"retrigger":"restart"
+            }));
+                transport[field] = value;
+                if orbit_host::validate_preview_media_transport(&transport).is_err() {
+                    this_status(
+                        self,
+                        cx,
+                        cx.global::<Translator>().t("media.transport.invalid"),
+                    );
+                    return;
+                }
+                ("mediaTransport", transport)
+            } else {
+                (key, value)
+            };
+        if item[key] != value {
+            item[key] = value;
+            self.mutate("saveMediaSettings", vec![json!(media)], cx);
         }
-        let draft = self.transport_draft.clone().or_else(||item.get("mediaTransport").cloned()).unwrap_or_else(||json!({"inSeconds":0,"outSeconds":null,"rate":1,"delaySeconds":0,"retrigger":"restart"}));
-        if orbit_host::validate_preview_media_transport(&draft).is_err() {
-            this_status(
-                self,
-                cx,
-                cx.global::<Translator>().t("media.transport.invalid"),
-            );
-            return;
-        }
-        self.patch_asset("mediaTransport", draft, cx);
     }
     pub(super) fn numeric(
         &mut self,
@@ -88,8 +66,8 @@ impl MediaBin {
         let input = if let Some((input, _)) = self.inputs.get(key) {
             input.clone()
         } else {
-            let initial = value.to_string();
-            let input = input_state(initial.clone(), window, cx);
+            let input = input_state(value.to_string(), window, cx);
+            let last_value = std::cell::Cell::new(value);
             let owner = self.selected.clone();
             let field = key.to_string();
             let subscription = cx.subscribe_in(
@@ -102,14 +80,14 @@ impl MediaBin {
                         return;
                     }
                     let value = input.read(cx).value().to_string();
-                    if value == initial && !field.starts_with("route:") {
-                        return;
-                    }
                     let parsed = value
                         .parse::<f64>()
                         .ok()
                         .filter(|value| value.is_finite() && *value >= min && *value <= max);
                     if let Some(value) = parsed {
+                        if !field.starts_with("route:") && last_value.replace(value) == value {
+                            return;
+                        }
                         if field.starts_with("route:") {
                             this.route_field(&field, json!(value), cx);
                         } else if field.starts_with("effect:") {
@@ -183,15 +161,7 @@ impl MediaBin {
     ) -> impl IntoElement {
         let formatted = property_clock(seconds);
         let input = if let Some((input, _)) = self.inputs.get(key) {
-            let input = input.clone();
-            if !input.read(cx).focus_handle(cx).is_focused(window)
-                && input.read(cx).value().as_ref() != formatted
-            {
-                input.update(cx, |state, cx| {
-                    state.set_value(formatted.clone(), window, cx)
-                });
-            }
-            input
+            input.clone()
         } else {
             let input = input_state(formatted, window, cx);
             let owner = self.selected.clone();
@@ -215,9 +185,7 @@ impl MediaBin {
                         "preview-in-point" => range.map(|range| range.start),
                         "preview-out-point" => range.map(|range| range.end),
                         _ => Some(
-                            this.transport_draft
-                                .as_ref()
-                                .unwrap_or(&item["mediaTransport"])["delaySeconds"]
+                            item["mediaTransport"]["delaySeconds"]
                                 .as_f64()
                                 .unwrap_or(0.),
                         ),
@@ -229,6 +197,8 @@ impl MediaBin {
                     }
                     let requested = if text.is_empty() && key == "preview-out-point" {
                         duration
+                    } else if text.is_empty() && key == "mediaTransport.delaySeconds" {
+                        Some(0.)
                     } else {
                         parse_property_time(&text)
                     };
@@ -255,6 +225,9 @@ impl MediaBin {
                     let Some(seconds) = requested else { return };
                     if key == "mediaTransport.delaySeconds" {
                         this.patch_asset(key, json!(seconds), cx);
+                        input.update(cx, |state, cx| {
+                            state.set_value(property_clock(seconds), window, cx)
+                        });
                     } else if let Some((duration, mut range)) = duration.zip(range) {
                         if key == "preview-in-point" {
                             range.start = seconds;
@@ -287,17 +260,18 @@ impl MediaBin {
         let disabled = self.edits_blocked();
         let (slider, _) = self.transport_rate_slider.get_or_insert_with(|| {
             let slider = range_state(10., 400., 1., (rate * 100.) as f32, cx);
-            let subscription = cx.subscribe(&slider, |this, _, event: &SliderEvent, cx| {
-                if let SliderEvent::Change(value) = event {
-                    this.patch_asset(
+            let subscription =
+                cx.subscribe(&slider, |this, _, event: &SliderEvent, cx| match event {
+                    SliderEvent::Change(_) => cx.notify(),
+                    SliderEvent::Release(value) => this.patch_asset(
                         "mediaTransport.rate",
                         json!(f64::from(value.end()) / 100.),
                         cx,
-                    );
-                }
-            });
+                    ),
+                });
             (slider, subscription)
         });
+        let percent = slider.read(cx).value().end();
         let label = cx.global::<Translator>().t("media.transport.playRate");
         let m = cx.theme().metrics;
         Field::new(
@@ -316,7 +290,7 @@ impl MediaBin {
                     div()
                         .min_w(m.space_lg * 3.)
                         .text_right()
-                        .child(format!("{:.0}%", rate * 100.)),
+                        .child(format!("{percent:.0}%")),
                 ),
         )
         .inline()
@@ -374,6 +348,11 @@ impl MediaBin {
                 .unwrap_or(&Value::Null)
         };
         let source = text(item, "sourcePath");
+        let source = if cfg!(windows) {
+            orbit_host::strip_windows_verbatim_prefix(source)
+        } else {
+            source.to_owned()
+        };
         let row = |label: String, content: gpui::AnyElement| {
             div()
                 .flex()
@@ -412,16 +391,22 @@ impl MediaBin {
                 div()
                     .id("media-inspector-source-path")
                     .text_size(m.font_sm)
-                    .tooltip(orbit_ui::controls::tooltip_text(source.to_owned()))
+                    .tooltip(orbit_ui::controls::tooltip_text(source.clone()))
                     .child(source.replace('\\', "\\\u{200b}"))
                     .into_any_element(),
             ));
         if matches!(item["type"].as_str(), Some("image" | "video")) {
             let image = self
-                .pending_thumbnail
+                .queued_thumbnail
                 .as_ref()
-                .filter(|(id, _)| id == &self.selected)
-                .and_then(|(_, image)| image.clone())
+                .filter(|capture| capture.id == self.selected)
+                .and_then(|capture| capture.frame.as_ref().map(|frame| frame.image.clone()))
+                .or_else(|| {
+                    self.pending_thumbnail
+                        .as_ref()
+                        .filter(|(id, _)| id == &self.selected)
+                        .and_then(|(_, image)| image.clone())
+                })
                 .or_else(|| details.and_then(|details| details.image.clone()));
             let mut thumbnail = div().flex().flex_col().gap(m.space_xs).child(
                 div()
@@ -444,14 +429,7 @@ impl MediaBin {
                     ActionButton::new("media.thumbnail.capture", t.t("media.thumbnail.capture"))
                         .compact()
                         .variant(orbit_ui::controls::ButtonVariant::Soft)
-                        .disabled(self.busy)
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.mutate(
-                                "setVideoThumbnail",
-                                vec![json!(this.selected), json!(this.preview_frame_time())],
-                                cx,
-                            );
-                        })),
+                        .on_click(cx.listener(|this, _, _, cx| this.capture_thumbnail(cx))),
                 );
                 if item["thumbnailFile"].is_string() {
                     actions = actions.child(
@@ -489,7 +467,7 @@ impl MediaBin {
                 })
             })
         };
-        let file_type = std::path::Path::new(source)
+        let file_type = std::path::Path::new(&source)
             .extension()
             .and_then(|ext| ext.to_str())
             .map(str::to_ascii_uppercase);
@@ -591,12 +569,7 @@ impl MediaBin {
                 picker.sync_media(item["backgroundTransition"].as_str().unwrap_or("none"), cx)
             });
         }
-        Field::new(
-            cx.global::<Translator>().t("transition.title"),
-            div().children(self.inspector_transition.clone()),
-        )
-        .inline()
-        .label_width(cx.theme().metrics.space_lg * 7.)
+        div().w_full().children(self.inspector_transition.clone())
     }
 
     pub(super) fn inspector(
@@ -757,35 +730,6 @@ impl MediaBin {
             body = body.child(self.transition_field(&item, cx));
         }
         if tab == 2 && (item["type"] == "image" || item["type"] == "video") {
-            for (key, label, neutral, min, max) in [
-                ("mediaHue", "media.effects.hue", 0., -180., 180.),
-                ("mediaSaturation", "media.effects.saturation", 1., 0., 2.),
-                ("mediaBrightness", "media.effects.brightness", 0., -1., 1.),
-                ("mediaContrast", "media.effects.contrast", 1., 0., 2.),
-            ] {
-                body = body.child(self.numeric(
-                    key,
-                    label,
-                    item[key].as_f64().unwrap_or(neutral),
-                    (min, max),
-                    window,
-                    cx,
-                ));
-            }
-            let weak_for_desaturation = cx.weak_entity();
-            body = body.child(
-                CheckboxField::new(
-                    "mediaDesaturate",
-                    t.t("media.effects.desaturate"),
-                    item["mediaDesaturate"] == true,
-                )
-                .disabled(self.edits_blocked())
-                .on_change(move |checked, _, cx| {
-                    let _ = weak_for_desaturation.update(cx, |this, cx| {
-                        this.patch_asset("mediaDesaturate", json!(checked), cx)
-                    });
-                }),
-            );
             body = body.child(self.effects(&item, window, cx));
         }
         if tab == 4 {
@@ -806,7 +750,14 @@ impl MediaBin {
         }
         if tab == 1 && item["type"] == "video" {
             body = body
-                .child(PanelHeader::new(t.t("media.transport.title")))
+                .child(
+                    div()
+                        .flex_none()
+                        .w_full()
+                        .h(metrics.space_2xs)
+                        .bg(theme.colors.border_strong)
+                        .my(metrics.space_xs),
+                )
                 .child(self.choice(
                     "backgroundPlayback",
                     "media.playbackBehavior",
@@ -853,16 +804,9 @@ impl MediaBin {
             }
         }
         if tab == 1 && item["type"] == "video" {
-            let transport = self
-                .transport_draft
-                .as_ref()
-                .unwrap_or(&item["mediaTransport"]);
+            let transport = &item["mediaTransport"];
             let delay = transport["delaySeconds"].as_f64().unwrap_or(0.);
             let rate = transport["rate"].as_f64().unwrap_or(1.);
-            let retrigger = transport["retrigger"]
-                .as_str()
-                .unwrap_or("restart")
-                .to_owned();
             body = body
                 .child(self.property_time(
                     ("mediaTransport.delaySeconds", "media.transport.delayTime"),
@@ -872,38 +816,18 @@ impl MediaBin {
                 ))
                 .child(self.playback_rate(rate, cx))
                 .child(
-                    Field::new(
-                        t.t("media.transport.hardwareDecoding"),
-                        Select::new(
-                            "media-hardware-decoding",
-                            vec![SelectOption::new(
-                                "disabled",
-                                t.t("media.transport.hardwareDisabled"),
-                            )],
-                            "disabled",
-                        )
-                        .compact()
-                        .disabled(true),
-                    )
-                    .inline()
-                    .label_width(metrics.space_lg * 7.),
-                )
-                .child(self.choice(
-                    "mediaTransport.retrigger",
-                    "media.transport.retrigger",
-                    &retrigger,
-                    &[
-                        ("restart", "media.transport.restart"),
-                        ("continue", "media.transport.continue"),
-                        ("automatic", "media.transport.automatic"),
-                    ],
-                    cx,
-                ))
-                .child(
-                    ActionButton::new("transport-save", t.t("media.transport.save"))
-                        .compact()
-                        .disabled(self.edits_blocked())
-                        .on_click(cx.listener(|this, _, _, cx| this.save_transport(cx))),
+                    self.choice(
+                        "mediaHardwareDecoding",
+                        "media.transport.hardwareDecoding",
+                        item["mediaHardwareDecoding"]
+                            .as_str()
+                            .unwrap_or("automatic"),
+                        &[
+                            ("automatic", "common.automatic"),
+                            ("disabled", "media.transport.hardwareDisabled"),
+                        ],
+                        cx,
+                    ),
                 );
         }
         if tab == 3 && (item["type"] == "audio" || item["type"] == "video") {
@@ -941,7 +865,7 @@ impl MediaBin {
                         .debug_selector(|| "media-inspector-preview".into())
                         .map(|surface| {
                             #[cfg(test)]
-                            return surface.relative().children(current_frame.then(|| {
+                            return surface.children(current_frame.then(|| {
                                 div()
                                     .absolute()
                                     .inset_0()
@@ -950,13 +874,44 @@ impl MediaBin {
                             #[cfg(not(test))]
                             surface
                         })
+                        .relative()
                         .min_h_0()
                         .overflow_hidden()
                         .rounded(metrics.radius_sm)
                         .bg(theme.colors.preview_matte_bg)
                         .when(split, |surface| surface.flex_1())
                         .when(!split, |surface| surface.h(height * 0.26))
-                        .child(self.effect_preview.clone()),
+                        .child(self.effect_preview.clone())
+                        .children(
+                            (item["type"] == "video"
+                                && self
+                                    .details
+                                    .get(&self.selected)
+                                    .is_some_and(|details| details.metadata["hasAudio"] == true))
+                            .then(|| {
+                                let audio = crate::settings::audio_logic::get_audio_settings(
+                                    &self.runtime.output.read(cx).settings,
+                                );
+                                let bars = audio["inspector"]["routing"]["deviceChannels"]
+                                    .as_u64()
+                                    .unwrap_or(2)
+                                    as usize;
+                                let levels = self
+                                    .preview
+                                    .try_lock()
+                                    .ok()
+                                    .filter(|_| self.preview_playing)
+                                    .map(|preview| preview.channel_levels())
+                                    .unwrap_or_default();
+                                crate::output::meters::overlay(
+                                    &levels,
+                                    bars,
+                                    0.,
+                                    "inspector-audio-meters",
+                                    cx,
+                                )
+                            }),
+                        ),
                 );
             }
             if playable {
@@ -991,6 +946,7 @@ impl MediaBin {
                     this.routing_open = false;
                     this.inspector_transition = None;
                     this.preview_trim_drag = None;
+                    this.preview_marker_drag = None;
                     this.effect_preview_key = Value::Null;
                     this.audition(false, cx);
                     cx.notify();

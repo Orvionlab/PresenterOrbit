@@ -6980,6 +6980,8 @@
   "@ticker.loopDelaySeconds": {
     "description": "Configure the blank interval between ticker repetitions."
   },
+  "media.effects.actions": "Effect actions",
+  "@media.effects.actions": {"description":"Inspector effect row context menu button."},
   "media.effects.title": "Effects",
   "@media.effects.title": {
     "description": "Supported per-asset media effects"
