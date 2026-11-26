@@ -3268,6 +3268,54 @@
   "@cue.menu.closeSlide": {
     "description": "User-facing close slide text in the cue interface."
   },
+  "cue.menu.editSlide": "Edit Slide",
+  "@cue.menu.editSlide": {
+    "description": "Slide menu command to edit its text."
+  },
+  "cue.menu.transitions": "Transitions…",
+  "@cue.menu.transitions": {
+    "description": "Slide menu command to edit its transition."
+  },
+  "cue.menu.shortcut": "Hot Key…",
+  "@cue.menu.shortcut": {
+    "description": "Slide menu command to edit its shortcut."
+  },
+  "cue.menu.completion": "Go to Next Timer…",
+  "@cue.menu.completion": {
+    "description": "Slide menu command to edit automatic slide completion."
+  },
+  "cue.menu.playlistAction": "Playlist",
+  "@cue.menu.playlistAction": {
+    "description": "Slide action menu category for playlist actions."
+  },
+  "cue.menu.actionPalette": "Action Palette…",
+  "@cue.menu.actionPalette": {
+    "description": "Slide menu command to open the action editor."
+  },
+  "cue.menu.addMediaAction": "Add Media Action",
+  "@cue.menu.addMediaAction": {
+    "description": "Slide menu submenu containing media assets."
+  },
+  "cue.menu.editAction": "Edit Action: {name}",
+  "@cue.menu.editAction": {
+    "description": "Submenu for a named slide media action."
+  },
+  "cue.menu.removeAction": "Remove Action: {name}",
+  "@cue.menu.removeAction": {
+    "description": "Command to remove a named slide media action."
+  },
+  "cue.menu.convertMediaAction": "Convert Media Action to Slide Element",
+  "@cue.menu.convertMediaAction": {
+    "description": "Command to turn an attached visual asset into a slide layer."
+  },
+  "cue.menu.copyTextStyle": "Copy Text Style",
+  "@cue.menu.copyTextStyle": {
+    "description": "Slide menu command to copy the slide text style."
+  },
+  "cue.menu.pasteTextStyle": "Paste Text Style",
+  "@cue.menu.pasteTextStyle": {
+    "description": "Slide menu command to apply the copied text style."
+  },
   "cue.menu.enable": "Enable",
   "@cue.menu.enable": {
     "description": "User-facing enable text in the cue interface."

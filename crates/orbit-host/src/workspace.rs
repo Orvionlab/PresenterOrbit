@@ -4677,9 +4677,13 @@ pub(crate) fn apply_presentation_media_edit(
                     != Some(media_id.as_str())
                 {
                     slide_object.insert("mediaBackgroundId".to_string(), json!(media_id));
+                    slide_object.remove("mediaBackgroundBehavior");
+                    slide_object.remove("mediaBackgroundScale");
                 }
             } else {
                 slide_object.remove("mediaBackgroundId");
+                slide_object.remove("mediaBackgroundBehavior");
+                slide_object.remove("mediaBackgroundScale");
             }
             if background_only && slide_object.contains_key("mediaBackgroundId") {
                 slide_object.insert("mediaBackgroundOnly".to_string(), json!(true));

@@ -702,18 +702,27 @@ fn media(live: &mut Value, facts: &Facts, action: &Value, run: &mut Run) -> Resu
         .get("mediaTransport")
         .or_else(|| asset.get("mediaTransport"))
         .filter(|value| value.is_object());
-    live["backgroundTransportOverride"] = match transport {
-        Some(transport) => {
-            let mut over = json!({"selectionId":selection,"transport":transport});
-            if matches!(
-                details["backgroundBehavior"].as_str(),
-                Some("background" | "foreground")
-            ) {
-                over["behavior"] = details["backgroundBehavior"].clone();
-            }
-            over
-        }
-        None => Value::Null,
+    let mut overrides = serde_json::Map::new();
+    if let Some(transport) = transport {
+        overrides.insert("transport".into(), transport.clone());
+    }
+    if matches!(
+        details["backgroundBehavior"].as_str(),
+        Some("background" | "foreground")
+    ) {
+        overrides.insert("behavior".into(), details["backgroundBehavior"].clone());
+    }
+    if matches!(
+        details["backgroundScale"].as_str(),
+        Some("fit" | "fill" | "stretch" | "blur")
+    ) {
+        overrides.insert("scale".into(), details["backgroundScale"].clone());
+    }
+    live["backgroundTransportOverride"] = if overrides.is_empty() {
+        Value::Null
+    } else {
+        overrides.insert("selectionId".into(), json!(selection));
+        Value::Object(overrides)
     };
     live["backgroundEffectsOverride"] = match details["mediaEffects"].as_array() {
         Some(chain) => json!({"selectionId":selection,"chain":chain}),
@@ -728,18 +737,10 @@ fn media(live: &mut Value, facts: &Facts, action: &Value, run: &mut Run) -> Resu
         None if duration > 0.0 => json!(format!("fade:{duration}:{effect}")),
         None => json!("none"),
     };
-    if matches!(
-        details["backgroundBehavior"].as_str(),
-        Some("background" | "foreground")
-    ) {
-        live["backgroundBehavior"] = details["backgroundBehavior"].clone();
-    }
-    if matches!(
-        details["backgroundScale"].as_str(),
-        Some("fit" | "fill" | "stretch")
-    ) {
-        live["backgroundScale"] = details["backgroundScale"].clone();
-    }
+    live["backgroundBehavior"] = details["backgroundBehavior"]
+        .as_str()
+        .filter(|value| matches!(*value, "background" | "foreground"))
+        .map_or(Value::Null, |value| json!(value));
     if asset.get("markers").is_none_or(Value::is_null) {
         run.steps.push(Step::Markers {
             layer: "media",

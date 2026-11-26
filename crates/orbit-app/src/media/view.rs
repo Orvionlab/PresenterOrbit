@@ -20,6 +20,7 @@ mod maintenance;
 mod markers;
 #[path = "menu.rs"]
 mod menu;
+pub(crate) use menu::reveal_asset;
 #[path = "preview.rs"]
 mod preview;
 #[path = "preview_timeline.rs"]
@@ -479,6 +480,14 @@ impl MediaBin {
         }
         cx.notify();
     }
+    pub(crate) fn open_inspector(&mut self, id: &str, cx: &mut Context<Self>) {
+        self.select_asset(id, cx);
+        self.menu_position = None;
+        self.inspector_tab = 0;
+        self.inspector_open = true;
+        cx.notify();
+    }
+
     fn select_asset(&mut self, id: &str, cx: &mut Context<Self>) {
         if self.selected == id {
             return;

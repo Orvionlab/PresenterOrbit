@@ -1,6 +1,19 @@
 use super::*;
 use orbit_ui::controls::{ContextMenu, MenuEntry, MenuItem};
 
+pub(crate) fn reveal_asset(runtime: &Runtime, path: String, cx: &mut gpui::App) {
+    let (host, runtime) = (runtime.host.clone(), runtime.clone());
+    cx.spawn(async move |cx| {
+        let result = cx
+            .background_spawn(async move { host.invoke("showItemInFolder", vec![json!(path)]) })
+            .await;
+        if let Err(error) = result {
+            cx.update(|cx| crate::cues::actions::error(&runtime, cx, error));
+        }
+    })
+    .detach();
+}
+
 impl MediaBin {
     /// Nothing is copied, or the copied media has no playlist to be pasted into.
     pub(super) fn paste_blocked(&self) -> bool {
@@ -97,23 +110,7 @@ impl MediaBin {
                 else {
                     return;
                 };
-                let host = self.runtime.host.clone();
-                cx.spawn(async move |this, cx| {
-                    let result = cx
-                        .background_spawn(async move {
-                            host.invoke("showItemInFolder", vec![json!(path)])
-                        })
-                        .await;
-                    let _ = this.update(cx, |this, cx| {
-                        if let Err(error) = result {
-                            this.runtime.status.update(cx, |status, cx| {
-                                status.message = error;
-                                cx.notify();
-                            });
-                        }
-                    });
-                })
-                .detach();
+                reveal_asset(&self.runtime, path, cx);
                 return;
             }
             _ => return,
@@ -153,10 +150,7 @@ impl MediaBin {
             .disabled(item["type"] == "background")
             .on_click(move |_, _, cx| {
                 let _ = weak.update(cx, |this, cx| {
-                    this.menu_position = None;
-                    this.inspector_tab = 0;
-                    this.inspector_open = true;
-                    cx.notify();
+                    this.open_inspector(&this.selected.clone(), cx);
                 });
             })
             .into();

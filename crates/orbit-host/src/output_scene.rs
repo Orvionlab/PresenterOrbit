@@ -1940,7 +1940,8 @@ fn build_background_output(input: &OutputSceneStateInput, media_visible: bool) -
             .background_transport_override
             .as_ref()
             .filter(|value| {
-                value.get("selectionId").and_then(Value::as_f64).is_some()
+                background_id == input.background_id
+                    && value.get("selectionId").and_then(Value::as_f64).is_some()
                     && value.get("selectionId").and_then(Value::as_f64)
                         == input
                             .background_selection_id
@@ -1980,8 +1981,9 @@ fn build_background_output(input: &OutputSceneStateInput, media_visible: bool) -
         saturation = media.get("mediaSaturation").and_then(Value::as_f64);
         media_path = string_field(media, "sourcePath").unwrap_or_default();
         media_url = string_field(media, "sourceUrl").unwrap_or_default();
-        scale = string_field(media, "backgroundScale")
-            .filter(|value| !value.is_empty())
+        scale = transport_override
+            .and_then(|overrides| string_field(overrides, "scale"))
+            .or_else(|| string_field(media, "backgroundScale").filter(|value| !value.is_empty()))
             .unwrap_or(scale);
         playback = string_field(media, "backgroundPlayback")
             .filter(|value| !value.is_empty())
@@ -1998,8 +2000,19 @@ fn build_background_output(input: &OutputSceneStateInput, media_visible: bool) -
         css = string_field(background, "css").unwrap_or_else(|| "#000".to_string());
     }
 
-    if uses_slide_media_background(input) {
-        behavior = "background".to_string();
+    if let Some(slide) = input
+        .live_slide
+        .as_ref()
+        .filter(|slide| string_field(slide, "mediaBackgroundId").is_some_and(|id| !id.is_empty()))
+    {
+        if uses_slide_media_background(input) {
+            behavior = "background".to_string();
+        } else if let Some(value) = string_field(slide, "mediaBackgroundBehavior") {
+            behavior = value;
+        }
+        if let Some(value) = string_field(slide, "mediaBackgroundScale") {
+            scale = value;
+        }
     }
     BackgroundOutput {
         visible: true,

@@ -4036,6 +4036,93 @@ fn dropping_media_copies_assets_filters_the_bin_and_survives_restart(cx: &mut Te
     let after_deselect = app.snapshot()["library"][0]["slides"].clone();
     assert_eq!(after_deselect[1]["mediaBackgroundId"], media[2].0);
     assert_eq!(after_deselect[2], expected[1]);
+    context(&mut visual, "cue-thumbnail-0");
+    let selectors = [
+        "menu-item-Edit Slide",
+        "menu-item-Disable",
+        "menu-item-Themes",
+        "menu-item-Transitions…",
+        "menu-item-Hot Key…",
+        "menu-item-Go to Next Timer…",
+        "menu-item-Add Action",
+        "menu-item-Add Media Action",
+        "menu-item-Group",
+        "menu-item-Label",
+        "menu-item-Copy Text Style",
+        "menu-item-Paste Text Style",
+        "menu-item-Cut",
+        "menu-item-Copy",
+        "menu-item-Paste",
+        "menu-item-Delete",
+    ];
+    let rows = selectors.map(|selector| visual.debug_bounds(selector).unwrap().top());
+    assert!(rows.windows(2).all(|rows| rows[0] < rows[1]));
+    assert!(visual.debug_bounds("menu-item-Quick Edit").is_none());
+
+    click(&mut visual, "menu-item-Add Media Action");
+    let asset = app.snapshot()["media"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|asset| asset["id"] == media[0].0)
+        .unwrap()
+        .clone();
+    click(
+        &mut visual,
+        &format!("menu-item-{}", asset["title"].as_str().unwrap()),
+    );
+    app.wait(cx, |app, _| {
+        app.snapshot()["library"][0]["slides"][0]["actions"][0]["targetId"] == media[0].0
+    });
+    let path = std::path::Path::new(asset["sourcePath"].as_str().unwrap());
+    let filename = path.file_name().unwrap().to_str().unwrap();
+    let edit = format!("menu-item-Edit Action: {filename}");
+    context(&mut visual, "cue-thumbnail-0");
+    click(&mut visual, &edit);
+    click(&mut visual, "menu-item-Scaling");
+    click(&mut visual, "menu-item-Scale to Fill");
+    app.wait(cx, |app, _| {
+        app.snapshot()["library"][0]["slides"][0]["actions"][0]["details"]["backgroundScale"]
+            == "fill"
+    });
+    let workspace = app.snapshot();
+    let stored_asset = workspace["media"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|stored| stored["id"] == asset["id"])
+        .unwrap();
+    assert_eq!(stored_asset["backgroundScale"], asset["backgroundScale"]);
+    context(&mut visual, "cue-thumbnail-0");
+    click(&mut visual, &edit);
+    click(
+        &mut visual,
+        "menu-item-Convert Media Action to Slide Element",
+    );
+    app.wait(cx, |app, _| {
+        let workspace = app.snapshot();
+        let slide = &workspace["library"][0]["slides"][0];
+        slide["actions"] == json!([]) && slide["layers"][0]["mediaScale"] == "Scale to Fill"
+    });
+    let drop_asset = workspace["media"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|asset| asset["id"] == media[2].0)
+        .unwrap();
+    let drop_filename = std::path::Path::new(drop_asset["sourcePath"].as_str().unwrap())
+        .file_name()
+        .unwrap()
+        .to_str()
+        .unwrap();
+    context(&mut visual, "cue-thumbnail-0");
+    click(
+        &mut visual,
+        &format!("menu-item-Remove Action: {drop_filename}"),
+    );
+    app.wait(cx, |app, _| {
+        app.snapshot()["library"][0]["slides"][0]["mediaBackgroundId"].is_null()
+    });
 }
 
 #[gpui::test]

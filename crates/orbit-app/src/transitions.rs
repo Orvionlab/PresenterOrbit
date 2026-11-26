@@ -354,6 +354,23 @@ impl TransitionDefaults {
         self.save_patch(patch, cx);
     }
 
+    pub fn open_slide(
+        &mut self,
+        item: String,
+        slide: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.item_id = Some(item);
+        self.slide_id = Some(slide);
+        if let Some(seconds) = self.transition(cx)["durationSeconds"].as_f64() {
+            self.duration.update(cx, |slider, cx| {
+                slider.set_value(seconds as f32, window, cx)
+            });
+        }
+        self.open_picker(window, cx);
+    }
+
     pub fn edit_prop(
         &mut self,
         id: String,
@@ -431,7 +448,7 @@ impl Render for TransitionDefaults {
         let theme = *cx.theme();
         let transition = self.transition(cx);
         let active = mode(&transition);
-        if self.prop_id.is_some() {
+        if self.prop_id.is_some() || self.slide_id.is_some() && !self.inspector {
             return self.picker_panel(active, window, cx).into_any_element();
         }
         if let Some(stored) = transition["durationSeconds"]

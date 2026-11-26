@@ -213,7 +213,13 @@ pub struct AppView {
 impl EventEmitter<HostEvent> for AppView {}
 
 impl AppView {
-    fn open_slide_authoring(&mut self, item: String, slide: String, cx: &mut Context<Self>) {
+    fn open_slide_authoring(
+        &mut self,
+        item: String,
+        slide: String,
+        section: Option<&str>,
+        cx: &mut Context<Self>,
+    ) {
         let owner = cx.weak_entity();
         let runtime = self.runtime.clone();
         self.slide_authoring = Some(cx.new(|cx| {
@@ -221,6 +227,7 @@ impl AppView {
                 runtime,
                 item,
                 slide,
+                section,
                 move |cx| {
                     let _ = owner.update(cx, |view, cx| {
                         view.slide_authoring = None;
@@ -332,7 +339,7 @@ impl AppView {
             &canvas,
             |view, _, event: &crate::canvas::CanvasEvent, cx| {
                 if let crate::canvas::CanvasEvent::SlideActions { item, slide } = event {
-                    view.open_slide_authoring(item.clone(), slide.clone(), cx);
+                    view.open_slide_authoring(item.clone(), slide.clone(), None, cx);
                     return;
                 }
                 if let crate::canvas::CanvasEvent::Reflow { item, slide } = event {
@@ -348,6 +355,24 @@ impl AppView {
                 }
                 view.canvas_open = false;
                 cx.notify();
+            },
+        ));
+        subscriptions.push(cx.subscribe(
+            &cue_thumbnails,
+            |view, _, event: &crate::cues::SlideMenuRequest, cx| match event {
+                crate::cues::SlideMenuRequest::Actions {
+                    item,
+                    slide,
+                    section,
+                } => {
+                    view.open_slide_authoring(item.clone(), slide.clone(), *section, cx);
+                }
+                crate::cues::SlideMenuRequest::InspectMedia(id) => {
+                    view.media_visible = true;
+                    view.media
+                        .update(cx, |media, cx| media.open_inspector(id, cx));
+                    cx.notify();
+                }
             },
         ));
         subscriptions.push(cx.subscribe(
@@ -830,7 +855,7 @@ impl AppView {
                     else {
                         return;
                     };
-                    view.open_slide_authoring(item, slide, cx);
+                    view.open_slide_authoring(item, slide, None, cx);
                 })
                 .ok();
             });

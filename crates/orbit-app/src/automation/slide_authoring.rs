@@ -247,6 +247,7 @@ pub struct SlideAuthoring {
     /// The saved actions and completion the dialog opened from, for the stale check.
     opened: (Value, Value),
     status: String,
+    completion_only: bool,
     busy: bool,
     on_close: std::rc::Rc<dyn Fn(&mut gpui::App)>,
 }
@@ -260,6 +261,7 @@ impl SlideAuthoring {
         runtime: Runtime,
         item_id: String,
         slide_id: String,
+        section: Option<&str>,
         on_close: impl Fn(&mut gpui::App) + 'static,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -282,7 +284,21 @@ impl SlideAuthoring {
             "seconds": slide["completionTimeSeconds"].as_f64().map(|s| s.to_string()).unwrap_or_default(),
             "target": target_value(&slide),
         }));
+        if let Some(kind) = section.filter(|kind| super::validate::ACTION_TYPES.contains(kind)) {
+            let mut action = action_list::new_action(uuid::Uuid::new_v4().to_string());
+            action["type"] = json!(kind);
+            if let Some(action) = action.as_object_mut().filter(|_| kind != "clear") {
+                action.remove("targetLayer");
+            }
+            let mut actions = form.draft["actions"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default();
+            actions.push(action);
+            form.set("actions", json!(actions));
+        }
         Self {
+            completion_only: section == Some("completion"),
             runtime,
             item_id,
             slide_id,
@@ -432,18 +448,21 @@ impl Render for SlideAuthoring {
             .flex_col()
             .gap(gap)
             .max_h(gpui::px(560.))
-            .overflow_y_scroll()
-            .child(div().child(t.t("automation.slideActions.execution")));
-        body = body.child(action_list::render(
-            &mut self.form,
-            "slide-actions",
-            "actions",
-            &workspace,
-            "",
-            form_of,
-            window,
-            cx,
-        ));
+            .overflow_y_scroll();
+        if !self.completion_only {
+            body = body
+                .child(div().child(t.t("automation.slideActions.execution")))
+                .child(action_list::render(
+                    &mut self.form,
+                    "slide-actions",
+                    "actions",
+                    &workspace,
+                    "",
+                    form_of,
+                    window,
+                    cx,
+                ));
+        }
         body = body
             .child(div().child(t.t("completion.title")))
             .child(div().child(t.t("completion.timing")))

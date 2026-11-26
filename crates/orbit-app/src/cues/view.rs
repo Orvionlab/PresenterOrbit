@@ -1,4 +1,6 @@
 mod arrangement_manager;
+mod slide_menu;
+pub use slide_menu::SlideMenuRequest;
 
 use super::{
     actions,
@@ -68,6 +70,7 @@ enum Mode {
 #[derive(Clone)]
 enum FormKind {
     Text(String),
+    Shortcut(String),
     NewArrangement,
     RenameArrangement(String),
     Song,
@@ -182,6 +185,8 @@ pub struct CueView {
     columns: usize,
     size: Entity<orbit_ui::controls::SliderState>,
     transitions: Entity<crate::transitions::TransitionDefaults>,
+    slide_transition: Option<Entity<crate::transitions::TransitionDefaults>>,
+    text_style_clipboard: Option<Value>,
     presentation_tools: HashMap<(String, String, String), PresentationTools>,
     continuous: bool,
     selected: Vec<String>,
@@ -295,6 +300,8 @@ impl CueView {
             columns: 5,
             size,
             transitions,
+            slide_transition: None,
+            text_style_clipboard: None,
             presentation_tools: HashMap::new(),
             continuous: false,
             selected: Vec::new(),
@@ -1019,6 +1026,19 @@ impl CueView {
         self.menu = None;
         match action {
             "edit" => self.open_form(FormKind::Text(id), document, window, cx),
+            "edit-slide" => cx.emit(EditSlide {
+                item: item.item.id.clone(),
+                slide: id,
+            }),
+            "shortcut" => self.open_form(FormKind::Shortcut(id), document, window, cx),
+            "transitions" => self.open_slide_transition(item.item.id.clone(), id, window, cx),
+            "completion" => cx.emit(SlideMenuRequest::Actions {
+                item: item.item.id.clone(),
+                slide: id,
+                section: Some("completion"),
+            }),
+            "copy-style" => self.copy_slide_style(&item.item, &id),
+            "paste-style" => self.paste_slide_style(&item.item.id, &ids, cx),
             "copy" | "cut" | "duplicate" => {
                 let slides: Vec<_> = item.item.value["slides"]
                     .as_array()
@@ -2312,6 +2332,16 @@ impl CueView {
                 self.reflow_browser_item =
                     self.runtime.ui.read(cx).selected_library_item_id.clone();
             }
+            FormKind::Shortcut(id) => {
+                let value = item.value["slides"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .find(|slide| slide["id"] == *id)
+                    .and_then(|slide| slide["shortcut"].as_str())
+                    .unwrap_or("");
+                fields.push(("gpui.editor.slideShortcut", input_state(value, window, cx)));
+            }
             FormKind::NewArrangement => {
                 fields.push(("arrangements.name", input_state("", window, cx)))
             }
@@ -2458,6 +2488,30 @@ impl CueView {
         form.saving = true;
         form.error.clear();
         match kind {
+            FormKind::Shortcut(id) => {
+                let shortcut = values.first().map(String::as_str).unwrap_or("").trim();
+                let task = actions::mutate_checked(
+                    &runtime,
+                    &item,
+                    json!({"type":"setSlideShortcut","slideId":id,"shortcut":shortcut}),
+                    cx,
+                );
+                cx.spawn(async move |owner, cx| {
+                    let saved = task.await.is_some();
+                    let _ = owner.update(cx, |view, cx| {
+                        if let Some(form) = view.form.as_mut().filter(|form| form.nonce == nonce) {
+                            if saved {
+                                view.form = None;
+                            } else {
+                                form.saving = false;
+                                form.error = runtime.status.read(cx).message.clone();
+                            }
+                            cx.notify();
+                        }
+                    });
+                })
+                .detach();
+            }
             FormKind::NewArrangement | FormKind::RenameArrangement(_) => {
                 let name = values.first().map(String::as_str).unwrap_or("").trim();
                 if name.is_empty() {
@@ -3256,7 +3310,9 @@ impl CueView {
     }
     fn form_element(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let Some(form) = self.form.as_ref() else {
-            return self.arrangement_manager_element(cx);
+            return self
+                .slide_transition_element(cx)
+                .or_else(|| self.arrangement_manager_element(cx));
         };
         if matches!(form.kind, FormKind::Text(_)) {
             return None;
@@ -3265,6 +3321,7 @@ impl CueView {
         let weak = cx.weak_entity();
         let title = t.t(match form.kind {
             FormKind::Text(_) => unreachable!("the text form is the inline reflow editor"),
+            FormKind::Shortcut(_) => "gpui.editor.slideShortcut",
             FormKind::NewArrangement => "arrangements.add",
             FormKind::RenameArrangement(_) => "arrangements.name",
             FormKind::Song => "toolbar.editor.ccli",
@@ -3278,7 +3335,7 @@ impl CueView {
         });
         if matches!(
             form.kind,
-            FormKind::NewArrangement | FormKind::RenameArrangement(_)
+            FormKind::NewArrangement | FormKind::RenameArrangement(_) | FormKind::Shortcut(_)
         ) {
             if let Some((_, input)) = form.fields.first() {
                 dialog = dialog.initial_focus(input.read(cx).focus_handle(cx));
@@ -3377,7 +3434,11 @@ impl CueView {
             MenuItem::new(t.t(key))
                 .disabled(
                     (name == "paste" && self.clipboard.is_empty())
-                        || (name == "edit" && selected.len() > 1),
+                        || (name == "paste-style" && self.text_style_clipboard.is_none())
+                        || (matches!(
+                            name,
+                            "edit-slide" | "shortcut" | "transitions" | "completion" | "copy-style"
+                        ) && selected.len() > 1),
                 )
                 .on_click(move |_, window, cx| {
                     view.update(cx, |view, cx| {
@@ -3387,21 +3448,17 @@ impl CueView {
                 })
                 .into()
         };
-        let mut entries: Vec<MenuEntry> = vec![action("common.edit", "edit")];
+        let mut entries: Vec<MenuEntry> = vec![
+            action("cue.menu.editSlide", "edit-slide"),
+            MenuEntry::Separator,
+        ];
         if selected_cues.clone().any(|cue| cue["disabled"] == true) {
             entries.push(action("cue.menu.enable", "enable"));
         }
         if selected_cues.any(|cue| cue["disabled"] != true) {
             entries.push(action("cue.menu.disable", "disable"));
         }
-        entries.extend([
-            MenuEntry::Separator,
-            action("common.cut", "cut"),
-            action("common.copy", "copy"),
-            action("common.paste", "paste"),
-            action("common.duplicate", "duplicate"),
-            action("common.delete", "delete"),
-        ]);
+        entries.push(MenuEntry::Separator);
         let groups = self
             .runtime
             .output
@@ -3428,11 +3485,7 @@ impl CueView {
             let ids = selected.clone();
             group_entries.push(MenuItem::new(label).checked(model::group_id(&cue)==group).on_click(move|_,_,cx|actions::mutate(&runtime,&item,json!({"type":"setSlidesGroup","slideIds":ids,"groupId":if group.is_empty(){Value::Null}else{json!(group)}}),cx)).into());
         }
-        entries.push(MenuEntry::Submenu {
-            label: t.t("cue.menu.group").into(),
-            disabled: false,
-            entries: group_entries,
-        });
+
         let themes = self.runtime.content.read(cx).themes.clone();
         let mut theme_entries = Vec::new();
         for theme in themes {
@@ -3455,6 +3508,19 @@ impl CueView {
             label: t.t("cue.menu.themes").into(),
             disabled: theme_entries.is_empty(),
             entries: theme_entries,
+        });
+        entries.extend([
+            action("cue.menu.transitions", "transitions"),
+            action("cue.menu.shortcut", "shortcut"),
+            action("cue.menu.completion", "completion"),
+            MenuEntry::Separator,
+        ]);
+        entries.extend(self.slide_action_entries(&document.item, &cue, cx));
+        entries.push(MenuEntry::Separator);
+        entries.push(MenuEntry::Submenu {
+            label: t.t("cue.menu.group").into(),
+            disabled: false,
+            entries: group_entries,
         });
         let labels = crate::settings::slide_labels(
             &self.runtime.output.read(cx).settings["generalSettings"],
@@ -3485,6 +3551,17 @@ impl CueView {
             disabled: false,
             entries: label_entries,
         });
+        entries.extend([
+            MenuEntry::Separator,
+            action("cue.menu.copyTextStyle", "copy-style"),
+            action("cue.menu.pasteTextStyle", "paste-style"),
+            MenuEntry::Separator,
+            action("common.cut", "cut"),
+            action("common.copy", "copy"),
+            action("common.paste", "paste"),
+            action("common.duplicate", "duplicate"),
+            action("common.delete", "delete"),
+        ]);
         let weak = cx.weak_entity();
         Some(
             ContextMenu::new("cue-context", position, entries, move |_, _, cx| {

@@ -5,5 +5,6 @@ mod video_inputs_settings;
 mod video_inputs_view;
 mod view;
 pub use video_inputs::VideoInputs;
+pub(crate) use view::reveal_asset;
 pub(crate) use view::{transparency_background, AssetDrag};
 pub use view::{AudioBin, MediaBin, SidebarChanged};
