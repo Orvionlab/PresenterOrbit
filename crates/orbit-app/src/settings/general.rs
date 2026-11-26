@@ -3,7 +3,8 @@
 use super::ui::{Field, OutputField};
 use gpui::{div, prelude::*, AnyElement, Context, SharedString, Window};
 use orbit_ui::controls::{
-    ActionButton, BusyDialog, ButtonVariant, CheckboxField, Select, SelectOption, ToggleSwitch,
+    ActionButton, BusyDialog, ButtonVariant, CheckboxField, Select, SelectOption, TextInput,
+    ToggleSwitch,
 };
 use orbit_ui::{ActiveTheme, Translator};
 use serde_json::{json, Value};
@@ -175,7 +176,115 @@ impl SettingsView {
             .into_any_element()
     }
 
-    pub(super) fn general_panel(&mut self, _: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+    fn copyright_settings(
+        &mut self,
+        general: &Value,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        use super::rows;
+
+        let t = *cx.global::<Translator>();
+        let license_label = t.t("settings.copyright.license");
+        let license = self.field_state(
+            "general-ccli-license",
+            general["ccliLicenseNumber"].as_str().unwrap_or_default(),
+            window,
+            cx,
+            std::rc::Rc::new(|view, value, cx| {
+                view.patch_general(json!({ "ccliLicenseNumber": value.trim() }), cx)
+            }),
+            false,
+        );
+        let options = [
+            ("first", "settings.copyright.first"),
+            ("last", "settings.copyright.last"),
+            ("first-and-last", "settings.copyright.firstAndLast"),
+            ("all", "settings.copyright.all"),
+        ]
+        .into_iter()
+        .map(|(value, label)| SelectOption::new(value.to_owned(), t.t(label)))
+        .collect();
+        let placement = Select::new(
+            "general-ccli-placement",
+            options,
+            general["ccliDisplayLocation"]
+                .as_str()
+                .unwrap_or("first")
+                .to_owned(),
+        )
+        .label(t.t("settings.copyright.placement"))
+        .on_change({
+            let view = cx.weak_entity();
+            move |value, _, cx| {
+                let _ = view.update(cx, |view, cx| {
+                    view.patch_general(json!({ "ccliDisplayLocation": value }), cx)
+                });
+            }
+        });
+        let toggle = ToggleSwitch::new(
+            "general-ccli-enabled",
+            t.t("settings.copyright.enabled"),
+            general["ccliDisplayEnabled"] != false,
+        )
+        .bare()
+        .on_change({
+            let view = cx.weak_entity();
+            move |enabled, _, cx| {
+                let _ = view.update(cx, |view, cx| {
+                    view.patch_general(json!({ "ccliDisplayEnabled": enabled }), cx)
+                });
+            }
+        });
+        let edit = ActionButton::new("general-ccli-layout", t.t("settings.copyright.editLayout"))
+            .variant(ButtonVariant::Secondary)
+            .compact()
+            .on_click(|_, _, cx| {
+                let Some(main) = cx.try_global::<crate::automation::inputs::Commands>() else {
+                    return;
+                };
+                let commands = main.commands.clone();
+                let _ = main.window.update(cx, |_, window, cx| {
+                    if commands.run("open-ccli", false, window, cx) {
+                        window.activate_window();
+                    }
+                });
+            });
+        stack(cx)
+            .child(heading(t.t("settings.copyright.title"), cx))
+            .child(rows::group(
+                [
+                    rows::setting_row(
+                        t.t("settings.copyright.enabled"),
+                        None,
+                        div()
+                            .debug_selector(|| "general-ccli-enabled".into())
+                            .child(toggle),
+                        cx,
+                    ),
+                    rows::setting_field_row(
+                        "general-ccli-placement-field",
+                        t.t("settings.copyright.placement"),
+                        placement,
+                        cx,
+                    ),
+                    rows::setting_field_row(
+                        "general-ccli-license",
+                        license_label.clone(),
+                        TextInput::new("ccli-license-input", &license).label(license_label),
+                        cx,
+                    ),
+                    rows::setting_row(t.t("settings.copyright.layout"), None, edit, cx),
+                ],
+                cx,
+            ))
+    }
+
+    pub(super) fn general_panel(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let t = *cx.global::<Translator>();
         let settings = self.settings(cx);
         let general = &settings["generalSettings"];
@@ -282,6 +391,7 @@ impl SettingsView {
                             .map(|status| muted(status, cx)),
                     ),
             )
+            .child(self.copyright_settings(general, window, cx))
             .child(heading(t.t("settings.general.system"), cx));
         for name in DESKTOP_SETTINGS {
             let weak = weak.clone();

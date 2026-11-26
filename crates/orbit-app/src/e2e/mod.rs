@@ -2478,7 +2478,14 @@ fn presentation_take_next_and_clear_reach_a_real_output_process(cx: &mut TestApp
     };
     let mut visual = app.visual(cx);
     let commands = cx.update(|cx| app.main.view.read(cx).commands.clone());
-    visual.update(|window, cx| assert!(commands.run("open-ccli", false, window, cx)));
+    let settings_runtime = runtime.clone();
+    let settings_window = cx.add_window(move |window, cx| {
+        let view = cx.new(|cx| crate::settings::SettingsView::new(settings_runtime, cx));
+        orbit_ui::controls::Root::new(view, window, cx)
+    });
+    let mut settings = gpui::VisualTestContext::from_window(settings_window.into(), cx);
+    settings.run_until_parked();
+    click(&mut settings, "button-general-ccli-layout");
     visual.run_until_parked();
     assert!(visual.debug_bounds("ccli-objects").is_some());
     assert!(visual.debug_bounds("authoring-layout-scroll").is_none());
@@ -2539,6 +2546,37 @@ fn presentation_take_next_and_clear_reach_a_real_output_process(cx: &mut TestApp
         let scene = output(app);
         scene["text"] == "Closing line" && scene["ccliSlide"].is_null()
     });
+    click(&mut settings, "general-ccli-license");
+    settings.simulate_input("001234");
+    settings.simulate_keystrokes("enter");
+    click(&mut settings, "select-general-ccli-placement-trigger");
+    click(&mut settings, "select-option-1");
+    app.wait(cx, |app, _| {
+        let scene = output(app);
+        scene["ccliSlide"] == saved_template
+            && scene["linkedTextContext"]["ccliLicenseNumber"] == "001234"
+            && app.host.invoke("getSettings", vec![]).unwrap()["generalSettings"]
+                ["ccliDisplayLocation"]
+                == "last"
+    });
+    visual.simulate_keystrokes("left");
+    app.wait(cx, |app, _| {
+        let scene = output(app);
+        scene["text"] == "Opening line" && scene["ccliSlide"].is_null()
+    });
+    for option in ["select-option-2", "select-option-3"] {
+        click(&mut settings, "select-general-ccli-placement-trigger");
+        click(&mut settings, option);
+        app.wait(cx, |app, _| output(app)["ccliSlide"] == saved_template);
+    }
+    click(&mut settings, "general-ccli-enabled");
+    app.wait(cx, |app, _| {
+        let scene = output(app);
+        scene["ccliSlide"].is_null() && scene["linkedTextContext"]["ccli"]["display"] == false
+    });
+    click(&mut settings, "general-ccli-enabled");
+    click(&mut settings, "select-general-ccli-placement-trigger");
+    click(&mut settings, "select-option-0");
     for _ in 0..32 {
         visual.simulate_keystrokes("left right");
     }

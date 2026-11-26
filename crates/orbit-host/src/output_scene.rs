@@ -320,6 +320,12 @@ pub struct OutputSceneStateInput<'a> {
     #[serde(default)]
     pub ccli_template: Option<Value>,
     #[serde(default)]
+    pub ccli_display_enabled: Option<bool>,
+    #[serde(default)]
+    pub ccli_display_location: CcliDisplayLocation,
+    #[serde(default)]
+    pub ccli_license_number: Option<String>,
+    #[serde(default)]
     pub background_id: Option<String>,
     #[serde(default)]
     pub backgrounds: Vec<Value>,
@@ -671,6 +677,9 @@ const OUTPUT_SCENE_PATCH_FIELDS: &[&str] = &[
     "stageScreenAssignments",
     "masks",
     "ccliTemplate",
+    "ccliDisplayEnabled",
+    "ccliDisplayLocation",
+    "ccliLicenseNumber",
     "backgroundId",
     "backgrounds",
     "media",
@@ -2198,9 +2207,21 @@ pub fn resolve_stage_layout<'a>(
         .or_else(|| available.next())
 }
 
+#[derive(Debug, Clone, Copy, Default, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum CcliDisplayLocation {
+    #[default]
+    First,
+    Last,
+    FirstAndLast,
+    All,
+}
+
 fn ccli_slide_for_live_item(input: &OutputSceneStateInput) -> Option<Value> {
     let item = input.live_item.as_ref()?;
-    if crate::native_compositor::format_ccli_text(item.get("ccli")).is_empty() {
+    if input.ccli_display_enabled == Some(false)
+        || crate::native_compositor::format_ccli_text(item.get("ccli")).is_empty()
+    {
         return None;
     }
     let live_id = input.live_slide.as_ref()?.get("id")?.as_str()?;
@@ -2209,9 +2230,18 @@ fn ccli_slide_for_live_item(input: &OutputSceneStateInput) -> Option<Value> {
         input.live_cue_instance_id.as_deref(),
         input.live_playlist_entry_id.as_deref(),
     )?;
-    let first_enabled = slides.iter().position(|slide| slide["disabled"] != true)?;
     let active = live_slide_index(&slides, live_id, input.live_cue_instance_id.as_deref())?;
-    (active == first_enabled).then(|| {
+    let enabled = |slide: &Value| slide["disabled"] != true;
+    let show = match input.ccli_display_location {
+        CcliDisplayLocation::First => slides.iter().position(enabled) == Some(active),
+        CcliDisplayLocation::Last => slides.iter().rposition(enabled) == Some(active),
+        CcliDisplayLocation::FirstAndLast => {
+            slides.iter().position(enabled) == Some(active)
+                || slides.iter().rposition(enabled) == Some(active)
+        }
+        CcliDisplayLocation::All => true,
+    };
+    show.then(|| {
         input
             .ccli_template
             .clone()
@@ -2432,12 +2462,18 @@ fn build_linked_text_context(
         "nextSlideLabel".to_string(),
         json!(string_field(next_slide.unwrap_or(&Value::Null), "label").unwrap_or_default()),
     );
-    context.insert(
-        "ccli".to_string(),
-        item.and_then(|item| item.get("ccli"))
-            .cloned()
-            .unwrap_or_else(|| json!({})),
-    );
+    let mut ccli = item
+        .and_then(|item| item.get("ccli"))
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    if input.ccli_display_enabled == Some(false) {
+        ccli.insert("display".into(), Value::Bool(false));
+    }
+    if let Some(number) = &input.ccli_license_number {
+        context.insert("ccliLicenseNumber".into(), json!(number));
+    }
+    context.insert("ccli".into(), Value::Object(ccli));
     context.insert(
         "stageMessageText".to_string(),
         json!(

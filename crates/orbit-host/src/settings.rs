@@ -650,6 +650,34 @@ pub fn normalize_general_settings_value(value: &Value) -> Value {
     let configured = value.as_object().cloned().unwrap_or_default();
     let mut normalized = configured.clone();
     normalized.insert(
+        "ccliDisplayEnabled".into(),
+        Value::Bool(
+            configured
+                .get("ccliDisplayEnabled")
+                .and_then(Value::as_bool)
+                .unwrap_or(true),
+        ),
+    );
+    normalized.insert(
+        "ccliDisplayLocation".into(),
+        Value::String(normalized_string_option(
+            configured.get("ccliDisplayLocation"),
+            &["first", "last", "first-and-last", "all"],
+            "first",
+        )),
+    );
+    normalized.insert(
+        "ccliLicenseNumber".into(),
+        Value::String(
+            configured
+                .get("ccliLicenseNumber")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .trim()
+                .to_owned(),
+        ),
+    );
+    normalized.insert(
         "appTheme".to_string(),
         Value::String(normalized_string_option(
             configured.get("appTheme"),

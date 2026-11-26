@@ -409,6 +409,15 @@ impl SceneInput {
                     .clone(),
             );
         }
+        for key in [
+            "ccliDisplayEnabled",
+            "ccliDisplayLocation",
+            "ccliLicenseNumber",
+        ] {
+            if let Some(value) = self.settings["generalSettings"].get(key) {
+                scene.insert(key.into(), value.clone());
+            }
+        }
         let playlist = self
             .playlists
             .iter()

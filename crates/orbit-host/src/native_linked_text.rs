@@ -173,7 +173,15 @@ pub(super) fn resolve_linked_text(
             if context["ccliTemplatePreview"] == true {
                 text.to_string()
             } else if context.get("ccli").is_some_and(Value::is_object) {
-                format_ccli_text(context.get("ccli"))
+                let mut text = format_ccli_text(context.get("ccli"));
+                if let Some(number) = context["ccliLicenseNumber"]
+                    .as_str()
+                    .filter(|number| !number.is_empty() && !text.is_empty())
+                {
+                    text.push_str("\nCCLI License #");
+                    text.push_str(number);
+                }
+                text
             } else {
                 style
                     .get("linkedTextTickerContent")
