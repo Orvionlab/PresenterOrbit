@@ -9,7 +9,40 @@ pub mod protocol;
 /// The link to the output process, kept as host state. Empty until the host has started; a host without this
 /// state keeps its output in its own process (the tests).
 #[derive(Default)]
-pub struct OutputRoute(pub std::sync::OnceLock<std::sync::Arc<client::OutputLink>>);
+pub struct OutputRoute(
+    pub std::sync::OnceLock<std::sync::Arc<client::OutputLink>>,
+    std::sync::Mutex<bool>,
+);
+
+impl OutputRoute {
+    pub fn start(
+        &self,
+        config: impl FnOnce() -> Result<client::Config, String>,
+    ) -> Result<bool, String> {
+        use crate::locked::Locked;
+
+        let closing = self.1.locked();
+        if *closing {
+            return Ok(false);
+        }
+        if self.0.get().is_some() {
+            return Err("The output link is already started.".into());
+        }
+        self.0
+            .set(client::OutputLink::start(config()?))
+            .map_err(|_| "The output link is already started.".to_string())?;
+        Ok(true)
+    }
+
+    pub fn shutdown(&self) {
+        use crate::locked::Locked;
+
+        *self.1.locked() = true;
+        if let Some(link) = self.0.get() {
+            link.shutdown();
+        }
+    }
+}
 pub mod server;
 
 /// Entry of `orbit-app --output-process <arguments>`. The returned code is the process exit code.

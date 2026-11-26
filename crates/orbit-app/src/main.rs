@@ -374,6 +374,7 @@ fn main() {
             })
             .detach();
         });
+    foreground::stop_output(&shutdown_host);
     orbit_host::stop_host(&shutdown_host);
     shutdown_outputs.shutdown();
 }

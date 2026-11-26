@@ -1,2 +1,27 @@
+#include <winver.h>
+#include "app-version.h"
+
 // GPUI loads the application icon from resource ID 1.
 1 ICON "icons/icon.ico"
+
+1 VERSIONINFO
+FILEVERSION ORBIT_VERSION
+PRODUCTVERSION ORBIT_VERSION
+FILEOS VOS_NT_WINDOWS32
+FILETYPE VFT_APP
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"
+        BEGIN
+            VALUE "FileDescription", "Presenter Orbit"
+            VALUE "FileVersion", ORBIT_FILE_VERSION
+            VALUE "ProductName", "Presenter Orbit"
+            VALUE "ProductVersion", ORBIT_PRODUCT_VERSION
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0409, 1200
+    END
+END

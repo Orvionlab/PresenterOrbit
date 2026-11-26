@@ -267,7 +267,7 @@ pub fn start_output_link_with(
         crate::output_process::client::EventSink,
     ) -> Arc<dyn crate::output_process::client::Spawner>,
 ) -> Result<(), String> {
-    use crate::output_process::client::{Config, OutputLink};
+    use crate::output_process::client::Config;
     let route = host
         .try_state::<crate::output_process::OutputRoute>()
         .ok_or("This host does not route output to a process.")?;
@@ -300,21 +300,23 @@ pub fn start_output_link_with(
             },
         );
     });
-    let link = OutputLink::start(Config {
-        directory: crate::output_process::protocol::data_directory(&host.path().app_data_dir()?),
-        rendering_bit_depth,
-        spawner: spawner(events.clone()),
-        events: events.clone(),
-    });
-    route
-        .0
-        .set(link)
-        .map_err(|_| "The output link is already started.".to_string())?;
+    let started = route.start(|| {
+        Ok(Config {
+            directory: crate::output_process::protocol::data_directory(
+                &host.path().app_data_dir()?,
+            ),
+            rendering_bit_depth,
+            spawner: spawner(events.clone()),
+            events: events.clone(),
+        })
+    })?;
     // The link may attach before it is stored; this tells the foreground to look again.
-    events(
-        "output:link-changed",
-        serde_json::json!({ "attached": false, "started": true }),
-    );
+    if started {
+        events(
+            "output:link-changed",
+            serde_json::json!({ "attached": false, "started": true }),
+        );
+    }
     Ok(())
 }
 

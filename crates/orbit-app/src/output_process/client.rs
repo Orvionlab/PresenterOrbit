@@ -272,10 +272,21 @@ impl Inner {
                 other => return Ok(other),
             }
         }
+        if self.quitting() {
+            return Ok(Attach::Refused);
+        }
         let spawned = self.config.spawner.spawn(directory)?;
         self.state.locked().child = Some(spawned);
         let deadline = Instant::now() + START_TIMEOUT;
-        while Instant::now() < deadline && !self.quitting() {
+        let mut shutdown_deadline = None;
+        while Instant::now() < deadline {
+            // Once spawned, let the child publish its socket so a concurrent quit can shut it down normally.
+            if self.quitting()
+                && Instant::now()
+                    >= *shutdown_deadline.get_or_insert_with(|| Instant::now() + SHUTDOWN_WAIT)
+            {
+                break;
+            }
             if let Some(endpoint) = read_endpoint(directory)? {
                 match self.attach(&endpoint)? {
                     Attach::Refused => {}

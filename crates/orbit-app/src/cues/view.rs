@@ -2033,19 +2033,20 @@ impl CueView {
                 }
             });
         let theme = cx.theme();
-        let separator = || {
+        let separator = |selector: &'static str| {
             div()
+                .debug_selector(move || selector.into())
                 .flex_none()
+                .w(theme.metrics.space_2xs)
                 .h(theme.metrics.control_height_compact - theme.metrics.space_sm)
-                .border_l_1()
-                .border_color(theme.colors.border)
+                .bg(theme.colors.text_subtle)
         };
         header
             .action(tools.advance.clone())
-            .action(separator())
+            .action(separator("cue-advance-separator"))
             .action(notes)
             .action(arrangement)
-            .action(separator())
+            .action(separator("cue-destination-separator"))
             .action(tools.destination.clone())
             .action(tools.transition.clone())
     }

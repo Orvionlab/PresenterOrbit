@@ -552,6 +552,11 @@ fn stage_picker_defaults_and_switches_the_output_layout(cx: &mut TestAppContext)
     assert!(crate::output_process::protocol::read_endpoint(&directory)
         .unwrap()
         .is_none());
+    let (sender, _) = futures::channel::mpsc::unbounded();
+    crate::shell::start_output_link_with(&app.host, sender, "normal".into(), |_| {
+        panic!("a stopped controller must not start a new output link")
+    })
+    .unwrap();
 }
 
 #[gpui::test]

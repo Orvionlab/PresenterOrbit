@@ -525,13 +525,18 @@ fn single_presentation_mode_shows_playlist_markers_and_links_placeholder(cx: &mu
     let tools = [
         unlink,
         "button-cue-auto-advance",
+        "cue-advance-separator",
         notes,
         arrangement,
+        "cue-destination-separator",
         "button-cue-destination",
         "button-cue-transition",
     ]
-    .map(|selector| visual.debug_bounds(selector).unwrap().left());
-    assert!(tools.windows(2).all(|buttons| buttons[0] < buttons[1]));
+    .map(|selector| visual.debug_bounds(selector).unwrap());
+    assert!(tools.iter().all(|bounds| bounds.size.width > gpui::px(0.)));
+    assert!(tools
+        .windows(2)
+        .all(|buttons| buttons[0].left() < buttons[1].left()));
     assert!(
         visual.debug_bounds("button-cue-new-slide").unwrap().left()
             < visual.debug_bounds("transition-mode-slide").unwrap().left()

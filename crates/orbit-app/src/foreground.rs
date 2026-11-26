@@ -20,15 +20,16 @@ pub fn stop_output_on_quit(cx: &App, host: orbit_host::Host) {
     cx.on_app_quit(move |_| {
         // AppKit exits without returning from the event loop. Finish shutting down the
         // output process inside the quit callback so a normal quit does not orphan it.
-        if let Some(link) = host
-            .try_state::<OutputRoute>()
-            .and_then(|route| route.0.get())
-        {
-            link.shutdown();
-        }
+        stop_output(&host);
         std::future::ready(())
     })
     .detach();
+}
+
+pub fn stop_output(host: &orbit_host::Host) {
+    if let Some(route) = host.try_state::<OutputRoute>() {
+        route.shutdown();
+    }
 }
 
 pub fn handle_message(cx: &mut App, main: &MainWindow, message: ForegroundMessage) {
@@ -89,13 +90,10 @@ fn with_main(
         .map_err(|error| error.to_string())
 }
 
-/// Closing the main window destroys the auxiliary windows, which would otherwise keep the application alive
-/// hidden. The application ends when no window is left.
+/// Closing the main window ends the application even if other windows are still being closed.
 pub fn handle_window_closed(cx: &mut App, main: WindowId, closed: WindowId) {
     if closed == main {
         AuxiliaryWindows::destroy_all(cx);
-    }
-    if cx.windows().is_empty() {
         cx.quit();
     }
 }
