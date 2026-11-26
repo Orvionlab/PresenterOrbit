@@ -139,7 +139,7 @@ impl RenderOnce for Dialog {
                 .border_color(theme.colors.border)
                 .bg(theme.colors.panel_bg_strong)
                 .text_color(theme.colors.text_strong)
-                .when(standalone, |this| {
+                .when(standalone && !cfg!(windows), |this| {
                     this.on_mouse_down(MouseButton::Left, |event, window, _| {
                         if event.click_count == 2 {
                             window.zoom_window();
@@ -149,12 +149,23 @@ impl RenderOnce for Dialog {
                     })
                 })
                 .child(
-                    DialogTitle::new()
+                    div()
+                        .flex()
+                        .flex_1()
+                        .self_stretch()
                         .min_w_0()
-                        .truncate()
-                        .text_size(theme.metrics.font_lg)
-                        .font_weight(gpui::FontWeight::BOLD)
-                        .child(self.title),
+                        .items_center()
+                        .when(standalone && cfg!(windows), |this| {
+                            this.window_control_area(gpui::WindowControlArea::Drag)
+                        })
+                        .child(
+                            DialogTitle::new()
+                                .min_w_0()
+                                .truncate()
+                                .text_size(theme.metrics.font_lg)
+                                .font_weight(gpui::FontWeight::BOLD)
+                                .child(self.title),
+                        ),
                 )
                 .child(
                     div()

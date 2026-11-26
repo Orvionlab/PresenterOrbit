@@ -88,6 +88,7 @@ impl AuxiliaryWindows {
                 appears_transparent: true,
                 ..Default::default()
             }),
+            app_owns_titlebar_drag: true,
             show: false,
             focus: false,
             is_resizable: true,
