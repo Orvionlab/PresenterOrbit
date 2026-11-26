@@ -12,6 +12,23 @@ pub fn preview_slide_deletion(item: &mut Value, operation: &Value) -> Result<(),
     )
 }
 
+pub fn preview_blank_slide(
+    workspace: &Value,
+    item: &mut Value,
+    operation: &Value,
+) -> Result<(), String> {
+    crate::workspace::insert_blank_slide(
+        workspace
+            .as_object()
+            .ok_or("Workspace must be an object.")?,
+        item,
+        operation
+            .as_object()
+            .ok_or("Blank slide operation must be an object.")?,
+    )?;
+    Ok(())
+}
+
 /// Applies the media mutation to a draft using the same validation and slide assembly as saving.
 pub fn preview_media_edit(
     workspace: &Value,

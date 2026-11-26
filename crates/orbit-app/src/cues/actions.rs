@@ -788,6 +788,37 @@ pub fn set_selected_enabled(
 /// `mutate` that first applies `change` to the item's local value, and puts the previous value back when the host
 /// rejects the mutation.
 pub fn drop_media(runtime: &Runtime, item_id: &str, operation: Value, cx: &mut App) {
+    preview_slide_edit(
+        runtime,
+        item_id,
+        operation,
+        orbit_host::authoring::preview_media_edit,
+        cx,
+    );
+}
+
+pub fn add_blank_slide(runtime: &Runtime, item_id: &str, after: Option<&str>, cx: &mut App) {
+    let id = format!("new-slide-{}", uuid::Uuid::new_v4());
+    let mut operation = json!({"type":"insertBlankSlide","newSlideId":id});
+    if let Some(after) = after {
+        operation["afterSlideId"] = json!(after);
+    }
+    preview_slide_edit(
+        runtime,
+        item_id,
+        operation,
+        orbit_host::authoring::preview_blank_slide,
+        cx,
+    );
+}
+
+fn preview_slide_edit(
+    runtime: &Runtime,
+    item_id: &str,
+    operation: Value,
+    apply: fn(&Value, &mut Value, &Value) -> Result<(), String>,
+    cx: &mut App,
+) {
     let id = item_id.to_string();
     let mutation = json!({"type":"mutateItem","itemId":id,"operation":operation});
     runtime
@@ -797,9 +828,7 @@ pub fn drop_media(runtime: &Runtime, item_id: &str, operation: Value, cx: &mut A
                 return;
             };
             let mut preview = item.value.as_ref().clone();
-            if orbit_host::authoring::preview_media_edit(&workspace, &mut preview, &operation)
-                .is_ok()
-            {
+            if apply(&workspace, &mut preview, &operation).is_ok() {
                 edit_item(content, &id, |item| *item = preview);
             }
         })

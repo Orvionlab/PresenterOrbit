@@ -3878,7 +3878,7 @@ fn validate_presentation_item_mutation_keys(
         "mergeSlides" => &["type", "keepSlideId", "removeSlideId", "content"][..],
         "pasteSlide" => &["type", "afterSlideId", "slide"][..],
         "pasteSlides" => &["type", "afterSlideId", "slides"][..],
-        "insertBlankSlide" => &["type", "afterSlideId"][..],
+        "insertBlankSlide" => &["type", "afterSlideId", "newSlideId"][..],
         "insertMediaSlide" => &["type", "beforeSlideId", "mediaId"][..],
         "insertMediaSlides" => &["type", "slideId", "placement", "mediaIds", "newSlideIds"][..],
         "reorderSlide" => &["type", "slideId", "targetIndex"][..],
@@ -4539,18 +4539,7 @@ fn mutate_presentation_item(
             normalize_presentation_item_groups(&mut next_item);
         }
         "insertBlankSlide" => {
-            let mut slides = presentation_item_slides(&next_item)?;
-            let insert_index =
-                optional_slide_insert_after_index(&slides, operation, "afterSlideId")?;
-            let new_id = next_presentation_slide_id(&slides, "new-slide")?;
-            let assignment = content_themes::insertion_assignment(document, &slides, insert_index)?;
-            let mut slide = json!({ "id": &new_id, "label": "", "groupName": "", "content": "" });
-            content_themes::assign(document, &mut slide, &assignment)?;
-            crate::presentation_settings::apply_defaults(&next_item, &mut slide)?;
-            slides.insert(insert_index, slide);
-            set_presentation_item_slides(&mut next_item, slides)?;
-            normalize_presentation_item_groups(&mut next_item);
-            created_slide_id = Some(new_id);
+            created_slide_id = Some(insert_blank_slide(document, &mut next_item, operation)?);
         }
         "reorderSlide" | "reorderSlides" => {
             let target_index = mutation_index(
@@ -4895,6 +4884,32 @@ fn slide_mutation_indices(
         return Err(format!("Presentation slide '{id}' was not found."));
     }
     Ok(indices)
+}
+
+pub(crate) fn insert_blank_slide(
+    document: &Map<String, Value>,
+    item: &mut Value,
+    operation: &Map<String, Value>,
+) -> Result<String, String> {
+    let mut slides = presentation_item_slides(item)?;
+    let insert_index = optional_slide_insert_after_index(&slides, operation, "afterSlideId")?;
+    let new_id = if operation.contains_key("newSlideId") {
+        let id = required_mutation_string(operation, "newSlideId", "New slide id is required.")?;
+        if slides.iter().any(|slide| slide["id"] == id) {
+            return Err(format!("Duplicate presentation slide id '{id}'."));
+        }
+        id.to_string()
+    } else {
+        next_presentation_slide_id(&slides, "new-slide")?
+    };
+    let assignment = content_themes::insertion_assignment(document, &slides, insert_index)?;
+    let mut slide = json!({ "id": &new_id, "label": "", "groupName": "", "content": "" });
+    content_themes::assign(document, &mut slide, &assignment)?;
+    crate::presentation_settings::apply_defaults(item, &mut slide)?;
+    slides.insert(insert_index, slide);
+    set_presentation_item_slides(item, slides)?;
+    normalize_presentation_item_groups(item);
+    Ok(new_id)
 }
 
 fn presentation_slide_ids(slides: &[Value]) -> Result<HashSet<String>, String> {

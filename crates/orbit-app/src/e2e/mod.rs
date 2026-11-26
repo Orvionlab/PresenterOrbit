@@ -1762,6 +1762,51 @@ fn library_authoring_saves_and_reopens_the_workspace(cx: &mut TestAppContext) {
     visual.simulate_mouse_up(first, gpui::MouseButton::Left, Default::default());
     visual.run_until_parked();
     assert!(visual.debug_bounds("cue-reorder-marker").is_none());
+    let item_id = cx.update(|cx| runtime.ui.read(cx).selected_library_item_id.clone());
+    let original = app.snapshot()["library"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["id"] == item_id)
+        .unwrap()["slides"]
+        .clone();
+    let release = support::hold_workspace_writes(&app, cx);
+    for index in 2..4 {
+        click(&mut visual, "button-cue-new-slide");
+        let tile = Box::leak(format!("cue-thumbnail-{index}").into_boxed_str());
+        app.wait(cx, |app, cx| app.visual(cx).debug_bounds(tile).is_some());
+    }
+    let preview = cx
+        .update(|cx| runtime.content.read(cx).items.get(&item_id).unwrap().value["slides"].clone());
+    assert_eq!(preview[2]["content"], "");
+    assert_eq!(preview[3]["content"], "");
+    assert_ne!(preview[2]["id"], preview[3]["id"]);
+    assert_eq!(
+        preview[3]["presentationThemeId"],
+        original[1]["presentationThemeId"]
+    );
+    assert_eq!(
+        app.snapshot()["library"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["id"] == item_id)
+            .unwrap()["slides"],
+        original
+    );
+    release.send(()).unwrap();
+    app.wait(cx, |app, _| {
+        app.snapshot()["library"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| {
+                item["id"] == item_id
+                    && item["slides"][2]["id"] == preview[2]["id"]
+                    && item["slides"][3]["id"] == preview[3]["id"]
+            })
+    });
+    click(&mut visual, "cue-thumbnail-0");
     visual.update(|window, cx| assert!(commands.run("open-slide-canvas", false, window, cx)));
     visual.run_until_parked();
     let assert_background_row = |visual: &mut gpui::VisualTestContext| {

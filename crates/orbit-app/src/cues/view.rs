@@ -651,12 +651,12 @@ impl CueView {
                 if let Some(document) =
                     model::seed(self.runtime.content.read(cx), self.runtime.ui.read(cx))
                 {
-                    let after = self.selected.last().cloned();
-                    let mut operation = json!({"type":"insertBlankSlide"});
-                    if let Some(id) = after {
-                        operation["afterSlideId"] = json!(id);
-                    }
-                    actions::mutate(&self.runtime, &document.item.id, operation, cx);
+                    actions::add_blank_slide(
+                        &self.runtime,
+                        &document.item.id,
+                        self.selected.last().map(String::as_str),
+                        cx,
+                    );
                 }
             }
             "open-ccli" => {

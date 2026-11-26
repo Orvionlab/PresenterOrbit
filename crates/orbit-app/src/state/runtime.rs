@@ -126,6 +126,10 @@ pub fn replay_safe_library_mutation(mutation: &Value) -> bool {
         Some("mutateItem") if mutation["operation"]["type"] == "insertMediaSlides" => {
             non_empty_array(&mutation["operation"], "newSlideIds")
         }
+        Some("mutateItem") if mutation["operation"]["type"] == "insertBlankSlide" => mutation
+            ["operation"]["newSlideId"]
+            .as_str()
+            .is_some_and(|id| !id.trim().is_empty()),
         Some("mutateItem") => mutation["operation"]["type"]
             .as_str()
             .is_some_and(|operation| SAFE_ITEM_OPERATIONS.contains(&operation)),
