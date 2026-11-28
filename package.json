@@ -45,6 +45,6 @@
   },
   "packageManager": "npm@12.0.2",
   "devDependencies": {
-    "prettier": "^3.9.6"
+    "prettier": "^3.10.1"
   }
 }
